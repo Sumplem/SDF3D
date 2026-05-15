@@ -1,13 +1,12 @@
 #pragma once
 
+#include "sdf3d/core/EventBus.h"
 #include "sdf3d/renderer/Renderer.h"
 #include "sdf3d/scene/SceneGraph.h"
 #include "sdf3d/scene/SdfCompiler.h"
+#include "sdf3d/systems/DiagnosticsSystem.h"
 #include "sdf3d/ui/UI.h"
 #include "sdf3d/ui/Viewport.h"
-
-#include <string>
-#include <vector>
 
 struct GLFWwindow;
 
@@ -43,9 +42,10 @@ private:
     Renderer m_renderer;
     SceneGraph m_sceneGraph;
     SdfCompiler m_sdfCompiler;
+    EventBus m_eventBus;
+    DiagnosticsSystem m_diagnostics;
     UI m_ui;
     Viewport m_viewport;
-    std::vector<std::string> m_runtimeErrors;
     bool m_initialized = false;
 };
 

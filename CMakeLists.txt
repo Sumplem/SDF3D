@@ -14,16 +14,35 @@ endif()
 add_executable(sdf3d
     src/main.cpp
     src/app/App.cpp
+    src/core/EventBus.cpp
     src/core/ResourceManager.cpp
     src/math/Math.cpp
+    src/renderer/FboRenderer.cpp
     src/renderer/Renderer.cpp
+    src/renderer/ShaderManager.cpp
+    src/renderer/UniformUploader.cpp
     src/scene/SdfGraph.cpp
     src/scene/SdfGraphCompiler.cpp
+    src/scene/GraphMigrator.cpp
     src/scene/SdfNodeDefinition.cpp
     src/scene/SceneGraph.cpp
     src/scene/SdfCompiler.cpp
+    src/systems/CompilerSystem.cpp
+    src/systems/DiagnosticsSystem.cpp
+    src/systems/GlslEmitter.cpp
+    src/systems/GlslNodeNames.cpp
+    src/systems/GraphSystem.cpp
+    src/systems/MaterialSystem.cpp
+    src/systems/SelectionSystem.cpp
     src/ui/AddMenu.cpp
-    src/ui/NodeEditor.cpp
+    src/ui/node_editor/NodeEditorActions.cpp
+    src/ui/node_editor/NodeEditorCanvas.cpp
+    src/ui/node_editor/NodeEditorInputLinks.cpp
+    src/ui/node_editor/NodeEditorLinks.cpp
+    src/ui/node_editor/NodeEditor.cpp
+    src/ui/node_editor/NodeEditorProperties.cpp
+    src/ui/node_editor/NodeEditorPreviews.cpp
+    src/ui/node_editor/NodeEditorView.cpp
     src/ui/PropertiesPanel.cpp
     src/ui/SceneOutliner.cpp
     src/ui/UI.cpp
@@ -56,8 +75,15 @@ add_executable(sdf3d_tests
     tests/sdf_node_tests.cpp
     src/scene/SdfGraph.cpp
     src/scene/SdfGraphCompiler.cpp
+    src/scene/GraphMigrator.cpp
     src/scene/SdfNodeDefinition.cpp
     src/scene/SdfCompiler.cpp
+    src/systems/CompilerSystem.cpp
+    src/systems/GlslEmitter.cpp
+    src/systems/GlslNodeNames.cpp
+    src/systems/GraphSystem.cpp
+    src/systems/MaterialSystem.cpp
+    src/systems/SelectionSystem.cpp
 )
 
 target_compile_features(sdf3d_tests PRIVATE cxx_std_17)
@@ -74,4 +100,200 @@ if(MSVC)
     target_compile_options(sdf3d_tests PRIVATE /W4)
 else()
     target_compile_options(sdf3d_tests PRIVATE -Wall -Wextra)
+endif()
+
+add_executable(sdf3d_uniform_uploader_tests
+    tests/test_uniform_uploader.cpp
+    src/renderer/UniformUploader.cpp
+)
+
+target_compile_features(sdf3d_uniform_uploader_tests PRIVATE cxx_std_17)
+
+target_include_directories(sdf3d_uniform_uploader_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(sdf3d_uniform_uploader_tests PRIVATE
+    glad_gl_core_46
+    glm::glm
+)
+
+if(MSVC)
+    target_compile_options(sdf3d_uniform_uploader_tests PRIVATE /W4)
+else()
+    target_compile_options(sdf3d_uniform_uploader_tests PRIVATE -Wall -Wextra)
+endif()
+
+add_executable(sdf3d_fbo_renderer_tests
+    tests/test_fbo_renderer.cpp
+    src/renderer/FboRenderer.cpp
+)
+
+target_compile_features(sdf3d_fbo_renderer_tests PRIVATE cxx_std_17)
+
+target_include_directories(sdf3d_fbo_renderer_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(sdf3d_fbo_renderer_tests PRIVATE
+    glad_gl_core_46
+)
+
+if(MSVC)
+    target_compile_options(sdf3d_fbo_renderer_tests PRIVATE /W4)
+else()
+    target_compile_options(sdf3d_fbo_renderer_tests PRIVATE -Wall -Wextra)
+endif()
+
+add_executable(sdf3d_shader_manager_tests
+    tests/test_shader_manager.cpp
+    src/renderer/ShaderManager.cpp
+)
+
+target_compile_features(sdf3d_shader_manager_tests PRIVATE cxx_std_17)
+
+target_include_directories(sdf3d_shader_manager_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(sdf3d_shader_manager_tests PRIVATE
+    glad_gl_core_46
+)
+
+if(MSVC)
+    target_compile_options(sdf3d_shader_manager_tests PRIVATE /W4)
+else()
+    target_compile_options(sdf3d_shader_manager_tests PRIVATE -Wall -Wextra)
+endif()
+
+add_executable(sdf3d_diagnostics_tests
+    tests/test_diagnostics_system.cpp
+    src/systems/DiagnosticsSystem.cpp
+)
+
+target_compile_features(sdf3d_diagnostics_tests PRIVATE cxx_std_17)
+
+target_include_directories(sdf3d_diagnostics_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(sdf3d_diagnostics_tests PRIVATE /W4)
+else()
+    target_compile_options(sdf3d_diagnostics_tests PRIVATE -Wall -Wextra)
+endif()
+
+add_executable(sdf3d_event_bus_tests
+    tests/test_event_bus.cpp
+    src/core/EventBus.cpp
+)
+
+target_compile_features(sdf3d_event_bus_tests PRIVATE cxx_std_17)
+
+target_include_directories(sdf3d_event_bus_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+if(MSVC)
+    target_compile_options(sdf3d_event_bus_tests PRIVATE /W4)
+else()
+    target_compile_options(sdf3d_event_bus_tests PRIVATE -Wall -Wextra)
+endif()
+
+add_executable(sdf3d_selection_tests
+    tests/test_selection_system.cpp
+    src/scene/SdfGraph.cpp
+    src/scene/SdfNodeDefinition.cpp
+    src/scene/SceneGraph.cpp
+    src/systems/GraphSystem.cpp
+    src/systems/SelectionSystem.cpp
+)
+
+target_compile_features(sdf3d_selection_tests PRIVATE cxx_std_17)
+
+target_include_directories(sdf3d_selection_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(sdf3d_selection_tests PRIVATE
+    glm::glm
+)
+
+if(MSVC)
+    target_compile_options(sdf3d_selection_tests PRIVATE /W4)
+else()
+    target_compile_options(sdf3d_selection_tests PRIVATE -Wall -Wextra)
+endif()
+
+add_executable(sdf3d_glsl_emitter_tests
+    tests/test_glsl_emitter.cpp
+    src/systems/GlslEmitter.cpp
+    src/systems/GlslNodeNames.cpp
+    src/systems/MaterialSystem.cpp
+)
+
+target_compile_features(sdf3d_glsl_emitter_tests PRIVATE cxx_std_17)
+
+target_include_directories(sdf3d_glsl_emitter_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(sdf3d_glsl_emitter_tests PRIVATE
+    glm::glm
+)
+
+if(MSVC)
+    target_compile_options(sdf3d_glsl_emitter_tests PRIVATE /W4)
+else()
+    target_compile_options(sdf3d_glsl_emitter_tests PRIVATE -Wall -Wextra)
+endif()
+
+add_executable(sdf3d_compiler_system_tests
+    tests/test_compiler_system.cpp
+    src/scene/SdfGraph.cpp
+    src/scene/SdfGraphCompiler.cpp
+    src/scene/SdfNodeDefinition.cpp
+    src/systems/CompilerSystem.cpp
+    src/systems/GlslEmitter.cpp
+    src/systems/GlslNodeNames.cpp
+    src/systems/GraphSystem.cpp
+    src/systems/MaterialSystem.cpp
+    src/systems/SelectionSystem.cpp
+)
+
+target_compile_features(sdf3d_compiler_system_tests PRIVATE cxx_std_17)
+
+target_include_directories(sdf3d_compiler_system_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(sdf3d_compiler_system_tests PRIVATE
+    glm::glm
+)
+
+if(MSVC)
+    target_compile_options(sdf3d_compiler_system_tests PRIVATE /W4)
+else()
+    target_compile_options(sdf3d_compiler_system_tests PRIVATE -Wall -Wextra)
+endif()
+
+add_executable(sdf3d_material_system_tests
+    tests/test_material_system.cpp
+    src/systems/MaterialSystem.cpp
+)
+
+target_compile_features(sdf3d_material_system_tests PRIVATE cxx_std_17)
+
+target_include_directories(sdf3d_material_system_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(sdf3d_material_system_tests PRIVATE
+    glm::glm
+)
+
+if(MSVC)
+    target_compile_options(sdf3d_material_system_tests PRIVATE /W4)
+else()
+    target_compile_options(sdf3d_material_system_tests PRIVATE -Wall -Wextra)
 endif()

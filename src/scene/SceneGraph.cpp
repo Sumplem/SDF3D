@@ -1,5 +1,7 @@
 #include "sdf3d/scene/SceneGraph.h"
 
+#include "sdf3d/systems/SelectionSystem.h"
+
 #include <utility>
 
 namespace sdf3d {
@@ -18,17 +20,17 @@ void SceneGraph::setRoot(SdfNodePtr root)
     // AGENT: Selection is reset with the root because M3 has no stable node IDs
     // yet to prove an old selected pointer still belongs to the new tree.
     m_root = std::move(root);
-    m_selectedNode = m_root;
+    SelectionSystem::setSelectedNode(*this, m_root);
 }
 
 const SdfNodePtr& SceneGraph::selectedNode() const
 {
-    return m_selectedNode;
+    return SelectionSystem::selectedNode(*this);
 }
 
 void SceneGraph::setSelectedNode(SdfNodePtr node)
 {
-    m_selectedNode = std::move(node);
+    SelectionSystem::setSelectedNode(*this, std::move(node));
 }
 
 SdfGraph& SceneGraph::graph()

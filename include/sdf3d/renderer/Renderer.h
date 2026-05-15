@@ -1,22 +1,15 @@
 #pragma once
 
+#include "sdf3d/renderer/FboRenderer.h"
+#include "sdf3d/renderer/ShaderManager.h"
+#include "sdf3d/renderer/UniformUploader.h"
 #include "sdf3d/scene/SdfCompiler.h"
 
 #include <filesystem>
 #include <string>
 #include <vector>
 
-#include <glm/glm.hpp>
-
 namespace sdf3d {
-
-/// Camera values needed by the raymarch shader.
-struct RenderCamera {
-    glm::vec3 position = {0.0f, 0.0f, 4.0f};
-    glm::vec3 target = {0.0f, 0.0f, 0.0f};
-    glm::vec3 up = {0.0f, 1.0f, 0.0f};
-    float fovDegrees = 45.0f;
-};
 
 /// Owns the M2 fullscreen raymarch draw path.
 class Renderer {
@@ -52,23 +45,12 @@ public:
     unsigned int outputTexture() const;
 
 private:
-    bool loadProgram(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath);
-    bool loadProgramFromSources(const std::string& vertexSource, const std::string& fragmentSource);
-    std::string fragmentSourceWithScene(const std::string& sceneGlsl) const;
-    void resizeFramebuffer();
-
-    std::filesystem::path m_vertexShaderPath;
-    std::filesystem::path m_fragmentShaderPath;
-    unsigned int m_program = 0;
-    unsigned int m_vertexArray = 0;
-    unsigned int m_framebuffer = 0;
-    unsigned int m_colorTexture = 0;
-    int m_width = 1;
-    int m_height = 1;
+    FboRenderer m_fboRenderer;
+    ShaderManager m_shaderManager;
+    UniformUploader m_uniformUploader;
     // AGENT: Renderer stores compiler-owned material order so every render can
     // re-upload uniforms after program relink without scene graph traversal.
     std::vector<SdfCompiledMaterial> m_materials;
-    std::string m_lastError;
 };
 
 } // namespace sdf3d

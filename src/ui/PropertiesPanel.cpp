@@ -42,21 +42,21 @@ bool PropertiesPanel::draw(SceneGraph& sceneGraph)
         sceneDirty = true;
     }
 
-    ImGui::SeparatorText("Material");
+    if (selected->type == SdfNodeType::MaterialOverride) {
+        ImGui::SeparatorText("Material");
 
-    // AGENT: Material edits live beside generic float parameters so M4 users
-    // can author per-node appearance before the renderer consumes material IDs.
-    if (ImGui::ColorEdit3("Albedo", &selected->material.albedo.x)) {
-        sceneDirty = true;
-    }
-    if (ImGui::DragFloat("Roughness", &selected->material.roughness, 0.01f, 0.0f, 1.0f)) {
-        sceneDirty = true;
-    }
-    if (ImGui::DragFloat("Metallic", &selected->material.metallic, 0.01f, 0.0f, 1.0f)) {
-        sceneDirty = true;
-    }
-    if (ImGui::DragFloat("Emission", &selected->material.emission, 0.01f, 0.0f, 100.0f)) {
-        sceneDirty = true;
+        if (ImGui::ColorEdit3("Albedo", &selected->material.albedo.x)) {
+            sceneDirty = true;
+        }
+        if (ImGui::DragFloat("Roughness", &selected->material.roughness, 0.01f, 0.0f, 1.0f)) {
+            sceneDirty = true;
+        }
+        if (ImGui::DragFloat("Metallic", &selected->material.metallic, 0.01f, 0.0f, 1.0f)) {
+            sceneDirty = true;
+        }
+        if (ImGui::DragFloat("Emission", &selected->material.emission, 0.01f, 0.0f, 100.0f)) {
+            sceneDirty = true;
+        }
     }
 
     ImGui::SeparatorText("Parameters");

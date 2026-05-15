@@ -34,12 +34,6 @@ public:
 
     /// Compiles a graph output into self-contained SDF GLSL.
     SdfCompileResult compile(const SdfGraph& graph) const;
-
-private:
-    std::string compileNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const;
-    std::string compilePrimitiveNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const;
-    std::string compileBooleanNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const;
-    std::string compileDomainNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const;
 };
 
 } // namespace sdf3d

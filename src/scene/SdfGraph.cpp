@@ -1,169 +1,55 @@
 #include "sdf3d/scene/SdfGraph.h"
 
-#include "sdf3d/scene/SdfNodeDefinition.h"
-
-#include <algorithm>
-#include <utility>
+#include "sdf3d/systems/GraphSystem.h"
+#include "sdf3d/systems/SelectionSystem.h"
 
 namespace sdf3d {
-namespace {
-
-std::vector<SdfGraphSocket> defaultInputsFor(SdfNodeType type)
-{
-    if (const SdfNodeDefinition* definition = sdfNodeDefinition(type)) {
-        return definition->inputs;
-    }
-
-    return {};
-}
-
-std::vector<SdfGraphSocket> defaultOutputsFor(SdfNodeType type)
-{
-    if (const SdfNodeDefinition* definition = sdfNodeDefinition(type)) {
-        return definition->outputs;
-    }
-
-    return {};
-}
-
-const SdfGraphSocket* findSocket(const std::vector<SdfGraphSocket>& sockets, const std::string& name, SdfSocketDirection direction)
-{
-    for (const SdfGraphSocket& socket : sockets) {
-        if (socket.name == name && socket.direction == direction) {
-            return &socket;
-        }
-    }
-
-    return nullptr;
-}
-
-} // namespace
 
 SdfGraph::SdfGraph()
 {
-    const SdfGraphNodeId id = m_nextId++;
-    SdfGraphNode graphNode{id, *makeSdfNodeFromDefinition(SdfNodeType::Output), 560.0f, 40.0f};
-    graphNode.inputs = defaultInputsFor(SdfNodeType::Output);
-    graphNode.outputs = defaultOutputsFor(SdfNodeType::Output);
-    m_nodes.emplace(id, std::move(graphNode));
-    m_outputNode = id;
-    m_selectedNode = id;
+    GraphSystem::initialize(*this);
+    SelectionSystem::setSelectedNode(*this, m_outputNode);
 }
 
 SdfGraphNodeId SdfGraph::createNode(SdfNodeType type, std::string name)
 {
-    const SdfGraphNodeId id = m_nextId++;
-    SdfNodePtr payload = makeSdfNodeFromDefinition(type);
-    if (!name.empty()) {
-        payload->name = std::move(name);
-    }
-    SdfGraphNode graphNode{id, *payload, 0.0f, 0.0f};
-    graphNode.inputs = defaultInputsFor(type);
-    graphNode.outputs = defaultOutputsFor(type);
-
-    m_nodes.emplace(id, std::move(graphNode));
-    if (m_outputNode == 0 || type == SdfNodeType::Output) {
-        m_outputNode = id;
-    }
-    m_selectedNode = id;
+    const SdfGraphNodeId id = GraphSystem::createNode(*this, type, std::move(name));
+    SelectionSystem::setSelectedNode(*this, id);
     return id;
 }
 
 bool SdfGraph::deleteNode(SdfGraphNodeId id)
 {
-    if (isOutputNode(id)) {
-        return false;
+    const bool deleted = GraphSystem::deleteNode(*this, id);
+    if (deleted && m_selectedNode == id) {
+        SelectionSystem::setSelectedNode(*this, 0);
     }
-
-    if (m_nodes.erase(id) == 0) {
-        return false;
-    }
-
-    m_links.erase(std::remove_if(m_links.begin(), m_links.end(),
-                      [id](const SdfGraphLink& link) {
-                          return link.fromNode == id || link.toNode == id;
-                      }),
-        m_links.end());
-
-    if (m_outputNode == id) {
-        m_outputNode = 0;
-    }
-    if (m_selectedNode == id) {
-        m_selectedNode = 0;
-    }
-
-    return true;
+    return deleted;
 }
 
 bool SdfGraph::link(SdfGraphNodeId fromNode, SdfGraphNodeId toNode, std::string toSocket)
 {
-    return link(fromNode, "sdf", toNode, std::move(toSocket));
+    return GraphSystem::link(*this, fromNode, toNode, std::move(toSocket));
 }
 
 bool SdfGraph::link(SdfGraphNodeId fromNode, std::string fromSocket, SdfGraphNodeId toNode, std::string toSocket)
 {
-    if (fromNode == 0 || toNode == 0 || fromNode == toNode || toSocket.empty()) {
-        return false;
-    }
-
-    auto fromIt = m_nodes.find(fromNode);
-    auto toIt = m_nodes.find(toNode);
-    if (fromIt == m_nodes.end() || toIt == m_nodes.end()) {
-        return false;
-    }
-
-    const SdfGraphSocket* output = findSocket(fromIt->second.outputs, fromSocket, SdfSocketDirection::Output);
-    const SdfGraphSocket* input = findSocket(toIt->second.inputs, toSocket, SdfSocketDirection::Input);
-    if (output == nullptr || input == nullptr || output->type != input->type) {
-        return false;
-    }
-
-    if (!input->multiInput) {
-        unlinkInput(toNode, toSocket);
-    }
-
-    // AGENT: Links now carry both sockets, matching Geometry Nodes semantics
-    // while preserving the previous default `sdf` output path.
-    m_links.push_back({fromNode, std::move(fromSocket), toNode, std::move(toSocket)});
-    return true;
+    return GraphSystem::link(*this, fromNode, std::move(fromSocket), toNode, std::move(toSocket));
 }
 
 bool SdfGraph::unlinkInput(SdfGraphNodeId toNode, const std::string& toSocket)
 {
-    const size_t oldSize = m_links.size();
-    m_links.erase(std::remove_if(m_links.begin(), m_links.end(),
-                      [toNode, &toSocket](const SdfGraphLink& link) {
-                          return link.toNode == toNode && link.toSocket == toSocket;
-                      }),
-        m_links.end());
-
-    return m_links.size() != oldSize;
+    return GraphSystem::unlinkInput(*this, toNode, toSocket);
 }
 
 bool SdfGraph::unlink(SdfGraphNodeId fromNode, const std::string& fromSocket, SdfGraphNodeId toNode, const std::string& toSocket)
 {
-    const size_t oldSize = m_links.size();
-    m_links.erase(std::remove_if(m_links.begin(), m_links.end(),
-                      [fromNode, &fromSocket, toNode, &toSocket](const SdfGraphLink& link) {
-                          return link.fromNode == fromNode
-                              && link.fromSocket == fromSocket
-                              && link.toNode == toNode
-                              && link.toSocket == toSocket;
-                      }),
-        m_links.end());
-
-    return m_links.size() != oldSize;
+    return GraphSystem::unlink(*this, fromNode, fromSocket, toNode, toSocket);
 }
 
 bool SdfGraph::setOutputNode(SdfGraphNodeId id)
 {
-    const auto it = m_nodes.find(id);
-    if (it == m_nodes.end() || it->second.payload.type != SdfNodeType::Output) {
-        return false;
-    }
-
-    m_outputNode = id;
-    return true;
+    return GraphSystem::setOutputNode(*this, id);
 }
 
 SdfGraphNodeId SdfGraph::outputNode() const
@@ -173,33 +59,22 @@ SdfGraphNodeId SdfGraph::outputNode() const
 
 bool SdfGraph::setSelectedNode(SdfGraphNodeId id)
 {
-    if (id != 0 && m_nodes.find(id) == m_nodes.end()) {
-        return false;
-    }
-
-    m_selectedNode = id;
-    return true;
+    return SelectionSystem::setSelectedNode(*this, id);
 }
 
 SdfGraphNodeId SdfGraph::selectedNode() const
 {
-    return m_selectedNode;
+    return SelectionSystem::selectedNode(*this);
 }
 
 bool SdfGraph::isOutputNode(SdfGraphNodeId id) const
 {
-    return id != 0 && id == m_outputNode;
+    return GraphSystem::isOutputNode(*this, id);
 }
 
 bool SdfGraph::hasLinks(SdfGraphNodeId id) const
 {
-    for (const SdfGraphLink& link : m_links) {
-        if (link.fromNode == id || link.toNode == id) {
-            return true;
-        }
-    }
-
-    return false;
+    return GraphSystem::hasLinks(*this, id);
 }
 
 SdfGraphNode* SdfGraph::node(SdfGraphNodeId id)

@@ -1,3 +1,4 @@
+#include "sdf3d/scene/GraphMigrator.h"
 #include "sdf3d/scene/SdfCompiler.h"
 #include "sdf3d/scene/SdfGraph.h"
 #include "sdf3d/scene/SdfNode.h"
@@ -252,25 +253,27 @@ void testMaterialMetadata(std::vector<TestFailure>& failures)
     const std::string testName = "material metadata";
     const sdf3d::SdfCompiler compiler;
 
-    sdf3d::SdfNodePtr redSphere = sdf3d::makeSphereNode("Red");
-    redSphere->material.albedo = {1.0f, 0.0f, 0.0f};
-    redSphere->material.emission = 0.5f;
+    sdf3d::SdfNodePtr redSphere = sdf3d::makeSphereNode("Red Sphere");
+    sdf3d::SdfNodePtr redMaterial = sdf3d::makeSdfNode(sdf3d::SdfNodeType::MaterialOverride, "Red");
+    redMaterial->material.albedo = {1.0f, 0.0f, 0.0f};
+    redMaterial->material.emission = 0.5f;
+    redMaterial->children.push_back(redSphere);
 
-    sdf3d::SdfNodePtr blueBox = sdf3d::makeBoxNode({1.0f, 1.0f, 1.0f}, "Blue");
-    blueBox->material.albedo = {0.0f, 0.0f, 1.0f};
-    blueBox->material.roughness = 0.25f;
+    sdf3d::SdfNodePtr blueBox = sdf3d::makeBoxNode({1.0f, 1.0f, 1.0f}, "Blue Box");
+    sdf3d::SdfNodePtr blueMaterial = sdf3d::makeSdfNode(sdf3d::SdfNodeType::MaterialOverride, "Blue");
+    blueMaterial->material.albedo = {0.0f, 0.0f, 1.0f};
+    blueMaterial->material.roughness = 0.25f;
+    blueMaterial->children.push_back(blueBox);
 
-    const sdf3d::SdfCompileResult result = compiler.compile(sdf3d::makeUnionNode({redSphere, blueBox}));
+    const sdf3d::SdfCompileResult result = compiler.compile(sdf3d::makeUnionNode({redMaterial, blueMaterial}));
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
-    expect(result.materials.size() == 2, testName, "Expected one material per primitive leaf.", failures);
-    if (result.materials.size() == 2) {
-        // AGENT: Compile order is depth-first, so material IDs are stable for
-        // shader uniforms and testable without renderer involvement.
-        expect(result.materials[0].material.albedo.x == 1.0f, testName, "Expected first material to be red sphere.", failures);
-        expect(result.materials[0].material.emission == 0.5f, testName, "Expected first material emission to be preserved.", failures);
-        expect(result.materials[1].material.albedo.z == 1.0f, testName, "Expected second material to be blue box.", failures);
-        expect(result.materials[1].material.roughness == 0.25f, testName, "Expected second material roughness to be preserved.", failures);
+    expect(result.materials.size() == 3, testName, "Expected default plus material override nodes.", failures);
+    if (result.materials.size() == 3) {
+        expect(result.materials[1].material.albedo.x == 1.0f, testName, "Expected first override material to be red.", failures);
+        expect(result.materials[1].material.emission == 0.5f, testName, "Expected first override emission to be preserved.", failures);
+        expect(result.materials[2].material.albedo.z == 1.0f, testName, "Expected second override material to be blue.", failures);
+        expect(result.materials[2].material.roughness == 0.25f, testName, "Expected second override roughness to be preserved.", failures);
     }
     expect(contains(result.glsl, "vec2("), testName, "Expected compiled GLSL to emit material hit records.", failures);
 }
@@ -451,7 +454,6 @@ void testGraphCompilerPrimitive(std::vector<TestFailure>& failures)
     const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
     if (sdf3d::SdfGraphNode* node = graph.node(sphere)) {
         node->payload.parameters["radius"] = 2.0f;
-        node->payload.material.albedo = {0.25f, 0.5f, 0.75f};
     }
     graph.link(sphere, "sdf", graph.outputNode(), "surface");
 
@@ -460,9 +462,63 @@ void testGraphCompilerPrimitive(std::vector<TestFailure>& failures)
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
     expect(contains(result.glsl, "length(p) - 2.000000"), testName, "Expected graph payload radius.", failures);
-    expect(result.materials.size() == 1, testName, "Expected one graph material.", failures);
-    if (result.materials.size() == 1) {
-        expect(result.materials[0].material.albedo.y == 0.5f, testName, "Expected graph payload material.", failures);
+    expect(result.materials.size() == 1, testName, "Expected default graph material.", failures);
+}
+
+void testGraphCompilerMaterialOverride(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph compiler material override";
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Material");
+    if (sdf3d::SdfGraphNode* node = graph.node(material)) {
+        node->payload.material.albedo = {0.25f, 0.5f, 0.75f};
+    }
+    graph.link(sphere, "sdf", material, "sdf");
+    graph.link(material, "sdf", graph.outputNode(), "surface");
+
+    const sdf3d::SdfCompiler compiler;
+    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+
+    expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
+    expect(result.materials.size() == 2, testName, "Expected default plus graph material override.", failures);
+    if (result.materials.size() == 2) {
+        expect(result.materials[1].material.albedo.y == 0.5f, testName, "Expected graph material override payload.", failures);
+    }
+}
+
+void testGraphNodeDefinitionMaterialOverride(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph material override definition";
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Material");
+    const sdf3d::SdfGraphNode* node = graph.node(material);
+
+    expect(node != nullptr, testName, "Expected material override node.", failures);
+    if (node != nullptr) {
+        expect(node->inputs.size() == 1 && node->inputs[0].name == "sdf", testName, "Expected SDF input.", failures);
+        expect(node->outputs.size() == 1 && node->outputs[0].name == "sdf", testName, "Expected SDF output.", failures);
+    }
+}
+
+void testGraphMigratorInjectsMaterialOverride(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph migrator material override";
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    if (sdf3d::SdfGraphNode* node = graph.node(sphere)) {
+        node->payload.material.albedo = {0.25f, 0.5f, 0.75f};
+    }
+    graph.link(sphere, "sdf", graph.outputNode(), "surface");
+
+    const bool changed = sdf3d::GraphMigrator::injectMaterialOverrides(graph);
+    const sdf3d::SdfCompileResult result = sdf3d::SdfCompiler{}.compile(graph);
+
+    expect(changed, testName, "Expected graph migration change.", failures);
+    expect(result.errors.empty(), testName, "Expected migrated graph to compile.", failures);
+    expect(result.materials.size() == 2, testName, "Expected default plus migrated material.", failures);
+    if (result.materials.size() == 2) {
+        expect(result.materials[1].material.albedo.y == 0.5f, testName, "Expected migrated material payload.", failures);
     }
 }
 
@@ -645,6 +701,9 @@ int main()
     testGraphCompilerUnlinkedOutputNode(failures);
     testGraphCompilerEmpty(failures);
     testGraphCompilerPrimitive(failures);
+    testGraphCompilerMaterialOverride(failures);
+    testGraphNodeDefinitionMaterialOverride(failures);
+    testGraphMigratorInjectsMaterialOverride(failures);
     testGraphCompilerLinkedTransform(failures);
     testGraphCompilerCycle(failures);
     testGraphCompilerSocketOrdering(failures);

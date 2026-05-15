@@ -12,6 +12,7 @@ enum class SdfNodeCategory {
     Primitive,
     Boolean,
     Transform,
+    Material,
     Output,
 };
 

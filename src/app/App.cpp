@@ -100,6 +100,10 @@ bool App::init()
         return false;
     }
 
+    m_eventBus.subscribe<SceneDirtyEvent>([this](const SceneDirtyEvent&) {
+        recompileScene(true);
+    });
+
     if (!recompileScene(false)) {
         shutdown();
         return false;
@@ -119,7 +123,7 @@ void App::run()
         drawDockspace();
         drawPanels();
         if (m_ui.consumeSceneDirty()) {
-            recompileScene(true);
+            m_eventBus.emit(SceneDirtyEvent{});
         }
         ResourceManager::instance().flushErrors();
         endFrame();
@@ -135,6 +139,7 @@ void App::shutdown()
     }
 
     m_renderer.shutdown();
+    m_eventBus.clear();
     ResourceManager::instance().shutdown();
 
     if (ImGui::GetCurrentContext() != nullptr) {
@@ -192,7 +197,7 @@ void App::drawDockspace()
 
 void App::drawPanels()
 {
-    m_ui.drawPanels(m_sceneGraph, m_runtimeErrors);
+    m_ui.drawPanels(m_sceneGraph, m_diagnostics.typedEntries());
     m_viewport.draw(m_renderer);
 }
 
@@ -213,10 +218,10 @@ void App::endFrame()
 
 bool App::recompileScene(bool keepPreviousProgramOnFailure)
 {
-    std::vector<std::string> runtimeErrors;
+    m_diagnostics.clear();
     const SdfCompileResult sceneGlsl = compileScene(m_sceneGraph, m_sdfCompiler);
     for (const std::string& error : sceneGlsl.errors) {
-        runtimeErrors.push_back("[SdfCompiler] " + error);
+        m_diagnostics.add(DiagnosticSeverity::Warning, "SdfCompiler", error);
         std::cerr << "[SDF3D][SdfCompiler] " << error << '\n';
     }
 
@@ -224,14 +229,13 @@ bool App::recompileScene(bool keepPreviousProgramOnFailure)
     // program alive, so a bad graph edit reports diagnostics without blanking.
     if (!m_renderer.reloadScene(sceneGlsl.glsl)) {
         if (!m_renderer.lastError().empty()) {
-            runtimeErrors.push_back("[Renderer] " + m_renderer.lastError());
+            m_diagnostics.add(DiagnosticSeverity::Error, "Renderer", m_renderer.lastError());
         }
-        m_runtimeErrors = std::move(runtimeErrors);
         return keepPreviousProgramOnFailure;
     }
 
+    m_diagnostics.add(DiagnosticSeverity::Info, "Renderer", "Shader validation passed.");
     m_renderer.setMaterials(sceneGlsl.materials);
-    m_runtimeErrors = std::move(runtimeErrors);
     return true;
 }
 

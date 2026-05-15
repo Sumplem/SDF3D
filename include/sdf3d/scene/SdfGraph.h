@@ -10,6 +10,9 @@
 
 namespace sdf3d {
 
+class GraphSystem;
+class SelectionSystem;
+
 /// Stable identifier for a node inside an SDF graph.
 using SdfGraphNodeId = uint64_t;
 
@@ -60,7 +63,7 @@ struct SdfGraphLink {
     std::string toSocket;
 };
 
-/// Editable graph node carrying existing SdfNode parameters/material payload.
+/// Editable graph node carrying SDF parameters and MaterialOverride payload data.
 struct SdfGraphNode {
     SdfGraphNode(SdfGraphNodeId nodeId, SdfNode nodePayload, float x = 0.0f, float y = 0.0f)
         : id(nodeId)
@@ -76,6 +79,7 @@ struct SdfGraphNode {
     std::vector<SdfGraphSocket> outputs;
     float editorX = 0.0f;
     float editorY = 0.0f;
+    bool editorPropertiesCollapsed = false;
 };
 
 /// Directed acyclic SDF graph used by future node-editor UI and compiler passes.
@@ -132,6 +136,9 @@ public:
     const std::vector<SdfGraphLink>& links() const;
 
 private:
+    friend class GraphSystem;
+    friend class SelectionSystem;
+
     // AGENT: IDs are generated inside the graph instead of reusing pointer
     // identity so future serialization, undo, and visual node state stay stable.
     SdfGraphNodeId m_nextId = 1;

@@ -6,6 +6,7 @@
 - Follow SDF3D `AGENTS.md` workflow: plan first, one file or one logical unit, review gate after each file.
 - Do not advance beyond approved file.
 - Do not modify unapproved files.
+- Future multi-file UI modules should be physically grouped in subfolders, e.g. NodeEditor internals live under `src/ui/node_editor/` with internal headers under `include/sdf3d/ui/node_editor/`.
 
 ## Current State
 
@@ -13,12 +14,60 @@
 - Local Windows paths seen in prior runs are historical only and not project requirements.
 - M3/M4-ish scene compiler and UI already exist.
 - Build currently passes with `cmake --build build --config Debug`.
-- Tests currently pass with `build\Debug\sdf3d_tests.exe`.
-- GUI smoke test passed: empty-scene `sdf3d.exe` stayed running for 3 seconds before test stop.
+- Full test suite currently passes; see latest Material Separation entry below for exact executables.
+- GUI smoke test passed: debug `sdf3d.exe` stayed running for 3 seconds before test stop.
+
+## Current Material / Compiler Model
+
+- `SdfNodeType::MaterialOverride` is the explicit editable material node.
+- `SdfNode` still carries `SdfMaterial` payload storage for compatibility/migration, but UI and compiler material assignment must treat it as active only on `MaterialOverride`.
+- Properties panel and inline node controls show material controls only for `MaterialOverride`.
+- `CompilerSystem::compile(graph)` lowers graph to a temporary tree, then `GlslEmitter` emits material-aware GLSL.
+- Primitive nodes emit `vec2(distance, 0)` and use default material id `0`.
+- `MaterialOverride` nodes pass child SDF distance through and replace material id with an appended override material id.
+- Generated GLSL exposes `vec2 sceneSDFWithMaterial(vec3 p)` plus `float sceneSDF(vec3 p)` wrapper.
+- Boolean/domain material behavior:
+  - transforms pass child material through
+  - union/intersect choose winner material by distance
+  - subtract keeps base material
+  - smooth ops currently keep nearer source material; no material blending yet
+- `App::recompileScene()` sends GLSL to `Renderer::reloadScene()` and material list to `Renderer::setMaterials()`.
+- `UniformUploader` uploads up to 64 materials via uniform arrays.
+- Current limitation: material edits still mark full scene dirty and trigger shader reload; future improvement should split material-dirty uniform upload from GLSL-dirty compile.
+- Temporary migration helper exists: `GraphMigrator::injectMaterialOverrides()` wraps legacy primitive material payloads with `MaterialOverride` nodes.
 
 ## Recent Approved Edits
 
+- Material separation completed:
+  - `SdfPrimitive` component header remains pure geometry: `type` + `parameters`, no material field.
+  - Added `SdfNodeCategory::Material` and metadata entry for `MaterialOverride`.
+  - `MaterialOverride` graph node has input `sdf` and output `sdf`.
+  - `MaterialSystem::ensureDefaultMaterial()` reserves default material id `0`.
+  - `GlslEmitter` no longer appends primitive materials.
+  - `GlslEmitter` appends material only at `MaterialOverride` nodes.
+  - Primitives without `MaterialOverride` compile to default material id `0`.
+  - Add menu now exposes `Materials > Material Override`.
+  - `PropertiesPanel` and inline node controls gate material editing to `MaterialOverride`.
+  - Node editor right-click primitive context action can `Wrap in Material Override`.
+  - Added `include/sdf3d/scene/GraphMigrator.h` and `src/scene/GraphMigrator.cpp`.
+  - `GraphMigrator::injectMaterialOverrides()` wraps legacy primitive material payloads and rewires outgoing `sdf` links.
+  - Tests updated for default material id and explicit material override behavior.
+  - Build passed with `cmake --build build --config Debug`.
+  - Full test set passed:
+    - `sdf3d_tests`
+    - `sdf3d_compiler_system_tests`
+    - `sdf3d_glsl_emitter_tests`
+    - `sdf3d_material_system_tests`
+    - `sdf3d_selection_tests`
+    - `sdf3d_event_bus_tests`
+    - `sdf3d_uniform_uploader_tests`
+    - `sdf3d_fbo_renderer_tests`
+    - `sdf3d_shader_manager_tests`
+    - `sdf3d_diagnostics_tests`
+  - GUI smoke passed: debug `sdf3d.exe` stayed running for 3 seconds.
+
 - `src/ui/UI.cpp`
+  - Historical note: material-control bullets below are superseded by Material Separation; current UI gates material controls to `MaterialOverride`.
   - Added Properties panel material controls:
     - `Albedo`
     - `Roughness`
@@ -50,7 +99,7 @@
   - UI split refactor completed:
     - `UI.cpp` is a thin compositor.
     - `AddMenu.h/.cpp` owns Add menu actions.
-    - `NodeEditor.h/.cpp` owns graph canvas, node drag, pin hit-test, Bezier wires, and drag-to-connect.
+    - `NodeEditor.h` plus `src/ui/node_editor/*` own graph canvas, node drag, pin hit-test, Bezier wires, and drag-to-connect.
     - `SceneOutliner.h/.cpp` owns graph controls, selection, delete, manual link controls, and Add Operand.
     - `PropertiesPanel.h/.cpp` owns node name, material, and parameter editing.
     - Removed obsolete `ScenePanel.h/.cpp`.
@@ -155,7 +204,7 @@
   - `Add > Output` is removed.
   - New primitives auto-link into selected node's first free SDF input when possible.
 
-- `src/ui/NodeEditor.cpp`
+- `src/ui/node_editor/NodeEditor.cpp`
   - Link UX now drag-to-connect:
     - drag from output pin
     - live Bezier wire follows cursor
@@ -201,19 +250,23 @@
 
 - `CMakeLists.txt`
   - Added `src/scene/SdfGraph.cpp` to `sdf3d` and `sdf3d_tests`.
-  - Added UI split sources: `AddMenu.cpp`, `NodeEditor.cpp`, `SceneOutliner.cpp`, `PropertiesPanel.cpp`.
+  - Added UI split sources: `AddMenu.cpp`, `src/ui/node_editor/*`, `SceneOutliner.cpp`, `PropertiesPanel.cpp`.
   - Added `SdfGraphCompiler.cpp` and `SdfNodeDefinition.cpp`.
 
 ## Next Proposed Step
 
 - Decide next M4/M5 increment.
 - Likely candidates:
-  - Node editor pan/zoom.
+  - Split files over hard size gate before more feature work:
+    - `src/systems/GlslEmitter.cpp` ~345 lines
+    - `src/ui/node_editor/NodeEditorCanvas.cpp` ~330 lines
+    - `tests/sdf_node_tests.cpp` ~724 lines
   - Keyboard delete / duplicate / frame selected node.
   - Save/load graph schema.
-  - Split compiler family helpers into separate files if compiler grows again.
+  - Remove migration helper after legacy scene migration period.
 
 ## Known Caveat
 
 - Need plan/approval before touching feature code.
 - GUI smoke should be rerun after major NodeEditor visual work.
+- `SdfNode::material` remains as payload storage for `MaterialOverride` and migration compatibility; do not re-enable primitive material editing/emission.

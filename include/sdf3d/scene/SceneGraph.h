@@ -5,6 +5,8 @@
 
 namespace sdf3d {
 
+class SelectionSystem;
+
 /// Owns the root SDF expression tree and current node selection.
 class SceneGraph {
 public:
@@ -29,6 +31,8 @@ public:
     const SdfGraph& graph() const;
 
 private:
+    friend class SelectionSystem;
+
     // AGENT: SceneGraph owns both models during migration so current tree UI
     // stays working while graph compiler/UI land in small reviewable steps.
     SdfGraph m_graph;

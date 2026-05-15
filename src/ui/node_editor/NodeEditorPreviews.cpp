@@ -1,0 +1,89 @@
+#include "sdf3d/ui/node_editor/NodeEditorCanvas.h"
+
+#include <optional>
+#include <string>
+
+namespace sdf3d::node_editor {
+namespace {
+
+bool isBypassInput(SdfNodeType type, const std::string& socket)
+{
+    switch (type) {
+    case SdfNodeType::Union:
+    case SdfNodeType::SmoothUnion:
+    case SdfNodeType::Intersect:
+    case SdfNodeType::SmoothIntersect:
+        return socket == "left" || socket == "right";
+    case SdfNodeType::Subtract:
+    case SdfNodeType::SmoothSubtract:
+        return socket == "base";
+    default:
+        return false;
+    }
+}
+
+std::optional<SdfGraphLink> bypassSourceLink(const SdfGraph& graph, const SdfGraphNode& node)
+{
+    if (!nodeHasMissingRequiredInput(graph, node)) {
+        return std::nullopt;
+    }
+
+    for (const SdfGraphSocket& input : node.inputs) {
+        if (input.type != SdfSocketType::Sdf || !isBypassInput(node.payload.type, input.name)) {
+            continue;
+        }
+
+        if (const std::optional<SdfGraphLink> link = linkToInput(graph, node.id, input.name)) {
+            return link;
+        }
+    }
+
+    return std::nullopt;
+}
+
+} // namespace
+
+void drawInactiveNodePreview(
+    const SdfGraph& graph,
+    const GraphNodeLayout& layout,
+    const CanvasFrame& frame,
+    const std::vector<GraphSocketAnchor>& anchors)
+{
+    const SdfGraphNode& node = *layout.node;
+    if (!nodeHasMissingRequiredInput(graph, node)) {
+        return;
+    }
+
+    const ImU32 inactiveColor = IM_COL32(255, 180, 80, 210);
+    const ImVec2 nodeEnd = {layout.position.x + layout.size.x, layout.position.y + layout.size.y};
+    frame.drawList->AddRect(layout.position, nodeEnd, inactiveColor, scaleValue(frame, 6.0f), 0, scaleValue(frame, 2.0f));
+
+    for (const SdfGraphSocket& input : node.inputs) {
+        if (input.type != SdfSocketType::Sdf || linkToInput(graph, layout.id, input.name)) {
+            continue;
+        }
+
+        if (const std::optional<ImVec2> pin = findSocketAnchor(anchors, layout.id, input.name, false)) {
+            frame.drawList->AddCircle(*pin, scaleValue(frame, 8.0f), inactiveColor, 16, scaleValue(frame, 2.0f));
+        }
+    }
+
+    const std::optional<SdfGraphLink> source = bypassSourceLink(graph, node);
+    const std::optional<SdfGraphLink> downstream = firstLinkFromOutput(graph, layout.id, "sdf");
+    if (!source || !downstream) {
+        return;
+    }
+
+    const std::optional<ImVec2> from = findSocketAnchor(anchors, source->fromNode, source->fromSocket, true);
+    const std::optional<ImVec2> to = findSocketAnchor(anchors, downstream->toNode, downstream->toSocket, false);
+    if (!from || !to) {
+        return;
+    }
+
+    // AGENT: Compiler bypasses incomplete boolean nodes in these cases; this
+    // virtual wire shows that effective path without mutating graph links.
+    const float handle = scaleValue(frame, 90.0f);
+    frame.drawList->AddBezierCubic(*from, {from->x + handle, from->y}, {to->x - handle, to->y}, *to, IM_COL32(255, 180, 80, 180), scaleValue(frame, 2.0f));
+}
+
+} // namespace sdf3d::node_editor

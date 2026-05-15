@@ -8,6 +8,8 @@
 
 #include <glm/glm.hpp>
 
+#include "sdf3d/components/SdfMaterial.h"
+
 namespace sdf3d {
 
 /// Canonical SDF node taxonomy for Phase 1 and planned Phase 2 extensions.
@@ -35,14 +37,6 @@ enum class SdfNodeType {
     Bend,
     MaterialOverride,
     Output,
-};
-
-/// Per-node material parameters used by the raymarch shader.
-struct SdfMaterial {
-    glm::vec3 albedo = {0.8f, 0.8f, 0.8f};
-    float roughness = 0.5f;
-    float metallic = 0.0f;
-    float emission = 0.0f;
 };
 
 /// Expression-tree node for SDF primitives, boolean ops, domain ops, and material overrides.
