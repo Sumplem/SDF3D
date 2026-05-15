@@ -1,12 +1,11 @@
 #include "sdf3d/scene/SdfCompiler.h"
 
+#include "sdf3d/scene/SdfGraphCompiler.h"
+
 #include <algorithm>
-#include <functional>
 #include <iomanip>
 #include <sstream>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace sdf3d {
 namespace {
@@ -45,24 +44,14 @@ std::string glslHit(const std::string& distanceExpr, int materialId)
     return "vec2(" + distanceExpr + ", " + glslFloat(static_cast<float>(materialId)) + ")";
 }
 
+std::string glslNoHit()
+{
+    return "vec2(1e6, 0.0)";
+}
+
 std::string hitDistance(const std::string& hitExpr)
 {
     return "(" + hitExpr + ").x";
-}
-
-int socketOrder(const std::string& socket)
-{
-    if (socket == "child") {
-        return 0;
-    }
-    if (socket == "left" || socket == "base") {
-        return 0;
-    }
-    if (socket == "right" || socket == "cutter") {
-        return 1;
-    }
-
-    return 100;
 }
 
 std::string nodeTypeName(SdfNodeType type)
@@ -112,6 +101,8 @@ std::string nodeTypeName(SdfNodeType type)
         return "Bend";
     case SdfNodeType::MaterialOverride:
         return "MaterialOverride";
+    case SdfNodeType::Output:
+        return "Output";
     }
 
     return "Unknown";
@@ -121,71 +112,9 @@ std::string nodeTypeName(SdfNodeType type)
 
 SdfCompileResult SdfCompiler::compile(const SdfGraph& graph) const
 {
-    if (graph.outputNode() == 0) {
-        return compile(nullptr);
-    }
-
-    std::vector<std::string> graphErrors;
-    std::unordered_map<SdfGraphNodeId, SdfNodePtr> compiledNodes;
-    std::unordered_set<SdfGraphNodeId> visiting;
-
-    std::function<SdfNodePtr(SdfGraphNodeId)> buildTree = [&](SdfGraphNodeId id) -> SdfNodePtr {
-        if (compiledNodes.find(id) != compiledNodes.end()) {
-            return compiledNodes[id];
-        }
-
-        if (visiting.find(id) != visiting.end()) {
-            graphErrors.push_back("Cycle detected in SDF graph.");
-            return nullptr;
-        }
-
-        const SdfGraphNode* graphNode = graph.node(id);
-        if (graphNode == nullptr) {
-            graphErrors.push_back("Graph references a missing SDF node.");
-            return nullptr;
-        }
-
-        visiting.insert(id);
-
-        SdfNodePtr node = makeSdfNode(graphNode->payload.type, graphNode->payload.name);
-        node->parameters = graphNode->payload.parameters;
-        node->material = graphNode->payload.material;
-
-        std::vector<SdfGraphLink> inputs;
-        for (const SdfGraphLink& link : graph.links()) {
-            if (link.toNode == id) {
-                inputs.push_back(link);
-            }
-        }
-
-        // AGENT: Named sockets map user-facing graph links to expression order;
-        // fallback lexical ordering keeps custom socket names deterministic.
-        std::sort(inputs.begin(), inputs.end(), [](const SdfGraphLink& a, const SdfGraphLink& b) {
-            const int orderA = socketOrder(a.toSocket);
-            const int orderB = socketOrder(b.toSocket);
-            if (orderA != orderB) {
-                return orderA < orderB;
-            }
-            if (a.toSocket != b.toSocket) {
-                return a.toSocket < b.toSocket;
-            }
-            return a.fromNode < b.fromNode;
-        });
-
-        for (const SdfGraphLink& link : inputs) {
-            SdfNodePtr child = buildTree(link.fromNode);
-            if (child) {
-                node->children.push_back(std::move(child));
-            }
-        }
-
-        visiting.erase(id);
-        compiledNodes[id] = node;
-        return node;
-    };
-
-    SdfCompileResult result = compile(buildTree(graph.outputNode()));
-    result.errors.insert(result.errors.begin(), graphErrors.begin(), graphErrors.end());
+    const SdfGraphLowerResult lowered = lowerSdfGraphToTree(graph);
+    SdfCompileResult result = compile(lowered.root);
+    result.errors.insert(result.errors.begin(), lowered.errors.begin(), lowered.errors.end());
     return result;
 }
 
@@ -263,13 +192,8 @@ SdfCompileResult SdfCompiler::compile(const SdfNodePtr& root) const
     return result;
 }
 
-std::string SdfCompiler::compileNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const
+std::string SdfCompiler::compilePrimitiveNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const
 {
-    if (!node) {
-        result.errors.push_back("Encountered a null SDF node.");
-        return "1e6";
-    }
-
     switch (node->type) {
     case SdfNodeType::Sphere: {
         const float radius = parameterOr(*node, "radius", 1.0f);
@@ -310,10 +234,22 @@ std::string SdfCompiler::compileNode(const SdfNodePtr& node, const std::string& 
             appendMaterial(result, node->material));
     }
 
+    default:
+        result.errors.push_back("Unsupported primitive node type in compiler: " + nodeTypeName(node->type));
+        return glslNoHit();
+    }
+}
+
+std::string SdfCompiler::compileBooleanNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const
+{
+    switch (node->type) {
     case SdfNodeType::Union: {
         if (node->children.empty()) {
             result.errors.push_back("Union node has no children.");
-            return "1e6";
+            return glslNoHit();
+        }
+        if (node->children.size() == 1) {
+            return compileNode(node->children.front(), pointExpr, result);
         }
 
         std::string expression = compileNode(node->children.front(), pointExpr, result);
@@ -328,7 +264,10 @@ std::string SdfCompiler::compileNode(const SdfNodePtr& node, const std::string& 
     case SdfNodeType::SmoothUnion: {
         if (node->children.empty()) {
             result.errors.push_back("SmoothUnion node has no children.");
-            return "1e6";
+            return glslNoHit();
+        }
+        if (node->children.size() == 1) {
+            return compileNode(node->children.front(), pointExpr, result);
         }
 
         result.usesSmoothMin = true;
@@ -347,9 +286,16 @@ std::string SdfCompiler::compileNode(const SdfNodePtr& node, const std::string& 
     }
 
     case SdfNodeType::Subtract: {
-        if (node->children.size() != 2) {
-            result.errors.push_back("Subtract node requires exactly two children.");
-            return "1e6";
+        if (node->children.empty()) {
+            result.errors.push_back("Subtract node requires a base child.");
+            return glslNoHit();
+        }
+        if (node->children.size() == 1) {
+            result.errors.push_back("Subtract node is missing a cutter child; bypassing to base.");
+            return compileNode(node->children.front(), pointExpr, result);
+        }
+        if (node->children.size() > 2) {
+            result.errors.push_back("Subtract node ignores extra children beyond base and cutter.");
         }
 
         const std::string base = compileNode(node->children[0], pointExpr, result);
@@ -358,9 +304,16 @@ std::string SdfCompiler::compileNode(const SdfNodePtr& node, const std::string& 
     }
 
     case SdfNodeType::SmoothSubtract: {
-        if (node->children.size() != 2) {
-            result.errors.push_back("SmoothSubtract node requires exactly two children.");
-            return "1e6";
+        if (node->children.empty()) {
+            result.errors.push_back("SmoothSubtract node requires a base child.");
+            return glslNoHit();
+        }
+        if (node->children.size() == 1) {
+            result.errors.push_back("SmoothSubtract node is missing a cutter child; bypassing to base.");
+            return compileNode(node->children.front(), pointExpr, result);
+        }
+        if (node->children.size() > 2) {
+            result.errors.push_back("SmoothSubtract node ignores extra children beyond base and cutter.");
         }
 
         result.usesSmoothMin = true;
@@ -373,7 +326,10 @@ std::string SdfCompiler::compileNode(const SdfNodePtr& node, const std::string& 
     case SdfNodeType::Intersect: {
         if (node->children.empty()) {
             result.errors.push_back("Intersect node has no children.");
-            return "1e6";
+            return glslNoHit();
+        }
+        if (node->children.size() == 1) {
+            return compileNode(node->children.front(), pointExpr, result);
         }
 
         std::string expression = compileNode(node->children.front(), pointExpr, result);
@@ -388,7 +344,10 @@ std::string SdfCompiler::compileNode(const SdfNodePtr& node, const std::string& 
     case SdfNodeType::SmoothIntersect: {
         if (node->children.empty()) {
             result.errors.push_back("SmoothIntersect node has no children.");
-            return "1e6";
+            return glslNoHit();
+        }
+        if (node->children.size() == 1) {
+            return compileNode(node->children.front(), pointExpr, result);
         }
 
         result.usesSmoothMin = true;
@@ -404,10 +363,22 @@ std::string SdfCompiler::compileNode(const SdfNodePtr& node, const std::string& 
         return expression;
     }
 
+    default:
+        result.errors.push_back("Unsupported boolean node type in compiler: " + nodeTypeName(node->type));
+        return glslNoHit();
+    }
+}
+
+std::string SdfCompiler::compileDomainNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const
+{
+    switch (node->type) {
     case SdfNodeType::Translate: {
-        if (node->children.size() != 1) {
-            result.errors.push_back("Translate node requires exactly one child.");
-            return "1e6";
+        if (node->children.empty()) {
+            result.errors.push_back("Translate node has no child.");
+            return glslNoHit();
+        }
+        if (node->children.size() > 1) {
+            result.errors.push_back("Translate node ignores extra children.");
         }
 
         const float x = parameterOr(*node, "x", 0.0f);
@@ -418,9 +389,12 @@ std::string SdfCompiler::compileNode(const SdfNodePtr& node, const std::string& 
     }
 
     case SdfNodeType::Rotate: {
-        if (node->children.size() != 1) {
-            result.errors.push_back("Rotate node requires exactly one child.");
-            return "1e6";
+        if (node->children.empty()) {
+            result.errors.push_back("Rotate node has no child.");
+            return glslNoHit();
+        }
+        if (node->children.size() > 1) {
+            result.errors.push_back("Rotate node ignores extra children.");
         }
 
         result.usesRotate = true;
@@ -434,9 +408,12 @@ std::string SdfCompiler::compileNode(const SdfNodePtr& node, const std::string& 
     }
 
     case SdfNodeType::Scale: {
-        if (node->children.size() != 1) {
-            result.errors.push_back("Scale node requires exactly one child.");
-            return "1e6";
+        if (node->children.empty()) {
+            result.errors.push_back("Scale node has no child.");
+            return glslNoHit();
+        }
+        if (node->children.size() > 1) {
+            result.errors.push_back("Scale node ignores extra children.");
         }
 
         const float scale = std::max(parameterOr(*node, "scale", 1.0f), 0.0001f);
@@ -446,8 +423,42 @@ std::string SdfCompiler::compileNode(const SdfNodePtr& node, const std::string& 
     }
 
     default:
+        result.errors.push_back("Unsupported domain node type in compiler: " + nodeTypeName(node->type));
+        return glslNoHit();
+    }
+}
+
+std::string SdfCompiler::compileNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const
+{
+    if (!node) {
+        result.errors.push_back("Encountered a null SDF node.");
+        return glslNoHit();
+    }
+
+    switch (node->type) {
+    case SdfNodeType::Sphere:
+    case SdfNodeType::Box:
+    case SdfNodeType::Cylinder:
+    case SdfNodeType::Torus:
+    case SdfNodeType::Plane:
+        return compilePrimitiveNode(node, pointExpr, result);
+
+    case SdfNodeType::Union:
+    case SdfNodeType::SmoothUnion:
+    case SdfNodeType::Subtract:
+    case SdfNodeType::SmoothSubtract:
+    case SdfNodeType::Intersect:
+    case SdfNodeType::SmoothIntersect:
+        return compileBooleanNode(node, pointExpr, result);
+
+    case SdfNodeType::Translate:
+    case SdfNodeType::Rotate:
+    case SdfNodeType::Scale:
+        return compileDomainNode(node, pointExpr, result);
+
+    default:
         result.errors.push_back("Unsupported SDF node type in compiler: " + nodeTypeName(node->type));
-        return "1e6";
+        return glslNoHit();
     }
 }
 

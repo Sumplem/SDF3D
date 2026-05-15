@@ -18,9 +18,14 @@ add_executable(sdf3d
     src/math/Math.cpp
     src/renderer/Renderer.cpp
     src/scene/SdfGraph.cpp
+    src/scene/SdfGraphCompiler.cpp
+    src/scene/SdfNodeDefinition.cpp
     src/scene/SceneGraph.cpp
     src/scene/SdfCompiler.cpp
-    src/ui/ScenePanel.cpp
+    src/ui/AddMenu.cpp
+    src/ui/NodeEditor.cpp
+    src/ui/PropertiesPanel.cpp
+    src/ui/SceneOutliner.cpp
     src/ui/UI.cpp
     src/ui/Viewport.cpp
 )
@@ -50,6 +55,8 @@ add_custom_command(TARGET sdf3d POST_BUILD
 add_executable(sdf3d_tests
     tests/sdf_node_tests.cpp
     src/scene/SdfGraph.cpp
+    src/scene/SdfGraphCompiler.cpp
+    src/scene/SdfNodeDefinition.cpp
     src/scene/SdfCompiler.cpp
 )
 

@@ -1,46 +1,29 @@
 #include "sdf3d/scene/SdfGraph.h"
 
+#include "sdf3d/scene/SdfNodeDefinition.h"
+
 #include <algorithm>
 #include <utility>
 
 namespace sdf3d {
 namespace {
 
-SdfGraphSocket inputSocket(std::string name, SdfSocketType type = SdfSocketType::Sdf, bool multiInput = false)
-{
-    return {std::move(name), type, SdfSocketDirection::Input, multiInput};
-}
-
-SdfGraphSocket outputSocket(std::string name, SdfSocketType type = SdfSocketType::Sdf)
-{
-    return {std::move(name), type, SdfSocketDirection::Output, false};
-}
-
 std::vector<SdfGraphSocket> defaultInputsFor(SdfNodeType type)
 {
-    switch (type) {
-    case SdfNodeType::Union:
-    case SdfNodeType::SmoothUnion:
-    case SdfNodeType::Intersect:
-    case SdfNodeType::SmoothIntersect:
-        return {inputSocket("left"), inputSocket("right")};
-    case SdfNodeType::Subtract:
-    case SdfNodeType::SmoothSubtract:
-        return {inputSocket("base"), inputSocket("cutter")};
-    case SdfNodeType::Translate:
-    case SdfNodeType::Rotate:
-    case SdfNodeType::Scale:
-    case SdfNodeType::MaterialOverride:
-        return {inputSocket("child")};
-    default:
-        return {};
+    if (const SdfNodeDefinition* definition = sdfNodeDefinition(type)) {
+        return definition->inputs;
     }
+
+    return {};
 }
 
 std::vector<SdfGraphSocket> defaultOutputsFor(SdfNodeType type)
 {
-    (void)type;
-    return {outputSocket("sdf")};
+    if (const SdfNodeDefinition* definition = sdfNodeDefinition(type)) {
+        return definition->outputs;
+    }
+
+    return {};
 }
 
 const SdfGraphSocket* findSocket(const std::vector<SdfGraphSocket>& sockets, const std::string& name, SdfSocketDirection direction)
@@ -58,19 +41,28 @@ const SdfGraphSocket* findSocket(const std::vector<SdfGraphSocket>& sockets, con
 
 SdfGraph::SdfGraph()
 {
+    const SdfGraphNodeId id = m_nextId++;
+    SdfGraphNode graphNode{id, *makeSdfNodeFromDefinition(SdfNodeType::Output), 560.0f, 40.0f};
+    graphNode.inputs = defaultInputsFor(SdfNodeType::Output);
+    graphNode.outputs = defaultOutputsFor(SdfNodeType::Output);
+    m_nodes.emplace(id, std::move(graphNode));
+    m_outputNode = id;
+    m_selectedNode = id;
 }
 
 SdfGraphNodeId SdfGraph::createNode(SdfNodeType type, std::string name)
 {
     const SdfGraphNodeId id = m_nextId++;
-    SdfGraphNode graphNode{id, SdfNode(type, std::move(name)), 0.0f, 0.0f};
+    SdfNodePtr payload = makeSdfNodeFromDefinition(type);
+    if (!name.empty()) {
+        payload->name = std::move(name);
+    }
+    SdfGraphNode graphNode{id, *payload, 0.0f, 0.0f};
     graphNode.inputs = defaultInputsFor(type);
     graphNode.outputs = defaultOutputsFor(type);
 
-    // AGENT: First node becomes output by default so a graph can render as soon
-    // as it contains one valid SDF expression.
     m_nodes.emplace(id, std::move(graphNode));
-    if (m_outputNode == 0) {
+    if (m_outputNode == 0 || type == SdfNodeType::Output) {
         m_outputNode = id;
     }
     m_selectedNode = id;
@@ -79,6 +71,10 @@ SdfGraphNodeId SdfGraph::createNode(SdfNodeType type, std::string name)
 
 bool SdfGraph::deleteNode(SdfGraphNodeId id)
 {
+    if (isOutputNode(id)) {
+        return false;
+    }
+
     if (m_nodes.erase(id) == 0) {
         return false;
     }
@@ -144,9 +140,25 @@ bool SdfGraph::unlinkInput(SdfGraphNodeId toNode, const std::string& toSocket)
     return m_links.size() != oldSize;
 }
 
+bool SdfGraph::unlink(SdfGraphNodeId fromNode, const std::string& fromSocket, SdfGraphNodeId toNode, const std::string& toSocket)
+{
+    const size_t oldSize = m_links.size();
+    m_links.erase(std::remove_if(m_links.begin(), m_links.end(),
+                      [fromNode, &fromSocket, toNode, &toSocket](const SdfGraphLink& link) {
+                          return link.fromNode == fromNode
+                              && link.fromSocket == fromSocket
+                              && link.toNode == toNode
+                              && link.toSocket == toSocket;
+                      }),
+        m_links.end());
+
+    return m_links.size() != oldSize;
+}
+
 bool SdfGraph::setOutputNode(SdfGraphNodeId id)
 {
-    if (id != 0 && m_nodes.find(id) == m_nodes.end()) {
+    const auto it = m_nodes.find(id);
+    if (it == m_nodes.end() || it->second.payload.type != SdfNodeType::Output) {
         return false;
     }
 
@@ -172,6 +184,22 @@ bool SdfGraph::setSelectedNode(SdfGraphNodeId id)
 SdfGraphNodeId SdfGraph::selectedNode() const
 {
     return m_selectedNode;
+}
+
+bool SdfGraph::isOutputNode(SdfGraphNodeId id) const
+{
+    return id != 0 && id == m_outputNode;
+}
+
+bool SdfGraph::hasLinks(SdfGraphNodeId id) const
+{
+    for (const SdfGraphLink& link : m_links) {
+        if (link.fromNode == id || link.toNode == id) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 SdfGraphNode* SdfGraph::node(SdfGraphNodeId id)

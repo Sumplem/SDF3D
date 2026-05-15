@@ -280,13 +280,15 @@ void testGraphCreateSelectOutput(std::vector<TestFailure>& failures)
     const std::string testName = "graph create select output";
     sdf3d::SdfGraph graph;
 
-    expect(graph.outputNode() == 0, testName, "Expected empty graph output.", failures);
-    expect(graph.selectedNode() == 0, testName, "Expected empty graph selection.", failures);
+    const sdf3d::SdfGraphNodeId output = graph.outputNode();
+    expect(output != 0, testName, "Expected default output node.", failures);
+    expect(graph.selectedNode() == output, testName, "Expected default output selection.", failures);
+    expect(graph.isOutputNode(output), testName, "Expected default output marker.", failures);
 
     const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
 
     expect(sphere != 0, testName, "Expected nonzero graph node ID.", failures);
-    expect(graph.outputNode() == sphere, testName, "Expected first node to become output.", failures);
+    expect(graph.outputNode() == output, testName, "Expected default output to remain output.", failures);
     expect(graph.selectedNode() == sphere, testName, "Expected created node to become selected.", failures);
     expect(graph.node(sphere) != nullptr, testName, "Expected node lookup to succeed.", failures);
     if (const sdf3d::SdfGraphNode* node = graph.node(sphere)) {
@@ -318,6 +320,22 @@ void testGraphLinksAndDelete(std::vector<TestFailure>& failures)
     expect(graph.deleteNode(box), testName, "Expected delete to succeed.", failures);
     expect(graph.links().empty(), testName, "Expected connected links to be removed.", failures);
     expect(graph.node(box) == nullptr, testName, "Expected deleted node lookup to fail.", failures);
+    expect(!graph.deleteNode(graph.outputNode()), testName, "Expected output node delete to fail.", failures);
+}
+
+void testGraphExactUnlink(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph exact unlink";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId output = graph.outputNode();
+
+    expect(graph.link(sphere, "sdf", output, "surface"), testName, "Expected output link to succeed.", failures);
+    expect(graph.links().size() == 1, testName, "Expected one output link.", failures);
+    expect(!graph.unlink(sphere, "missing", output, "surface"), testName, "Expected missing exact link unlink to fail.", failures);
+    expect(graph.unlink(sphere, "sdf", output, "surface"), testName, "Expected exact unlink to succeed.", failures);
+    expect(graph.links().empty(), testName, "Expected exact unlink to remove link.", failures);
 }
 
 void testGraphSocketsAndTypedLinks(std::vector<TestFailure>& failures)
@@ -346,6 +364,23 @@ void testGraphSocketsAndTypedLinks(std::vector<TestFailure>& failures)
     expect(!graph.link(sphere, "sdf", translate, "missing"), testName, "Expected missing input socket to fail.", failures);
 }
 
+void testGraphOutputNodeSockets(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph output node sockets";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId output = graph.outputNode();
+    const sdf3d::SdfGraphNode* outputNode = graph.node(output);
+
+    expect(outputNode != nullptr, testName, "Expected output node.", failures);
+    if (outputNode != nullptr) {
+        expect(outputNode->inputs.size() == 1, testName, "Expected one output input socket.", failures);
+        expect(outputNode->inputs.front().name == "surface", testName, "Expected surface input socket.", failures);
+        expect(outputNode->outputs.empty(), testName, "Expected no output sockets.", failures);
+    }
+    expect(graph.outputNode() == output, testName, "Expected output node to become graph output.", failures);
+}
+
 void testGraphOutputAndSelectionValidation(std::vector<TestFailure>& failures)
 {
     const std::string testName = "graph output and selection validation";
@@ -355,12 +390,46 @@ void testGraphOutputAndSelectionValidation(std::vector<TestFailure>& failures)
 
     expect(!graph.setOutputNode(9999), testName, "Expected invalid output node to fail.", failures);
     expect(!graph.setSelectedNode(9999), testName, "Expected invalid selected node to fail.", failures);
-    expect(graph.setOutputNode(0), testName, "Expected clearing output to succeed.", failures);
-    expect(graph.outputNode() == 0, testName, "Expected output to be cleared.", failures);
+    const sdf3d::SdfGraphNodeId output = graph.outputNode();
+    expect(!graph.setOutputNode(0), testName, "Expected clearing output to fail.", failures);
+    expect(graph.outputNode() == output, testName, "Expected output to stay default output.", failures);
     expect(graph.setSelectedNode(0), testName, "Expected clearing selection to succeed.", failures);
     expect(graph.selectedNode() == 0, testName, "Expected selection to be cleared.", failures);
-    expect(graph.setOutputNode(sphere), testName, "Expected valid output node to succeed.", failures);
-    expect(graph.outputNode() == sphere, testName, "Expected output to be restored.", failures);
+    expect(!graph.setOutputNode(sphere), testName, "Expected non-output node output assignment to fail.", failures);
+    expect(graph.outputNode() == output, testName, "Expected output to remain output node.", failures);
+}
+
+void testGraphCompilerOutputNode(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph compiler output node";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    if (sdf3d::SdfGraphNode* node = graph.node(sphere)) {
+        node->payload.parameters["radius"] = 1.5f;
+    }
+    const sdf3d::SdfGraphNodeId output = graph.outputNode();
+    graph.link(sphere, "sdf", output, "surface");
+
+    const sdf3d::SdfCompiler compiler;
+    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+
+    expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
+    expect(contains(result.glsl, "length(p) - 1.500000"), testName, "Expected output node to compile linked surface.", failures);
+    expect(result.materials.size() == 1, testName, "Expected linked surface material.", failures);
+}
+
+void testGraphCompilerUnlinkedOutputNode(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph compiler unlinked output node";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfCompiler compiler;
+    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+
+    expect(!result.errors.empty(), testName, "Expected unlinked output compiler error.", failures);
+    expect(contains(result.errors.front(), "Output node"), testName, "Expected output node error text.", failures);
+    expect(contains(result.glsl, "return 1e6;"), testName, "Expected safe no-hit GLSL.", failures);
 }
 
 void testGraphCompilerEmpty(std::vector<TestFailure>& failures)
@@ -384,6 +453,7 @@ void testGraphCompilerPrimitive(std::vector<TestFailure>& failures)
         node->payload.parameters["radius"] = 2.0f;
         node->payload.material.albedo = {0.25f, 0.5f, 0.75f};
     }
+    graph.link(sphere, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
@@ -408,7 +478,7 @@ void testGraphCompilerLinkedTransform(std::vector<TestFailure>& failures)
         node->payload.parameters["z"] = -1.0f;
     }
     graph.link(sphere, translate, "child");
-    graph.setOutputNode(translate);
+    graph.link(translate, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
@@ -425,7 +495,7 @@ void testGraphCompilerCycle(std::vector<TestFailure>& failures)
     const sdf3d::SdfGraphNodeId b = graph.createNode(sdf3d::SdfNodeType::Union, "B");
     graph.link(a, b, "left");
     graph.link(b, a, "left");
-    graph.setOutputNode(a);
+    graph.link(a, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
@@ -455,7 +525,7 @@ void testGraphCompilerSocketOrdering(std::vector<TestFailure>& failures)
     // not insertion order, control binary operation operands.
     graph.link(cutter, subtract, "cutter");
     graph.link(base, subtract, "base");
-    graph.setOutputNode(subtract);
+    graph.link(subtract, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
@@ -468,6 +538,78 @@ void testGraphCompilerSocketOrdering(std::vector<TestFailure>& failures)
     expect(basePosition != std::string::npos, testName, "Expected base radius expression.", failures);
     expect(cutterPosition != std::string::npos, testName, "Expected cutter radius expression.", failures);
     expect(cutterPosition < basePosition, testName, "Expected cutter socket to be the negated subtract operand.", failures);
+}
+
+void testGraphCompilerIncompleteUnion(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph compiler incomplete union";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
+    graph.link(unionNode, "sdf", graph.outputNode(), "surface");
+
+    const sdf3d::SdfCompiler compiler;
+    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+
+    expect(!result.errors.empty(), testName, "Expected incomplete union compiler error.", failures);
+    expect(contains(result.glsl, "return vec2(1e6, 0.0);"), testName, "Expected material-aware no-hit return.", failures);
+    expect(!contains(result.glsl, "return 1e6;\n}\n\nfloat sceneSDF"), testName, "Expected vec2 scene path not to return raw float.", failures);
+}
+
+void testGraphCompilerBypassSingleInputUnion(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph compiler bypass single input union";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    if (sdf3d::SdfGraphNode* node = graph.node(sphere)) {
+        node->payload.parameters["radius"] = 1.25f;
+    }
+    const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
+    graph.link(sphere, unionNode, "left");
+    graph.link(unionNode, "sdf", graph.outputNode(), "surface");
+
+    const sdf3d::SdfCompiler compiler;
+    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+
+    expect(result.errors.empty(), testName, "Expected single-input union to bypass without errors.", failures);
+    expect(contains(result.glsl, "length(p) - 1.250000"), testName, "Expected union to compile linked child.", failures);
+}
+
+void testGraphCompilerBypassSubtractBase(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph compiler bypass subtract base";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Base");
+    if (sdf3d::SdfGraphNode* node = graph.node(sphere)) {
+        node->payload.parameters["radius"] = 1.75f;
+    }
+    const sdf3d::SdfGraphNodeId subtract = graph.createNode(sdf3d::SdfNodeType::Subtract, "Subtract");
+    graph.link(sphere, subtract, "base");
+    graph.link(subtract, "sdf", graph.outputNode(), "surface");
+
+    const sdf3d::SdfCompiler compiler;
+    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+
+    expect(!result.errors.empty(), testName, "Expected missing cutter warning.", failures);
+    expect(contains(result.glsl, "length(p) - 1.750000"), testName, "Expected subtract to bypass to base child.", failures);
+    expect(!contains(result.glsl, "max(-("), testName, "Expected incomplete subtract not to emit subtract operation.", failures);
+}
+
+void testGraphCompilerMissingTransformChild(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph compiler missing transform child";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId translate = graph.createNode(sdf3d::SdfNodeType::Translate, "Translate");
+    graph.link(translate, "sdf", graph.outputNode(), "surface");
+
+    const sdf3d::SdfCompiler compiler;
+    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+
+    expect(!result.errors.empty(), testName, "Expected missing transform child warning.", failures);
+    expect(contains(result.glsl, "return vec2(1e6, 0.0);"), testName, "Expected no-hit vec2 for missing child.", failures);
 }
 
 } // namespace
@@ -495,13 +637,21 @@ int main()
     testMaterialMetadata(failures);
     testGraphCreateSelectOutput(failures);
     testGraphLinksAndDelete(failures);
+    testGraphExactUnlink(failures);
     testGraphSocketsAndTypedLinks(failures);
+    testGraphOutputNodeSockets(failures);
     testGraphOutputAndSelectionValidation(failures);
+    testGraphCompilerOutputNode(failures);
+    testGraphCompilerUnlinkedOutputNode(failures);
     testGraphCompilerEmpty(failures);
     testGraphCompilerPrimitive(failures);
     testGraphCompilerLinkedTransform(failures);
     testGraphCompilerCycle(failures);
     testGraphCompilerSocketOrdering(failures);
+    testGraphCompilerIncompleteUnion(failures);
+    testGraphCompilerBypassSingleInputUnion(failures);
+    testGraphCompilerBypassSubtractBase(failures);
+    testGraphCompilerMissingTransformChild(failures);
 
     if (!failures.empty()) {
         for (const TestFailure& failure : failures) {

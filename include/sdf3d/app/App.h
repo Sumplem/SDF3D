@@ -6,6 +6,9 @@
 #include "sdf3d/ui/UI.h"
 #include "sdf3d/ui/Viewport.h"
 
+#include <string>
+#include <vector>
+
 struct GLFWwindow;
 
 namespace sdf3d {
@@ -34,6 +37,7 @@ private:
     void drawDockspace();
     void drawPanels();
     void endFrame();
+    bool recompileScene(bool keepPreviousProgramOnFailure);
 
     GLFWwindow* m_window = nullptr;
     Renderer m_renderer;
@@ -41,6 +45,7 @@ private:
     SdfCompiler m_sdfCompiler;
     UI m_ui;
     Viewport m_viewport;
+    std::vector<std::string> m_runtimeErrors;
     bool m_initialized = false;
 };
 

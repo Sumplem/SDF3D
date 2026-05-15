@@ -34,6 +34,7 @@ enum class SdfNodeType {
     Twist,
     Bend,
     MaterialOverride,
+    Output,
 };
 
 /// Per-node material parameters used by the raymarch shader.
@@ -223,6 +224,12 @@ inline SdfNodePtr makeScaleNode(SdfNodePtr child, float scale, std::string name 
     node->parameters["scale"] = scale;
     node->children.push_back(std::move(child));
     return node;
+}
+
+/// Creates a graph output marker node.
+inline SdfNodePtr makeOutputNode(std::string name = "Output")
+{
+    return makeSdfNode(SdfNodeType::Output, std::move(name));
 }
 
 } // namespace sdf3d

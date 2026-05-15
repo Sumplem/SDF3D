@@ -9,6 +9,8 @@
 
 ## Current State
 
+- Use the current repo root / process working directory. Do not assume a fixed absolute path; this repo may live at different paths on different machines.
+- Local Windows paths seen in prior runs are historical only and not project requirements.
 - M3/M4-ish scene compiler and UI already exist.
 - Build currently passes with `cmake --build build --config Debug`.
 - Tests currently pass with `build\Debug\sdf3d_tests.exe`.
@@ -42,9 +44,16 @@
     - draggable node cards
     - visible socket pins
     - Bezier link wires
-    - click output pin then input pin to connect
-    - selected output pin highlighted
-    - per-node Set Output/Delete buttons
+    - drag from output pin and release over compatible input pin to connect
+    - active drag wire and compatible input pin highlighted
+    - per-node Delete button only; Output node delete is disabled
+  - UI split refactor completed:
+    - `UI.cpp` is a thin compositor.
+    - `AddMenu.h/.cpp` owns Add menu actions.
+    - `NodeEditor.h/.cpp` owns graph canvas, node drag, pin hit-test, Bezier wires, and drag-to-connect.
+    - `SceneOutliner.h/.cpp` owns graph controls, selection, delete, manual link controls, and Add Operand.
+    - `PropertiesPanel.h/.cpp` owns node name, material, and parameter editing.
+    - Removed obsolete `ScenePanel.h/.cpp`.
 
 - `include/sdf3d/ui/UI.h`
   - Removed unused `ScenePanel` member/include and stale primitive counter.
@@ -113,27 +122,98 @@
     - `SdfGraphLink::fromSocket`
     - typed `inputs`/`outputs` on graph nodes.
   - Kept compatibility constructors/API for current string-socket link path.
+  - Added graph Output node support:
+    - `SdfNodeType::Output`
+    - input socket `surface`
+    - no output sockets
+    - active Output node stays render target; adding/linking regular nodes should not steal graph output.
 
 - `src/scene/SdfGraph.cpp`
   - Implemented create/delete/link/unlink/select/output/read APIs.
   - Added to CMake and now compiles.
   - Populates default typed sockets per node type.
   - Validates typed links by output/input socket existence and matching socket type.
+  - Output nodes expose only `surface` input and no `sdf` output.
+
+- `src/scene/SdfCompiler.cpp`
+  - Graph compiler now treats an active Output node as render target marker.
+  - If Output node is linked, compiler follows `Output.surface` to the real SDF root.
+  - If Output node is unlinked, compiler returns safe no-hit GLSL and an error.
+  - Incomplete graph nodes must never emit invalid GLSL:
+    - no valid child returns material-aware no-hit `vec2(1e6, 0.0)`
+    - single-input Union/SmoothUnion/Intersect/SmoothIntersect bypasses to the child
+    - Subtract/SmoothSubtract with only base input bypasses to base and warns
+    - missing transform child returns no-hit and warns
+  - Graph lowering was split out into `SdfGraphCompiler.h/.cpp`.
+  - `compileNode()` was split into private family helpers:
+    - `compilePrimitiveNode`
+    - `compileBooleanNode`
+    - `compileDomainNode`
+
+- `src/ui/AddMenu.cpp`
+  - Uses `SdfNodeDefinition` metadata for primitive/boolean/transform menu entries.
+  - `Add > Output` is removed.
+  - New primitives auto-link into selected node's first free SDF input when possible.
+
+- `src/ui/NodeEditor.cpp`
+  - Link UX now drag-to-connect:
+    - drag from output pin
+    - live Bezier wire follows cursor
+    - compatible input pins highlight
+    - release on compatible input creates graph link
+    - release elsewhere cancels
+  - Link removal UX:
+    - right-click a Bezier link to remove it
+    - drag an occupied input link away and release on empty canvas to remove it
+    - drag an occupied input link to another compatible input to reconnect it
+  - Output node behavior:
+    - `SdfGraph` now creates one default Output node on construction
+    - Output node cannot be deleted
+    - `Add > Output` is removed
+    - first added primitive auto-links into `Output.surface`
+    - graph output target must remain an Output node; regular nodes cannot become render output markers
+  - Preview shortcut:
+    - press `P` while node editor is focused to rewire selected node `sdf` into `Output.surface`
+    - shortcut is no-op for Output node, no selection, or nodes without `sdf` output
+  - Auto-wire / virtual visual behavior:
+    - dragging an unconnected compatible node over a wire shows a virtual insert preview
+    - preview dims original wire and draws yellow `A -> dragged -> B` wires
+    - real graph links are changed only on mouse release
+    - incomplete nodes get orange border and missing SDF input pin rings
+    - incomplete boolean bypass cases draw orange virtual bypass wires with no graph mutation
+    - visual bypass mirrors compiler behavior for single-input Union/SmoothUnion/Intersect/SmoothIntersect and base-only Subtract/SmoothSubtract
+
+- `include/sdf3d/scene/SdfNodeDefinition.h` / `src/scene/SdfNodeDefinition.cpp`
+  - Central metadata table now owns Phase 1 node display names, categories, sockets, default params, and UI drag hints.
+  - `SdfGraph` uses metadata to create default sockets/payload.
+  - `PropertiesPanel` uses metadata parameter order and drag min/max/step.
+
+- `assets/shaders/raymarch.frag`
+  - Uses albedo, emission, roughness, and metallic.
+  - Roughness controls Blinn-Phong shininess/specular strength.
+  - Metallic tints specular toward albedo and reduces diffuse.
+
+- `src/app/App.cpp` / `src/renderer/Renderer.cpp` / `src/ui/UI.cpp`
+  - Runtime diagnostics flow added.
+  - Renderer stores latest shader compile/link/reload error.
+  - Dirty shader reload failure keeps previous shader program alive.
+  - Diagnostics panel shows compiler/renderer runtime errors.
 
 - `CMakeLists.txt`
   - Added `src/scene/SdfGraph.cpp` to `sdf3d` and `sdf3d_tests`.
+  - Added UI split sources: `AddMenu.cpp`, `NodeEditor.cpp`, `SceneOutliner.cpp`, `PropertiesPanel.cpp`.
+  - Added `SdfGraphCompiler.cpp` and `SdfNodeDefinition.cpp`.
 
 ## Next Proposed Step
 
 - Decide next M4/M5 increment.
 - Likely candidates:
-  - Add a dedicated Output node type/semantic instead of output flag on any node.
-  - Improve material shader usage for roughness/metallic.
-  - Add shader/runtime validation path.
-  - Add UI polish for material parameters.
+  - Node editor pan/zoom.
+  - Keyboard delete / duplicate / frame selected node.
+  - Save/load graph schema.
+  - Split compiler family helpers into separate files if compiler grows again.
 
 ## Known Caveat
 
-- Shader currently uses albedo/emission only.
-- Roughness/metallic uniforms upload but shader does not use them yet.
 - Need plan/approval before touching feature code.
+- GUI smoke should be rerun after major NodeEditor visual work.

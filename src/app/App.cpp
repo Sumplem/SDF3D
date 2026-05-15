@@ -100,13 +100,7 @@ bool App::init()
         return false;
     }
 
-    const SdfCompileResult sceneGlsl = compileScene(m_sceneGraph, m_sdfCompiler);
-    for (const std::string& error : sceneGlsl.errors) {
-        std::cerr << "[SDF3D][SdfCompiler] " << error << '\n';
-    }
-
-    m_renderer.setMaterials(sceneGlsl.materials);
-    if (!m_renderer.reloadScene(sceneGlsl.glsl)) {
+    if (!recompileScene(false)) {
         shutdown();
         return false;
     }
@@ -125,12 +119,7 @@ void App::run()
         drawDockspace();
         drawPanels();
         if (m_ui.consumeSceneDirty()) {
-            const SdfCompileResult sceneGlsl = compileScene(m_sceneGraph, m_sdfCompiler);
-            for (const std::string& error : sceneGlsl.errors) {
-                std::cerr << "[SDF3D][SdfCompiler] " << error << '\n';
-            }
-            m_renderer.setMaterials(sceneGlsl.materials);
-            m_renderer.reloadScene(sceneGlsl.glsl);
+            recompileScene(true);
         }
         ResourceManager::instance().flushErrors();
         endFrame();
@@ -203,7 +192,7 @@ void App::drawDockspace()
 
 void App::drawPanels()
 {
-    m_ui.drawPanels(m_sceneGraph);
+    m_ui.drawPanels(m_sceneGraph, m_runtimeErrors);
     m_viewport.draw(m_renderer);
 }
 
@@ -220,6 +209,30 @@ void App::endFrame()
 
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     glfwSwapBuffers(m_window);
+}
+
+bool App::recompileScene(bool keepPreviousProgramOnFailure)
+{
+    std::vector<std::string> runtimeErrors;
+    const SdfCompileResult sceneGlsl = compileScene(m_sceneGraph, m_sdfCompiler);
+    for (const std::string& error : sceneGlsl.errors) {
+        runtimeErrors.push_back("[SdfCompiler] " + error);
+        std::cerr << "[SDF3D][SdfCompiler] " << error << '\n';
+    }
+
+    // AGENT: Dirty-frame shader reload failure keeps the previous linked
+    // program alive, so a bad graph edit reports diagnostics without blanking.
+    if (!m_renderer.reloadScene(sceneGlsl.glsl)) {
+        if (!m_renderer.lastError().empty()) {
+            runtimeErrors.push_back("[Renderer] " + m_renderer.lastError());
+        }
+        m_runtimeErrors = std::move(runtimeErrors);
+        return keepPreviousProgramOnFailure;
+    }
+
+    m_renderer.setMaterials(sceneGlsl.materials);
+    m_runtimeErrors = std::move(runtimeErrors);
+    return true;
 }
 
 } // namespace sdf3d

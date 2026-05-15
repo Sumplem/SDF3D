@@ -98,6 +98,9 @@ public:
     /// Removes all links targeting a node socket.
     bool unlinkInput(SdfGraphNodeId toNode, const std::string& toSocket);
 
+    /// Removes one exact link between two sockets.
+    bool unlink(SdfGraphNodeId fromNode, const std::string& fromSocket, SdfGraphNodeId toNode, const std::string& toSocket);
+
     /// Sets the graph node used as the render output.
     bool setOutputNode(SdfGraphNodeId id);
 
@@ -109,6 +112,12 @@ public:
 
     /// Returns the currently selected graph node, or 0 when nothing is selected.
     SdfGraphNodeId selectedNode() const;
+
+    /// Returns true when the node is the permanent graph output marker.
+    bool isOutputNode(SdfGraphNodeId id) const;
+
+    /// Returns true when any link starts from or ends at the node.
+    bool hasLinks(SdfGraphNodeId id) const;
 
     /// Returns a mutable graph node by ID, or nullptr if missing.
     SdfGraphNode* node(SdfGraphNodeId id);

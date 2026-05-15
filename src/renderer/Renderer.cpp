@@ -23,7 +23,7 @@ std::string readTextFile(const std::filesystem::path& path)
     return contents.str();
 }
 
-unsigned int compileShader(unsigned int type, const std::string& source, const char* label)
+unsigned int compileShader(unsigned int type, const std::string& source, const char* label, std::string& errorLog)
 {
     const GLuint shader = glCreateShader(type);
     const char* sourcePtr = source.c_str();
@@ -43,7 +43,8 @@ unsigned int compileShader(unsigned int type, const std::string& source, const c
         glGetShaderInfoLog(shader, length, nullptr, log.data());
     }
 
-    std::cerr << "[SDF3D][Renderer] Failed to compile " << label << " shader:\n" << log << '\n';
+    errorLog = std::string("Failed to compile ") + label + " shader:\n" + log;
+    std::cerr << "[SDF3D][Renderer] " << errorLog << '\n';
     glDeleteShader(shader);
     return 0;
 }
@@ -163,7 +164,8 @@ bool Renderer::reloadScene(const std::string& sceneGlsl)
     const std::string vertexSource = readTextFile(m_vertexShaderPath);
     const std::string fragmentSource = fragmentSourceWithScene(sceneGlsl);
     if (vertexSource.empty() || fragmentSource.empty()) {
-        std::cerr << "[SDF3D][Renderer] Failed to reload scene shader sources.\n";
+        m_lastError = "Failed to reload scene shader sources.";
+        std::cerr << "[SDF3D][Renderer] " << m_lastError << '\n';
         return false;
     }
 
@@ -173,6 +175,11 @@ bool Renderer::reloadScene(const std::string& sceneGlsl)
 void Renderer::setMaterials(std::vector<SdfCompiledMaterial> materials)
 {
     m_materials = std::move(materials);
+}
+
+const std::string& Renderer::lastError() const
+{
+    return m_lastError;
 }
 
 unsigned int Renderer::outputTexture() const
@@ -185,9 +192,8 @@ bool Renderer::loadProgram(const std::filesystem::path& vertexPath, const std::f
     const std::string vertexSource = readTextFile(vertexPath);
     const std::string fragmentSource = readTextFile(fragmentPath);
     if (vertexSource.empty() || fragmentSource.empty()) {
-        std::cerr << "[SDF3D][Renderer] Failed to read shader assets:\n"
-                  << "  " << vertexPath << '\n'
-                  << "  " << fragmentPath << '\n';
+        m_lastError = "Failed to read shader assets:\n  " + vertexPath.string() + "\n  " + fragmentPath.string();
+        std::cerr << "[SDF3D][Renderer] " << m_lastError << '\n';
         return false;
     }
 
@@ -196,14 +202,17 @@ bool Renderer::loadProgram(const std::filesystem::path& vertexPath, const std::f
 
 bool Renderer::loadProgramFromSources(const std::string& vertexSource, const std::string& fragmentSource)
 {
-    const GLuint vertexShader = compileShader(GL_VERTEX_SHADER, vertexSource, "vertex");
+    std::string errorLog;
+    const GLuint vertexShader = compileShader(GL_VERTEX_SHADER, vertexSource, "vertex", errorLog);
     if (vertexShader == 0) {
+        m_lastError = errorLog;
         return false;
     }
 
-    const GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentSource, "fragment");
+    const GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentSource, "fragment", errorLog);
     if (fragmentShader == 0) {
         glDeleteShader(vertexShader);
+        m_lastError = errorLog;
         return false;
     }
 
@@ -225,7 +234,8 @@ bool Renderer::loadProgramFromSources(const std::string& vertexSource, const std
             glGetProgramInfoLog(program, length, nullptr, log.data());
         }
 
-        std::cerr << "[SDF3D][Renderer] Failed to link shader program:\n" << log << '\n';
+        m_lastError = "Failed to link shader program:\n" + log;
+        std::cerr << "[SDF3D][Renderer] " << m_lastError << '\n';
         glDeleteProgram(program);
         return false;
     }
@@ -235,6 +245,7 @@ bool Renderer::loadProgramFromSources(const std::string& vertexSource, const std
     }
 
     m_program = program;
+    m_lastError.clear();
     return true;
 }
 

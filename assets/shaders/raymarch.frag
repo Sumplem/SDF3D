@@ -87,6 +87,24 @@ float materialEmission(int materialId)
     return uMaterialEmission[materialId];
 }
 
+float materialRoughness(int materialId)
+{
+    if (materialId < 0 || materialId >= uMaterialCount || materialId >= MAX_MATERIALS) {
+        return 0.5;
+    }
+
+    return clamp(uMaterialRoughness[materialId], 0.02, 1.0);
+}
+
+float materialMetallic(int materialId)
+{
+    if (materialId < 0 || materialId >= uMaterialCount || materialId >= MAX_MATERIALS) {
+        return 0.0;
+    }
+
+    return clamp(uMaterialMetallic[materialId], 0.0, 1.0);
+}
+
 float gridLine(vec2 p)
 {
     vec2 cell = abs(fract(p - 0.5) - 0.5) / fwidth(p);
@@ -148,9 +166,17 @@ void main()
     vec3 halfVector = normalize(lightDirection + viewDirection);
 
     float diffuse = max(dot(normal, lightDirection), 0.0);
-    float specular = pow(max(dot(normal, halfVector), 0.0), 48.0);
     vec3 baseColor = materialAlbedo(materialId);
-    vec3 color = baseColor * (0.18 + diffuse * 0.78) + vec3(0.35) * specular + baseColor * materialEmission(materialId);
+    float roughness = materialRoughness(materialId);
+    float metallic = materialMetallic(materialId);
+
+    // AGENT: This keeps the Phase 1 Blinn-Phong model but maps material
+    // roughness/metallic to visible controls instead of unused uniforms.
+    float shininess = mix(96.0, 8.0, roughness);
+    float specular = pow(max(dot(normal, halfVector), 0.0), shininess) * mix(0.5, 1.1, metallic) * (1.0 - roughness * 0.55);
+    vec3 diffuseColor = baseColor * (1.0 - metallic * 0.45);
+    vec3 specularColor = mix(vec3(0.35), baseColor, metallic);
+    vec3 color = diffuseColor * (0.18 + diffuse * 0.78) + specularColor * specular + baseColor * materialEmission(materialId);
 
     outColor = vec4(color, 1.0);
 }
