@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -48,6 +49,7 @@ struct SdfNode {
     }
 
     SdfNodeType type;
+    uint64_t stableId = 0;
     std::string name;
     std::unordered_map<std::string, float> parameters;
     std::vector<std::shared_ptr<SdfNode>> children;
@@ -70,6 +72,7 @@ inline SdfNodePtr cloneSdfNodeTree(const SdfNodePtr& node)
     }
 
     SdfNodePtr clone = makeSdfNode(node->type, node->name);
+    clone->stableId = node->stableId;
     clone->parameters = node->parameters;
     clone->material = node->material;
     clone->children.reserve(node->children.size());

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sdf3d/scene/SdfGraph.h"
+#include "sdf3d/ui/EditorDirtyState.h"
 
 #include <optional>
 #include <string>
@@ -84,7 +85,7 @@ bool drawInputPins(
     bool& dragOutputFromInputDetach);
 void drawOutputPins(SdfGraph& graph, const GraphNodeLayout& layout, const CanvasFrame& frame, bool& draggingLink, SdfGraphNodeId& dragOutputNode, std::string& dragOutputSocket, bool& dragOutputFromInputDetach);
 bool drawNodeActions(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNodeId& pendingDelete);
-bool drawNodeInlineProperties(const GraphNodeLayout& layout, const CanvasFrame& frame);
+EditorDirtyState drawNodeInlineProperties(const GraphNodeLayout& layout, const CanvasFrame& frame);
 bool updateActiveLinkDrag(SdfGraph& graph, const CanvasFrame& frame, const std::vector<GraphSocketAnchor>& anchors, bool& draggingLink, SdfGraphNodeId& dragOutputNode, std::string& dragOutputSocket, bool& releasedOnEmpty);
 bool updateActiveInputLinkDrag(SdfGraph& graph, const CanvasFrame& frame, const std::vector<GraphSocketAnchor>& anchors, bool& draggingInputLink, SdfGraphNodeId& dragInputNode, std::string& dragInputSocket, bool& releasedOnEmpty);
 

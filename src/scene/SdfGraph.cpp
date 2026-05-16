@@ -18,13 +18,18 @@ SdfGraphNodeId SdfGraph::createNode(SdfNodeType type, std::string name)
     return id;
 }
 
+SdfGraphNodeId SdfGraph::duplicateNode(SdfGraphNodeId id)
+{
+    const SdfGraphNodeId duplicateId = GraphSystem::duplicateNode(*this, id);
+    if (duplicateId != 0) {
+        SelectionSystem::setSelectedNode(*this, duplicateId);
+    }
+    return duplicateId;
+}
+
 bool SdfGraph::deleteNode(SdfGraphNodeId id)
 {
-    const bool deleted = GraphSystem::deleteNode(*this, id);
-    if (deleted && m_selectedNode == id) {
-        SelectionSystem::setSelectedNode(*this, 0);
-    }
-    return deleted;
+    return GraphSystem::deleteNode(*this, id);
 }
 
 bool SdfGraph::link(SdfGraphNodeId fromNode, SdfGraphNodeId toNode, std::string toSocket)
@@ -65,6 +70,31 @@ bool SdfGraph::setSelectedNode(SdfGraphNodeId id)
 SdfGraphNodeId SdfGraph::selectedNode() const
 {
     return SelectionSystem::selectedNode(*this);
+}
+
+bool SdfGraph::toggleSelectedNode(SdfGraphNodeId id)
+{
+    return SelectionSystem::toggleSelectedNode(*this, id);
+}
+
+bool SdfGraph::setSelectedNodes(std::vector<SdfGraphNodeId> ids, SdfGraphNodeId primary)
+{
+    return SelectionSystem::setSelectedNodes(*this, std::move(ids), primary);
+}
+
+void SdfGraph::clearSelection()
+{
+    SelectionSystem::clearSelection(*this);
+}
+
+const std::vector<SdfGraphNodeId>& SdfGraph::selectedNodes() const
+{
+    return m_selectedNodes;
+}
+
+bool SdfGraph::isNodeSelected(SdfGraphNodeId id) const
+{
+    return SelectionSystem::isNodeSelected(*this, id);
 }
 
 bool SdfGraph::isOutputNode(SdfGraphNodeId id) const

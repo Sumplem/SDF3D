@@ -2,15 +2,18 @@
 
 #include "sdf3d/scene/SceneGraph.h"
 #include "sdf3d/ui/AddMenu.h"
+#include "sdf3d/ui/EditorDirtyState.h"
 
 #include <string>
+
+#include <imgui.h>
 
 namespace sdf3d {
 
 /// Draws the graph canvas and returns true when the scene graph changes.
 class NodeEditor {
 public:
-    bool draw(SceneGraph& sceneGraph);
+    EditorDirtyState draw(SceneGraph& sceneGraph);
 
 private:
     bool m_draggingLink = false;
@@ -32,6 +35,9 @@ private:
     float m_canvasPanX = 0.0f;
     float m_canvasPanY = 0.0f;
     float m_canvasZoom = 1.0f;
+    bool m_draggingSelectionRect = false;
+    ImVec2 m_selectionRectStart = {0.0f, 0.0f};
+    ImVec2 m_selectionRectEnd = {0.0f, 0.0f};
 };
 
 } // namespace sdf3d

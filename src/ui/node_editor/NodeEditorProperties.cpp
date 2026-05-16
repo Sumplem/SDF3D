@@ -48,14 +48,14 @@ void drawLabel(const CanvasFrame& frame, ImVec2 position, const char* label)
 
 } // namespace
 
-bool drawNodeInlineProperties(const GraphNodeLayout& layout, const CanvasFrame& frame)
+EditorDirtyState drawNodeInlineProperties(const GraphNodeLayout& layout, const CanvasFrame& frame)
 {
     if (layout.node->editorPropertiesCollapsed) {
-        return false;
+        return {};
     }
 
     SdfNode& node = layout.node->payload;
-    bool sceneDirty = false;
+    EditorDirtyState dirty;
     float y = layout.contentPosition.y;
     const float labelWidth = scaleValue(frame, LABEL_WIDTH);
     const float fieldX = layout.contentPosition.x + labelWidth;
@@ -70,7 +70,7 @@ bool drawNodeInlineProperties(const GraphNodeLayout& layout, const CanvasFrame& 
     ImGui::SetNextItemWidth(fieldWidth);
     if (ImGui::InputText(("##node-name-" + std::to_string(layout.id)).c_str(), nameBuffer, sizeof(nameBuffer))) {
         node.name = nameBuffer;
-        sceneDirty = true;
+        dirty.scene = true;
     }
     y += rowHeight;
 
@@ -79,7 +79,7 @@ bool drawNodeInlineProperties(const GraphNodeLayout& layout, const CanvasFrame& 
         ImGui::SetCursorScreenPos({fieldX, y});
         ImGui::SetNextItemWidth(fieldWidth);
         if (ImGui::ColorEdit3(("##node-albedo-" + std::to_string(layout.id)).c_str(), &node.material.albedo.x, ImGuiColorEditFlags_NoInputs)) {
-            sceneDirty = true;
+            dirty.material = true;
         }
         y += rowHeight;
 
@@ -87,7 +87,7 @@ bool drawNodeInlineProperties(const GraphNodeLayout& layout, const CanvasFrame& 
         ImGui::SetCursorScreenPos({fieldX, y});
         ImGui::SetNextItemWidth(fieldWidth);
         if (ImGui::DragFloat(("##node-roughness-" + std::to_string(layout.id)).c_str(), &node.material.roughness, 0.01f, 0.0f, 1.0f, "%.2f")) {
-            sceneDirty = true;
+            dirty.material = true;
         }
         y += rowHeight;
 
@@ -95,7 +95,7 @@ bool drawNodeInlineProperties(const GraphNodeLayout& layout, const CanvasFrame& 
         ImGui::SetCursorScreenPos({fieldX, y});
         ImGui::SetNextItemWidth(fieldWidth);
         if (ImGui::DragFloat(("##node-metallic-" + std::to_string(layout.id)).c_str(), &node.material.metallic, 0.01f, 0.0f, 1.0f, "%.2f")) {
-            sceneDirty = true;
+            dirty.material = true;
         }
         y += rowHeight;
 
@@ -103,7 +103,7 @@ bool drawNodeInlineProperties(const GraphNodeLayout& layout, const CanvasFrame& 
         ImGui::SetCursorScreenPos({fieldX, y});
         ImGui::SetNextItemWidth(fieldWidth);
         if (ImGui::DragFloat(("##node-emission-" + std::to_string(layout.id)).c_str(), &node.material.emission, 0.01f, 0.0f, 100.0f, "%.2f")) {
-            sceneDirty = true;
+            dirty.material = true;
         }
         y += rowHeight;
     }
@@ -120,11 +120,11 @@ bool drawNodeInlineProperties(const GraphNodeLayout& layout, const CanvasFrame& 
         ImGui::SetCursorScreenPos({fieldX, y});
         ImGui::SetNextItemWidth(fieldWidth);
         if (ImGui::DragFloat(("##node-param-" + std::to_string(layout.id) + "-" + key).c_str(), &value, step, minValue, maxValue)) {
-            sceneDirty = true;
+            dirty.scene = true;
         }
         y += rowHeight;
     }
-    return sceneDirty;
+    return dirty;
 }
 
 } // namespace sdf3d::node_editor

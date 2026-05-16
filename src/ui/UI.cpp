@@ -70,14 +70,23 @@ void UI::drawPanels(SceneGraph& sceneGraph, const std::vector<DiagnosticEntry>& 
 {
     drawScenePanel(sceneGraph);
     drawDiagnosticsPanel(runtimeErrors);
-    if (m_propertiesPanel.draw(sceneGraph)) {
+    const EditorDirtyState propertiesDirty = m_propertiesPanel.draw(sceneGraph);
+    if (propertiesDirty.scene) {
         markSceneDirty();
+    }
+    if (propertiesDirty.material) {
+        markMaterialDirty();
     }
 }
 
 bool UI::consumeSceneDirty()
 {
     return m_selectionSystem.consumeDirty();
+}
+
+bool UI::consumeMaterialDirty()
+{
+    return m_selectionSystem.consumeMaterialDirty();
 }
 
 void UI::drawScenePanel(SceneGraph& sceneGraph)
@@ -89,8 +98,12 @@ void UI::drawScenePanel(SceneGraph& sceneGraph)
             markSceneDirty();
         }
 
-        if (m_nodeEditor.draw(sceneGraph)) {
+        const EditorDirtyState nodeEditorDirty = m_nodeEditor.draw(sceneGraph);
+        if (nodeEditorDirty.scene) {
             markSceneDirty();
+        }
+        if (nodeEditorDirty.material) {
+            markMaterialDirty();
         }
 
         // AGENT: Runtime branch keeps old text-list graph UI compiled as
@@ -153,6 +166,11 @@ void UI::drawDiagnosticsPanel(const std::vector<DiagnosticEntry>& runtimeErrors)
 void UI::markSceneDirty()
 {
     m_selectionSystem.markDirty();
+}
+
+void UI::markMaterialDirty()
+{
+    m_selectionSystem.markMaterialDirty();
 }
 
 } // namespace sdf3d

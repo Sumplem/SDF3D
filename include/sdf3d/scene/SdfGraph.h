@@ -90,6 +90,9 @@ public:
     /// Creates a graph node and returns its stable ID.
     SdfGraphNodeId createNode(SdfNodeType type, std::string name = {});
 
+    /// Duplicates one graph node without copying links.
+    SdfGraphNodeId duplicateNode(SdfGraphNodeId id);
+
     /// Deletes a node and all links connected to it.
     bool deleteNode(SdfGraphNodeId id);
 
@@ -116,6 +119,21 @@ public:
 
     /// Returns the currently selected graph node, or 0 when nothing is selected.
     SdfGraphNodeId selectedNode() const;
+
+    /// Toggles one graph node in the multi-selection set.
+    bool toggleSelectedNode(SdfGraphNodeId id);
+
+    /// Replaces the multi-selection set and primary selected node.
+    bool setSelectedNodes(std::vector<SdfGraphNodeId> ids, SdfGraphNodeId primary);
+
+    /// Clears graph selection.
+    void clearSelection();
+
+    /// Returns selected graph nodes in selection order.
+    const std::vector<SdfGraphNodeId>& selectedNodes() const;
+
+    /// Returns true when the graph node is selected.
+    bool isNodeSelected(SdfGraphNodeId id) const;
 
     /// Returns true when the node is the permanent graph output marker.
     bool isOutputNode(SdfGraphNodeId id) const;
@@ -144,6 +162,7 @@ private:
     SdfGraphNodeId m_nextId = 1;
     SdfGraphNodeId m_outputNode = 0;
     SdfGraphNodeId m_selectedNode = 0;
+    std::vector<SdfGraphNodeId> m_selectedNodes;
     std::unordered_map<SdfGraphNodeId, SdfGraphNode> m_nodes;
     std::vector<SdfGraphLink> m_links;
 };

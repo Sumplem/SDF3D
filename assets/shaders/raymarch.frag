@@ -19,17 +19,61 @@ const float SURFACE_EPSILON = 0.001;
 const float PI = 3.14159265358979323846;
 const int MAX_MATERIALS = 64;
 
+struct SdfMaterialSample {
+    vec3 albedo;
+    float roughness;
+    float metallic;
+    float emission;
+};
+
+SdfMaterialSample sampleMaterial(int materialId)
+{
+    SdfMaterialSample material;
+    if (materialId < 0 || materialId >= uMaterialCount || materialId >= MAX_MATERIALS) {
+        material.albedo = vec3(0.78, 0.82, 0.88);
+        material.roughness = 0.5;
+        material.metallic = 0.0;
+        material.emission = 0.0;
+        return material;
+    }
+
+    material.albedo = uMaterialAlbedo[materialId];
+    material.roughness = clamp(uMaterialRoughness[materialId], 0.02, 1.0);
+    material.metallic = clamp(uMaterialMetallic[materialId], 0.0, 1.0);
+    material.emission = uMaterialEmission[materialId];
+    return material;
+}
+
+SdfMaterialSample selectMaterial(bool useFirst, SdfMaterialSample first, SdfMaterialSample second)
+{
+    if (useFirst) {
+        return first;
+    }
+
+    return second;
+}
+
+SdfMaterialSample mixMaterial(SdfMaterialSample first, SdfMaterialSample second, float t)
+{
+    SdfMaterialSample material;
+    material.albedo = mix(first.albedo, second.albedo, t);
+    material.roughness = mix(first.roughness, second.roughness, t);
+    material.metallic = mix(first.metallic, second.metallic, t);
+    material.emission = mix(first.emission, second.emission, t);
+    return material;
+}
+
 // AGENT: Renderer replaces the block between these markers with GLSL emitted
 // by SdfCompiler when the scene graph changes.
 // SDF3D_SCENE_BEGIN
-vec2 sceneSDFWithMaterial(vec3 p)
-{
-    return vec2(length(p) - 1.0, 0.0);
-}
-
 float sceneSDF(vec3 p)
 {
-    return sceneSDFWithMaterial(p).x;
+    return length(p) - 1.0;
+}
+
+SdfMaterialSample sceneMaterial(vec3 p)
+{
+    return sampleMaterial(0);
 }
 // SDF3D_SCENE_END
 
@@ -45,18 +89,15 @@ vec3 estimateNormal(vec3 p)
     ));
 }
 
-float raymarch(vec3 rayOrigin, vec3 rayDirection, out vec3 hitPosition, out int materialId)
+float raymarch(vec3 rayOrigin, vec3 rayDirection, out vec3 hitPosition)
 {
     float distanceTraveled = 0.0;
-    materialId = 0;
 
     for (int i = 0; i < MAX_STEPS; ++i) {
         hitPosition = rayOrigin + rayDirection * distanceTraveled;
-        vec2 sceneSample = sceneSDFWithMaterial(hitPosition);
-        float distanceToScene = sceneSample.x;
+        float distanceToScene = sceneSDF(hitPosition);
 
         if (distanceToScene < SURFACE_EPSILON) {
-            materialId = int(clamp(floor(sceneSample.y + 0.5), 0.0, float(MAX_MATERIALS - 1)));
             return distanceTraveled;
         }
 
@@ -67,42 +108,6 @@ float raymarch(vec3 rayOrigin, vec3 rayDirection, out vec3 hitPosition, out int 
     }
 
     return -1.0;
-}
-
-vec3 materialAlbedo(int materialId)
-{
-    if (materialId < 0 || materialId >= uMaterialCount || materialId >= MAX_MATERIALS) {
-        return vec3(0.78, 0.82, 0.88);
-    }
-
-    return uMaterialAlbedo[materialId];
-}
-
-float materialEmission(int materialId)
-{
-    if (materialId < 0 || materialId >= uMaterialCount || materialId >= MAX_MATERIALS) {
-        return 0.0;
-    }
-
-    return uMaterialEmission[materialId];
-}
-
-float materialRoughness(int materialId)
-{
-    if (materialId < 0 || materialId >= uMaterialCount || materialId >= MAX_MATERIALS) {
-        return 0.5;
-    }
-
-    return clamp(uMaterialRoughness[materialId], 0.02, 1.0);
-}
-
-float materialMetallic(int materialId)
-{
-    if (materialId < 0 || materialId >= uMaterialCount || materialId >= MAX_MATERIALS) {
-        return 0.0;
-    }
-
-    return clamp(uMaterialMetallic[materialId], 0.0, 1.0);
 }
 
 float gridLine(vec2 p)
@@ -152,9 +157,8 @@ void main()
     vec3 rayOrigin = uCameraPosition;
     vec3 rayDirection = rayDirectionFromCamera(gl_FragCoord.xy);
     vec3 hitPosition = vec3(0.0);
-    int materialId = 0;
 
-    float hitDistance = raymarch(rayOrigin, rayDirection, hitPosition, materialId);
+    float hitDistance = raymarch(rayOrigin, rayDirection, hitPosition);
     if (hitDistance < 0.0) {
         outColor = vec4(backgroundColor(rayOrigin, rayDirection), 1.0);
         return;
@@ -166,9 +170,10 @@ void main()
     vec3 halfVector = normalize(lightDirection + viewDirection);
 
     float diffuse = max(dot(normal, lightDirection), 0.0);
-    vec3 baseColor = materialAlbedo(materialId);
-    float roughness = materialRoughness(materialId);
-    float metallic = materialMetallic(materialId);
+    SdfMaterialSample material = sceneMaterial(hitPosition);
+    vec3 baseColor = material.albedo;
+    float roughness = material.roughness;
+    float metallic = material.metallic;
 
     // AGENT: This keeps the Phase 1 Blinn-Phong model but maps material
     // roughness/metallic to visible controls instead of unused uniforms.
@@ -176,7 +181,7 @@ void main()
     float specular = pow(max(dot(normal, halfVector), 0.0), shininess) * mix(0.5, 1.1, metallic) * (1.0 - roughness * 0.55);
     vec3 diffuseColor = baseColor * (1.0 - metallic * 0.45);
     vec3 specularColor = mix(vec3(0.35), baseColor, metallic);
-    vec3 color = diffuseColor * (0.18 + diffuse * 0.78) + specularColor * specular + baseColor * materialEmission(materialId);
+    vec3 color = diffuseColor * (0.18 + diffuse * 0.78) + specularColor * specular + baseColor * material.emission;
 
     outColor = vec4(color, 1.0);
 }

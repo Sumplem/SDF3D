@@ -67,6 +67,26 @@ SdfGraphNodeId GraphSystem::createNode(SdfGraph& graph, SdfNodeType type, std::s
     return id;
 }
 
+SdfGraphNodeId GraphSystem::duplicateNode(SdfGraph& graph, SdfGraphNodeId id)
+{
+    if (isOutputNode(graph, id)) {
+        return 0;
+    }
+
+    const auto it = graph.m_nodes.find(id);
+    if (it == graph.m_nodes.end()) {
+        return 0;
+    }
+
+    const SdfGraphNodeId duplicateId = graph.m_nextId++;
+    SdfGraphNode graphNode{duplicateId, it->second.payload, it->second.editorX + 32.0f, it->second.editorY + 32.0f};
+    graphNode.inputs = it->second.inputs;
+    graphNode.outputs = it->second.outputs;
+    graphNode.editorPropertiesCollapsed = it->second.editorPropertiesCollapsed;
+    graph.m_nodes.emplace(duplicateId, std::move(graphNode));
+    return duplicateId;
+}
+
 bool GraphSystem::deleteNode(SdfGraph& graph, SdfGraphNodeId id)
 {
     if (isOutputNode(graph, id)) {
@@ -85,6 +105,10 @@ bool GraphSystem::deleteNode(SdfGraph& graph, SdfGraphNodeId id)
 
     if (graph.m_outputNode == id) {
         graph.m_outputNode = 0;
+    }
+    graph.m_selectedNodes.erase(std::remove(graph.m_selectedNodes.begin(), graph.m_selectedNodes.end(), id), graph.m_selectedNodes.end());
+    if (graph.m_selectedNode == id) {
+        graph.m_selectedNode = graph.m_selectedNodes.empty() ? 0 : graph.m_selectedNodes.back();
     }
     return true;
 }

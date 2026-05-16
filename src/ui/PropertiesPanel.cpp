@@ -12,13 +12,19 @@
 
 namespace sdf3d {
 
-bool PropertiesPanel::draw(SceneGraph& sceneGraph)
+EditorDirtyState PropertiesPanel::draw(SceneGraph& sceneGraph)
 {
-    bool sceneDirty = false;
+    EditorDirtyState dirty;
 
     ImGui::Begin("Properties");
 
     SdfNode* selected = nullptr;
+    if (sceneGraph.graph().selectedNodes().size() > 1) {
+        ImGui::Text("Multiple nodes selected: %d", static_cast<int>(sceneGraph.graph().selectedNodes().size()));
+        ImGui::End();
+        return dirty;
+    }
+
     SdfGraphNode* selectedGraphNode = sceneGraph.graph().node(sceneGraph.graph().selectedNode());
     if (selectedGraphNode != nullptr) {
         selected = &selectedGraphNode->payload;
@@ -29,7 +35,7 @@ bool PropertiesPanel::draw(SceneGraph& sceneGraph)
     if (selected == nullptr) {
         ImGui::TextUnformatted("No node selected.");
         ImGui::End();
-        return sceneDirty;
+        return dirty;
     }
 
     char nameBuffer[128] = {};
@@ -39,23 +45,23 @@ bool PropertiesPanel::draw(SceneGraph& sceneGraph)
 
     if (ImGui::InputText("Name", nameBuffer, sizeof(nameBuffer))) {
         selected->name = nameBuffer;
-        sceneDirty = true;
+        dirty.scene = true;
     }
 
     if (selected->type == SdfNodeType::MaterialOverride) {
         ImGui::SeparatorText("Material");
 
         if (ImGui::ColorEdit3("Albedo", &selected->material.albedo.x)) {
-            sceneDirty = true;
+            dirty.material = true;
         }
         if (ImGui::DragFloat("Roughness", &selected->material.roughness, 0.01f, 0.0f, 1.0f)) {
-            sceneDirty = true;
+            dirty.material = true;
         }
         if (ImGui::DragFloat("Metallic", &selected->material.metallic, 0.01f, 0.0f, 1.0f)) {
-            sceneDirty = true;
+            dirty.material = true;
         }
         if (ImGui::DragFloat("Emission", &selected->material.emission, 0.01f, 0.0f, 100.0f)) {
-            sceneDirty = true;
+            dirty.material = true;
         }
     }
 
@@ -64,7 +70,7 @@ bool PropertiesPanel::draw(SceneGraph& sceneGraph)
     if (selected->parameters.empty()) {
         ImGui::TextUnformatted("No editable parameters.");
         ImGui::End();
-        return sceneDirty;
+        return dirty;
     }
 
     std::vector<std::string> keys;
@@ -101,12 +107,12 @@ bool PropertiesPanel::draw(SceneGraph& sceneGraph)
         const float minValue = definition != parameterDefinitions.end() ? definition->second.minValue : 0.0f;
         const float maxValue = definition != parameterDefinitions.end() ? definition->second.maxValue : 0.0f;
         if (ImGui::DragFloat(key.c_str(), &value, step, minValue, maxValue)) {
-            sceneDirty = true;
+            dirty.scene = true;
         }
     }
 
     ImGui::End();
-    return sceneDirty;
+    return dirty;
 }
 
 } // namespace sdf3d

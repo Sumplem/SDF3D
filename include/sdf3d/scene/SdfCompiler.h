@@ -29,7 +29,7 @@ struct SdfCompileResult {
 /// Emits deterministic GLSL for an SDF expression tree.
 class SdfCompiler {
 public:
-    /// Compiles a tree into a self-contained `float sceneSDF(vec3 p)` function.
+    /// Compiles a tree into self-contained `sceneSDF` and `sceneMaterial` GLSL entry points.
     SdfCompileResult compile(const SdfNodePtr& root) const;
 
     /// Compiles a graph output into self-contained SDF GLSL.

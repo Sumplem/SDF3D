@@ -15,6 +15,9 @@ public:
     /// Creates a graph node and returns its stable ID.
     static SdfGraphNodeId createNode(SdfGraph& graph, SdfNodeType type, std::string name = {});
 
+    /// Duplicates one graph node payload and editor state without copying links.
+    static SdfGraphNodeId duplicateNode(SdfGraph& graph, SdfGraphNodeId id);
+
     /// Deletes a node and all links connected to it.
     static bool deleteNode(SdfGraph& graph, SdfGraphNodeId id);
 

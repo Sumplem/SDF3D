@@ -21,22 +21,23 @@ SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root) const
 
     if (!root) {
         result.errors.push_back("Cannot compile an empty SDF tree.");
-        // AGENT: Empty scenes still emit the material-aware entry point so the
-        // runtime shader template stays valid before the user adds geometry.
+        // AGENT: Empty scenes still emit both runtime entry points so the shader
+        // template stays valid before the user adds geometry.
         result.glsl =
-            "vec2 sceneSDFWithMaterial(vec3 p)\n"
-            "{\n"
-            "    return vec2(1e6, 0.0);\n"
-            "}\n\n"
             "float sceneSDF(vec3 p)\n"
             "{\n"
             "    return 1e6;\n"
+            "}\n\n"
+            "SdfMaterialSample sceneMaterial(vec3 p)\n"
+            "{\n"
+            "    return sampleMaterial(0);\n"
             "}\n";
         return result;
     }
 
     const GlslEmitter emitter;
-    const std::string expression = emitter.emitNode(root, "p", result);
+    const GlslSdfHelperBlock sdfHelpers = emitter.emitSdfHelpers(root, result);
+    const std::string materialExpression = emitter.emitSceneMaterialExpression(root, "p", result, sdfHelpers);
 
     std::ostringstream glsl;
     if (result.usesBox) {
@@ -76,14 +77,19 @@ SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root) const
         glsl << "}\n\n";
     }
 
-    glsl << "vec2 sceneSDFWithMaterial(vec3 p)\n";
-    glsl << "{\n";
-    glsl << "    return " << expression << ";\n";
-    glsl << "}\n\n";
+    for (const GlslSdfHelper& helper : sdfHelpers.helpers) {
+        glsl << helper.glsl << "\n";
+    }
 
     glsl << "float sceneSDF(vec3 p)\n";
     glsl << "{\n";
-    glsl << "    return sceneSDFWithMaterial(p).x;\n";
+    glsl << "    return " << sdfHelpers.rootFunctionName << "(p);\n";
+    glsl << "}\n\n";
+
+    glsl << "SdfMaterialSample sceneMaterial(vec3 p)\n";
+    glsl << "{\n";
+    // AGENT: Deferred material evaluation runs once after hit detection and reuses SDF helpers for distance decisions.
+    glsl << "    return " << materialExpression << ";\n";
     glsl << "}\n";
     result.glsl = glsl.str();
 

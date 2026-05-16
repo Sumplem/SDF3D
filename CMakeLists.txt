@@ -30,6 +30,12 @@ add_executable(sdf3d
     src/systems/CompilerSystem.cpp
     src/systems/DiagnosticsSystem.cpp
     src/systems/GlslEmitter.cpp
+    src/systems/glsl_emitter/GlslEmitterBooleanExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterFormatting.cpp
+    src/systems/glsl_emitter/GlslEmitterMaterialExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfHelpers.cpp
+    src/systems/glsl_emitter/GlslEmitterSceneMaterial.cpp
     src/systems/GlslNodeNames.cpp
     src/systems/GraphSystem.cpp
     src/systems/MaterialSystem.cpp
@@ -80,6 +86,12 @@ add_executable(sdf3d_tests
     src/scene/SdfCompiler.cpp
     src/systems/CompilerSystem.cpp
     src/systems/GlslEmitter.cpp
+    src/systems/glsl_emitter/GlslEmitterBooleanExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterFormatting.cpp
+    src/systems/glsl_emitter/GlslEmitterMaterialExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfHelpers.cpp
+    src/systems/glsl_emitter/GlslEmitterSceneMaterial.cpp
     src/systems/GlslNodeNames.cpp
     src/systems/GraphSystem.cpp
     src/systems/MaterialSystem.cpp
@@ -227,9 +239,20 @@ endif()
 
 add_executable(sdf3d_glsl_emitter_tests
     tests/test_glsl_emitter.cpp
+    src/scene/SdfGraph.cpp
+    src/scene/SdfGraphCompiler.cpp
+    src/scene/SdfNodeDefinition.cpp
     src/systems/GlslEmitter.cpp
+    src/systems/glsl_emitter/GlslEmitterBooleanExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterFormatting.cpp
+    src/systems/glsl_emitter/GlslEmitterMaterialExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfHelpers.cpp
+    src/systems/glsl_emitter/GlslEmitterSceneMaterial.cpp
     src/systems/GlslNodeNames.cpp
+    src/systems/GraphSystem.cpp
     src/systems/MaterialSystem.cpp
+    src/systems/SelectionSystem.cpp
 )
 
 target_compile_features(sdf3d_glsl_emitter_tests PRIVATE cxx_std_17)
@@ -255,6 +278,12 @@ add_executable(sdf3d_compiler_system_tests
     src/scene/SdfNodeDefinition.cpp
     src/systems/CompilerSystem.cpp
     src/systems/GlslEmitter.cpp
+    src/systems/glsl_emitter/GlslEmitterBooleanExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterFormatting.cpp
+    src/systems/glsl_emitter/GlslEmitterMaterialExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfHelpers.cpp
+    src/systems/glsl_emitter/GlslEmitterSceneMaterial.cpp
     src/systems/GlslNodeNames.cpp
     src/systems/GraphSystem.cpp
     src/systems/MaterialSystem.cpp
@@ -279,7 +308,13 @@ endif()
 
 add_executable(sdf3d_material_system_tests
     tests/test_material_system.cpp
+    src/scene/SdfGraph.cpp
+    src/scene/SdfGraphCompiler.cpp
+    src/scene/SdfNodeDefinition.cpp
+    src/systems/GlslNodeNames.cpp
+    src/systems/GraphSystem.cpp
     src/systems/MaterialSystem.cpp
+    src/systems/SelectionSystem.cpp
 )
 
 target_compile_features(sdf3d_material_system_tests PRIVATE cxx_std_17)

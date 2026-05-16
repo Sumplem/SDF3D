@@ -148,7 +148,7 @@ bool drawExistingLinks(SdfGraph& graph, const CanvasFrame& frame, const std::vec
 void drawNodeBody(SdfGraph& graph, const GraphNodeLayout& layout, const CanvasFrame& frame)
 {
     SdfGraphNode& node = *layout.node;
-    const bool selected = graph.selectedNode() == layout.id;
+    const bool selected = graph.isNodeSelected(layout.id);
     const bool output = graph.outputNode() == layout.id;
     const ImU32 bodyColor = selected ? IM_COL32(58, 66, 84, 255) : IM_COL32(42, 45, 52, 255);
     const ImU32 titleColor = node.payload.type == SdfNodeType::Output ? IM_COL32(96, 74, 48, 255) : (output ? IM_COL32(76, 96, 70, 255) : IM_COL32(54, 58, 68, 255));
@@ -173,12 +173,25 @@ bool handleNodeTitleDrag(SdfGraph& graph, const GraphNodeLayout& layout, SdfGrap
     const float titleDragWidth = std::max(1.0f, layout.size.x - titleActionWidth);
     ImGui::InvisibleButton(("node-title##" + std::to_string(layout.id)).c_str(), {titleDragWidth, TITLE_HEIGHT * zoom});
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
-        graph.setSelectedNode(layout.id);
+        if (ImGui::GetIO().KeyShift) {
+            graph.toggleSelectedNode(layout.id);
+        } else if (!graph.isNodeSelected(layout.id)) {
+            graph.setSelectedNode(layout.id);
+        }
     }
     if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
         const ImVec2 delta = ImGui::GetIO().MouseDelta;
-        layout.node->editorX += delta.x / zoom;
-        layout.node->editorY += delta.y / zoom;
+        if (graph.isNodeSelected(layout.id)) {
+            for (const SdfGraphNodeId selectedNode : graph.selectedNodes()) {
+                if (SdfGraphNode* node = graph.node(selectedNode)) {
+                    node->editorX += delta.x / zoom;
+                    node->editorY += delta.y / zoom;
+                }
+            }
+        } else {
+            layout.node->editorX += delta.x / zoom;
+            layout.node->editorY += delta.y / zoom;
+        }
         draggedNode = layout.id;
         activeDraggedNode = layout.id;
     }

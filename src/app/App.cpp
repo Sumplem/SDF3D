@@ -34,6 +34,15 @@ SdfCompileResult compileScene(const SceneGraph& sceneGraph, const SdfCompiler& c
     return compiler.compile(sceneGraph.root());
 }
 
+SdfCompileResult collectSceneMaterials(const SceneGraph& sceneGraph, const MaterialSystem& materials)
+{
+    if (sceneGraph.graph().outputNode() != 0) {
+        return materials.collectMaterials(sceneGraph.graph());
+    }
+
+    return materials.collectMaterials(sceneGraph.root());
+}
+
 } // namespace
 
 App::~App()
@@ -103,6 +112,9 @@ bool App::init()
     m_eventBus.subscribe<SceneDirtyEvent>([this](const SceneDirtyEvent&) {
         recompileScene(true);
     });
+    m_eventBus.subscribe<MaterialDirtyEvent>([this](const MaterialDirtyEvent&) {
+        refreshMaterials();
+    });
 
     if (!recompileScene(false)) {
         shutdown();
@@ -123,7 +135,10 @@ void App::run()
         drawDockspace();
         drawPanels();
         if (m_ui.consumeSceneDirty()) {
+            (void)m_ui.consumeMaterialDirty();
             m_eventBus.emit(SceneDirtyEvent{});
+        } else if (m_ui.consumeMaterialDirty()) {
+            m_eventBus.emit(MaterialDirtyEvent{});
         }
         ResourceManager::instance().flushErrors();
         endFrame();
@@ -237,6 +252,18 @@ bool App::recompileScene(bool keepPreviousProgramOnFailure)
     m_diagnostics.add(DiagnosticSeverity::Info, "Renderer", "Shader validation passed.");
     m_renderer.setMaterials(sceneGlsl.materials);
     return true;
+}
+
+bool App::refreshMaterials()
+{
+    const SdfCompileResult materials = collectSceneMaterials(m_sceneGraph, m_materialSystem);
+    for (const std::string& error : materials.errors) {
+        m_diagnostics.add(DiagnosticSeverity::Warning, "MaterialSystem", error);
+        std::cerr << "[SDF3D][MaterialSystem] " << error << '\n';
+    }
+
+    m_renderer.setMaterials(materials.materials);
+    return materials.errors.empty();
 }
 
 } // namespace sdf3d

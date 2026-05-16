@@ -14,6 +14,10 @@ namespace sdf3d {
 struct SceneDirtyEvent {
 };
 
+/// Emitted when material uniforms changed without shader topology changes.
+struct MaterialDirtyEvent {
+};
+
 /// Typed in-process pub/sub bus for decoupled runtime systems.
 class EventBus {
 public:

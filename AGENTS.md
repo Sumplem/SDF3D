@@ -22,21 +22,52 @@
 - `SdfNodeType::MaterialOverride` is the explicit editable material node.
 - `SdfNode` still carries `SdfMaterial` payload storage for compatibility/migration, but UI and compiler material assignment must treat it as active only on `MaterialOverride`.
 - Properties panel and inline node controls show material controls only for `MaterialOverride`.
-- `CompilerSystem::compile(graph)` lowers graph to a temporary tree, then `GlslEmitter` emits material-aware GLSL.
-- Primitive nodes emit `vec2(distance, 0)` and use default material id `0`.
-- `MaterialOverride` nodes pass child SDF distance through and replace material id with an appended override material id.
-- Generated GLSL exposes `vec2 sceneSDFWithMaterial(vec3 p)` plus `float sceneSDF(vec3 p)` wrapper.
+- `CompilerSystem::compile(graph)` lowers graph to a temporary tree, then `GlslEmitter` emits geometry helpers plus deferred material GLSL.
+- Primitive nodes emit geometry-only `sdf_node_<id>` helpers and use default material id `0`.
+- `MaterialOverride` nodes pass child SDF distance through in geometry helpers and contribute material ids only in deferred `sceneMaterial`.
+- Generated GLSL exposes `float sceneSDF(vec3 p)` plus `SdfMaterialSample sceneMaterial(vec3 p)`.
 - Boolean/domain material behavior:
   - transforms pass child material through
   - union/intersect choose winner material by distance
   - subtract keeps base material
-  - smooth ops currently keep nearer source material; no material blending yet
+  - smooth ops blend material samples across the smooth boundary
 - `App::recompileScene()` sends GLSL to `Renderer::reloadScene()` and material list to `Renderer::setMaterials()`.
 - `UniformUploader` uploads up to 64 materials via uniform arrays.
-- Current limitation: material edits still mark full scene dirty and trigger shader reload; future improvement should split material-dirty uniform upload from GLSL-dirty compile.
+- Material parameter edits mark material-dirty only and update renderer uniforms without shader reload.
 - Temporary migration helper exists: `GraphMigrator::injectMaterialOverrides()` wraps legacy primitive material payloads with `MaterialOverride` nodes.
 
 ## Recent Approved Edits
+
+- Deferred material eval Step 1 and emitter split completed:
+  - `SdfNode` now carries `stableId` so graph node IDs survive lowering.
+  - `SdfGraphCompiler` copies `SdfGraphNode::id` into lowered `SdfNode::stableId`.
+  - `GlslEmitter::emitSdfHelpers()` emits geometry-only `float sdf_node_<id>(vec3 p)` helpers in dependency order: leaves first, root last.
+  - `MaterialOverride` SDF helper passes through child geometry only.
+  - Runtime shader path now uses `sceneSDF()` in the raymarch loop and calls `sceneMaterial()` once after hit confirmation.
+  - Material edit path now emits `MaterialDirtyEvent` and calls `Renderer::setMaterials()` without `Renderer::reloadScene()`.
+  - `GlslEmitter.cpp` hard-size debt was fixed by splitting internals into `src/systems/glsl_emitter/`:
+    - `GlslEmitterFormatting.h/.cpp`
+    - `GlslEmitterBooleanExpressions.cpp`
+    - `GlslEmitterMaterialExpressions.cpp`
+    - `GlslEmitterSdfHelperContext.h`
+    - `GlslEmitterSdfGeometry.cpp`
+    - `GlslEmitterSdfHelpers.cpp`
+  - Build passed:
+    - `cmake -S . -B build -DPython_EXECUTABLE=C:\Users\lucgi\AppData\Local\Programs\Python\Python312\python.exe`
+    - `cmake --build build --config Debug --target sdf3d sdf3d_tests sdf3d_glsl_emitter_tests sdf3d_compiler_system_tests`
+  - Full test set passed:
+    - `sdf3d_tests`
+    - `sdf3d_compiler_system_tests`
+    - `sdf3d_glsl_emitter_tests`
+    - `sdf3d_material_system_tests`
+    - `sdf3d_selection_tests`
+    - `sdf3d_event_bus_tests`
+    - `sdf3d_uniform_uploader_tests`
+    - `sdf3d_fbo_renderer_tests`
+    - `sdf3d_shader_manager_tests`
+    - `sdf3d_diagnostics_tests`
+  - Environment note: CMake/GLAD regenerate required real Python. Python 3.12 was installed via winget, and GLAD requirements (`jinja2`, `MarkupSafe`) were installed into that interpreter.
+  - Next deferred-material step should be Step 2: wire `CompilerSystem` output to use emitted `sdf_node_<id>` helpers and make `sceneSDF(vec3 p)` a thin root-helper wrapper. Plan first; no shader/raymarch edit until approved.
 
 - Material separation completed:
   - `SdfPrimitive` component header remains pure geometry: `type` + `parameters`, no material field.
@@ -96,6 +127,8 @@
     - drag from output pin and release over compatible input pin to connect
     - active drag wire and compatible input pin highlighted
     - per-node Delete button only; Output node delete is disabled
+    - multi-select: drag empty canvas rectangle selects multiple nodes; Shift+click toggles nodes in selection
+    - shortcuts: `Delete` deletes selected non-output nodes, `Ctrl+D` duplicates selected nodes without links, `F` frames selected nodes, `P` previews primary selected node to Output
   - UI split refactor completed:
     - `UI.cpp` is a thin compositor.
     - `AddMenu.h/.cpp` owns Add menu actions.
@@ -114,21 +147,20 @@
   - Added `compile(const SdfGraph&)` declaration.
 
 - `src/scene/SdfCompiler.cpp`
+  - Historical note: generated-entry bullets below are superseded by Deferred Material Eval; current GLSL emits `sceneSDF` + `sceneMaterial`.
   - Added material collection during compile.
-  - Primitive leaves append their `SdfMaterial` and emit material ID.
-  - Generated GLSL now includes:
-    - `vec2 sceneSDFWithMaterial(vec3 p)`
-    - `float sceneSDF(vec3 p)` wrapper for current shader compatibility.
+  - Primitive leaves emitted material IDs before Material Separation; current primitive output is geometry-only.
+  - Current generated GLSL includes `float sceneSDF(vec3 p)` and `SdfMaterialSample sceneMaterial(vec3 p)`.
   - Boolean/domain ops preserve material IDs.
-  - Smooth ops currently keep nearer source material; no material blending yet.
+  - Smooth ops now recompute blend weights in `sceneMaterial()` and blend material samples.
   - Implemented `compile(const SdfGraph&)` by building a deterministic temporary tree from graph output links.
   - Graph compile detects cycles and missing node references.
   - Graph compile orders known sockets: `child`, `left`/`base`, `right`/`cutter`, then fallback lexical.
 
 - `assets/shaders/raymarch.frag`
-  - Raymarch hit path reads material ID from `sceneSDFWithMaterial()`.
+  - Historical note: raymarch now calls `sceneSDF()` in the loop and `sceneMaterial()` after hit.
   - Uses material albedo/emission uniforms with fallback color.
-  - Keeps `sceneSDF()` wrapper for normal estimation.
+  - Keeps `sceneSDF()` for normal estimation.
 
 - `include/sdf3d/renderer/Renderer.h`
   - Added `setMaterials(std::vector<SdfCompiledMaterial>)`.
@@ -158,7 +190,7 @@
   - Existing tree API preserved.
 
 - `src/scene/SdfCompiler.cpp`
-  - Empty scene fallback now emits `sceneSDFWithMaterial()` plus `sceneSDF()`.
+  - Empty scene fallback now emits `sceneSDF()` plus `sceneMaterial()`.
   - This keeps shader valid without default geometry.
 
 - `include/sdf3d/scene/SdfGraph.h`
@@ -255,13 +287,21 @@
 
 ## Next Proposed Step
 
-- Decide next M4/M5 increment.
-- Likely candidates:
-  - Split files over hard size gate before more feature work:
-    - `src/systems/GlslEmitter.cpp` ~345 lines
+- Deferred Material Eval is implemented:
+  - `CompilerSystem` emits per-node `sdf_node_<id>` helpers.
+  - `sceneSDF(vec3 p)` is a thin wrapper around the root helper.
+  - `sceneMaterial(vec3 p)` evaluates material once after hit confirmation.
+  - `raymarch.frag` no longer calls `sceneSDFWithMaterial()`.
+- Smooth op material blending is implemented:
+  - `sceneMaterial(vec3 p)` returns `SdfMaterialSample`.
+  - `raymarch.frag` samples albedo, roughness, metallic, and emission from that struct after hit.
+  - SmoothUnion, SmoothIntersect, and SmoothSubtract recompute blend weights inside material evaluation while `sdf_node_<id>` helpers stay `float`.
+- Next material candidates:
+  - Move from uniform arrays to a material buffer when material count grows beyond 64.
+- Other candidates:
+  - Split remaining files over hard size gate before unrelated feature work:
     - `src/ui/node_editor/NodeEditorCanvas.cpp` ~330 lines
     - `tests/sdf_node_tests.cpp` ~724 lines
-  - Keyboard delete / duplicate / frame selected node.
   - Save/load graph schema.
   - Remove migration helper after legacy scene migration period.
 

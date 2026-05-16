@@ -25,10 +25,14 @@ public:
     /// Returns true once when a scene edit requires shader recompilation.
     bool consumeSceneDirty();
 
+    /// Returns true once when a material edit requires uniform upload.
+    bool consumeMaterialDirty();
+
 private:
     void drawScenePanel(SceneGraph& sceneGraph);
     void drawDiagnosticsPanel(const std::vector<DiagnosticEntry>& runtimeErrors);
     void markSceneDirty();
+    void markMaterialDirty();
 
     SelectionSystem m_selectionSystem;
     AddMenu m_addMenu;

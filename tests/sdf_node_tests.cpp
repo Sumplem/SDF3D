@@ -35,7 +35,8 @@ void testDefaultSphere(std::vector<TestFailure>& failures)
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
     expect(result.materials.size() == 1, testName, "Expected one compiled material.", failures);
     expect(contains(result.glsl, "float sceneSDF(vec3 p)"), testName, "Expected sceneSDF declaration.", failures);
-    expect(contains(result.glsl, "vec2 sceneSDFWithMaterial(vec3 p)"), testName, "Expected material-aware sceneSDF declaration.", failures);
+    expect(contains(result.glsl, "SdfMaterialSample sceneMaterial(vec3 p)"), testName, "Expected sceneMaterial declaration.", failures);
+    expect(!contains(result.glsl, "sceneSDFWithMaterial"), testName, "Expected legacy material-aware sceneSDF removed.", failures);
     expect(contains(result.glsl, "length(p) - 1.000000"), testName, "Expected unit sphere expression.", failures);
     expect(!result.usesBox, testName, "Expected box helper to be unused.", failures);
     expect(!result.usesCylinder, testName, "Expected cylinder helper to be unused.", failures);
@@ -201,6 +202,7 @@ void testSmoothUnion(std::vector<TestFailure>& failures)
     expect(contains(result.glsl, "float sdf3d_smin"), testName, "Expected smooth-min helper.", failures);
     expect(contains(result.glsl, "sdf3d_smin("), testName, "Expected smooth union call.", failures);
     expect(contains(result.glsl, "0.400000"), testName, "Expected smoothness parameter.", failures);
+    expect(contains(result.glsl, "mixMaterial("), testName, "Expected smooth union material blending.", failures);
 }
 
 void testSmoothSubtract(std::vector<TestFailure>& failures)
@@ -215,6 +217,7 @@ void testSmoothSubtract(std::vector<TestFailure>& failures)
     expect(result.usesSmoothMin, testName, "Expected smooth-min helper flag.", failures);
     expect(contains(result.glsl, "-sdf3d_smin"), testName, "Expected smooth subtract expression.", failures);
     expect(contains(result.glsl, "0.200000"), testName, "Expected smoothness parameter.", failures);
+    expect(contains(result.glsl, "mixMaterial("), testName, "Expected smooth subtract material blending.", failures);
 }
 
 void testSmoothIntersect(std::vector<TestFailure>& failures)
@@ -232,6 +235,7 @@ void testSmoothIntersect(std::vector<TestFailure>& failures)
     expect(result.usesSmoothMin, testName, "Expected smooth-min helper flag.", failures);
     expect(contains(result.glsl, "-sdf3d_smin"), testName, "Expected smooth intersect expression.", failures);
     expect(contains(result.glsl, "0.300000"), testName, "Expected smoothness parameter.", failures);
+    expect(contains(result.glsl, "mixMaterial("), testName, "Expected smooth intersect material blending.", failures);
 }
 
 void testRotate(std::vector<TestFailure>& failures)
@@ -275,7 +279,8 @@ void testMaterialMetadata(std::vector<TestFailure>& failures)
         expect(result.materials[2].material.albedo.z == 1.0f, testName, "Expected second override material to be blue.", failures);
         expect(result.materials[2].material.roughness == 0.25f, testName, "Expected second override roughness to be preserved.", failures);
     }
-    expect(contains(result.glsl, "vec2("), testName, "Expected compiled GLSL to emit material hit records.", failures);
+    expect(contains(result.glsl, "SdfMaterialSample sceneMaterial(vec3 p)"), testName, "Expected deferred material entry point.", failures);
+    expect(contains(result.glsl, "selectMaterial("), testName, "Expected material choice between override samples.", failures);
 }
 
 void testGraphCreateSelectOutput(std::vector<TestFailure>& failures)
@@ -293,6 +298,7 @@ void testGraphCreateSelectOutput(std::vector<TestFailure>& failures)
     expect(sphere != 0, testName, "Expected nonzero graph node ID.", failures);
     expect(graph.outputNode() == output, testName, "Expected default output to remain output.", failures);
     expect(graph.selectedNode() == sphere, testName, "Expected created node to become selected.", failures);
+    expect(graph.selectedNodes().size() == 1 && graph.isNodeSelected(sphere), testName, "Expected selected set to contain created node.", failures);
     expect(graph.node(sphere) != nullptr, testName, "Expected node lookup to succeed.", failures);
     if (const sdf3d::SdfGraphNode* node = graph.node(sphere)) {
         expect(node->payload.type == sdf3d::SdfNodeType::Sphere, testName, "Expected node payload type.", failures);
@@ -324,6 +330,48 @@ void testGraphLinksAndDelete(std::vector<TestFailure>& failures)
     expect(graph.links().empty(), testName, "Expected connected links to be removed.", failures);
     expect(graph.node(box) == nullptr, testName, "Expected deleted node lookup to fail.", failures);
     expect(!graph.deleteNode(graph.outputNode()), testName, "Expected output node delete to fail.", failures);
+}
+
+void testGraphDuplicateNode(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph duplicate node";
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Mat");
+    if (sdf3d::SdfGraphNode* node = graph.node(material)) {
+        node->payload.material.emission = 3.0f;
+        node->editorX = 100.0f;
+        node->editorY = 200.0f;
+        node->editorPropertiesCollapsed = true;
+    }
+    graph.link(material, "sdf", graph.outputNode(), "surface");
+
+    const sdf3d::SdfGraphNodeId duplicate = graph.duplicateNode(material);
+
+    expect(duplicate != 0, testName, "Expected duplicate node ID.", failures);
+    expect(graph.selectedNode() == duplicate, testName, "Expected duplicate to become selected.", failures);
+    expect(graph.links().size() == 1, testName, "Expected duplicate not to copy links.", failures);
+    const sdf3d::SdfGraphNode* copy = graph.node(duplicate);
+    expect(copy != nullptr, testName, "Expected duplicate lookup.", failures);
+    if (copy != nullptr) {
+        expect(copy->payload.type == sdf3d::SdfNodeType::MaterialOverride, testName, "Expected duplicate type.", failures);
+        expect(copy->payload.material.emission == 3.0f, testName, "Expected duplicate material payload.", failures);
+        expect(copy->editorX == 132.0f && copy->editorY == 232.0f, testName, "Expected duplicate editor offset.", failures);
+        expect(copy->editorPropertiesCollapsed, testName, "Expected duplicate editor collapsed state.", failures);
+    }
+    expect(graph.duplicateNode(graph.outputNode()) == 0, testName, "Expected output node duplicate to fail.", failures);
+}
+
+void testGraphMultiSelectionDeleteCleanup(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph multi selection delete cleanup";
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId box = graph.createNode(sdf3d::SdfNodeType::Box, "Box");
+
+    expect(graph.setSelectedNodes({sphere, box}, box), testName, "Expected multi-selection.", failures);
+    expect(graph.deleteNode(box), testName, "Expected selected node delete.", failures);
+    expect(graph.selectedNode() == sphere, testName, "Expected remaining selected node to become primary.", failures);
+    expect(graph.selectedNodes().size() == 1 && graph.isNodeSelected(sphere), testName, "Expected deleted node removed from selected set.", failures);
 }
 
 void testGraphExactUnlink(std::vector<TestFailure>& failures)
@@ -443,7 +491,7 @@ void testGraphCompilerEmpty(std::vector<TestFailure>& failures)
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
 
     expect(!result.errors.empty(), testName, "Expected empty graph compiler warning.", failures);
-    expect(contains(result.glsl, "sceneSDFWithMaterial"), testName, "Expected material-aware empty graph output.", failures);
+    expect(contains(result.glsl, "sceneMaterial"), testName, "Expected deferred material empty graph output.", failures);
     expect(contains(result.glsl, "return 1e6;"), testName, "Expected empty graph no-hit distance.", failures);
 }
 
@@ -589,11 +637,11 @@ void testGraphCompilerSocketOrdering(std::vector<TestFailure>& failures)
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
     expect(contains(result.glsl, "max(-("), testName, "Expected subtract expression.", failures);
 
-    const size_t basePosition = result.glsl.find("length(p) - 2.000000");
-    const size_t cutterPosition = result.glsl.find("length(p) - 0.500000");
-    expect(basePosition != std::string::npos, testName, "Expected base radius expression.", failures);
-    expect(cutterPosition != std::string::npos, testName, "Expected cutter radius expression.", failures);
-    expect(cutterPosition < basePosition, testName, "Expected cutter socket to be the negated subtract operand.", failures);
+    const std::string baseCall = "sdf_node_" + std::to_string(base) + "(p)";
+    const std::string cutterCall = "sdf_node_" + std::to_string(cutter) + "(p)";
+    expect(contains(result.glsl, "length(p) - 2.000000"), testName, "Expected base radius expression.", failures);
+    expect(contains(result.glsl, "length(p) - 0.500000"), testName, "Expected cutter radius expression.", failures);
+    expect(contains(result.glsl, "max(-(" + cutterCall + "), " + baseCall + ")"), testName, "Expected cutter socket to be the negated subtract operand.", failures);
 }
 
 void testGraphCompilerIncompleteUnion(std::vector<TestFailure>& failures)
@@ -608,8 +656,9 @@ void testGraphCompilerIncompleteUnion(std::vector<TestFailure>& failures)
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
 
     expect(!result.errors.empty(), testName, "Expected incomplete union compiler error.", failures);
-    expect(contains(result.glsl, "return vec2(1e6, 0.0);"), testName, "Expected material-aware no-hit return.", failures);
-    expect(!contains(result.glsl, "return 1e6;\n}\n\nfloat sceneSDF"), testName, "Expected vec2 scene path not to return raw float.", failures);
+    expect(contains(result.glsl, "return 1e6;"), testName, "Expected geometry no-hit return.", failures);
+    expect(contains(result.glsl, "return sampleMaterial(0);"), testName, "Expected default material return.", failures);
+    expect(!contains(result.glsl, "sceneSDFWithMaterial"), testName, "Expected legacy material-aware sceneSDF removed.", failures);
 }
 
 void testGraphCompilerBypassSingleInputUnion(std::vector<TestFailure>& failures)
@@ -665,7 +714,7 @@ void testGraphCompilerMissingTransformChild(std::vector<TestFailure>& failures)
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
 
     expect(!result.errors.empty(), testName, "Expected missing transform child warning.", failures);
-    expect(contains(result.glsl, "return vec2(1e6, 0.0);"), testName, "Expected no-hit vec2 for missing child.", failures);
+    expect(contains(result.glsl, "return 1e6;"), testName, "Expected no-hit distance for missing child.", failures);
 }
 
 } // namespace
@@ -693,6 +742,8 @@ int main()
     testMaterialMetadata(failures);
     testGraphCreateSelectOutput(failures);
     testGraphLinksAndDelete(failures);
+    testGraphDuplicateNode(failures);
+    testGraphMultiSelectionDeleteCleanup(failures);
     testGraphExactUnlink(failures);
     testGraphSocketsAndTypedLinks(failures);
     testGraphOutputNodeSockets(failures);

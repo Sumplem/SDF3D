@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sdf3d/scene/SdfCompiler.h"
+#include "sdf3d/scene/SdfGraph.h"
 
 namespace sdf3d {
 
@@ -12,6 +13,12 @@ public:
 
     /// Appends one material and returns its material ID.
     int appendMaterial(SdfCompileResult& result, const SdfMaterial& material) const;
+
+    /// Collects material uniforms from a lowered tree without emitting GLSL.
+    SdfCompileResult collectMaterials(const SdfNodePtr& root) const;
+
+    /// Collects material uniforms from graph output without emitting GLSL.
+    SdfCompileResult collectMaterials(const SdfGraph& graph) const;
 };
 
 } // namespace sdf3d

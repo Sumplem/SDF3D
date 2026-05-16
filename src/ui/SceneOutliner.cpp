@@ -192,9 +192,13 @@ bool SceneOutliner::draw(SceneGraph& sceneGraph)
                 label += " [Output]";
             }
 
-            const bool selected = graph.selectedNode() == id;
+            const bool selected = graph.isNodeSelected(id);
             if (ImGui::Selectable(label.c_str(), selected)) {
-                graph.setSelectedNode(id);
+                if (ImGui::GetIO().KeyShift) {
+                    graph.toggleSelectedNode(id);
+                } else {
+                    graph.setSelectedNode(id);
+                }
             }
 
             ImGui::SameLine();
