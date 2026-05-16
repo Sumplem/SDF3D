@@ -1,5 +1,6 @@
 #include "sdf3d/ui/NodeEditor.h"
 
+#include "sdf3d/core/EventBus.h"
 #include "sdf3d/ui/node_editor/NodeEditorCanvas.h"
 
 #include <algorithm>
@@ -79,6 +80,11 @@ void frameSelectedNodes(
 
 } // namespace
 
+void NodeEditor::setEventBus(EventBus* eventBus)
+{
+    m_eventBus = eventBus;
+}
+
 EditorDirtyState NodeEditor::draw(SceneGraph& sceneGraph)
 {
     EditorDirtyState dirty;
@@ -115,21 +121,8 @@ EditorDirtyState NodeEditor::draw(SceneGraph& sceneGraph)
             const std::vector<SdfGraphNodeId> ids = deletableSelectedNodes(graph);
             pendingDelete.insert(pendingDelete.end(), ids.begin(), ids.end());
         }
-        if (hasSelection && ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D)) {
-            std::vector<SdfGraphNodeId> duplicates;
-            const std::vector<SdfGraphNodeId> selectedNodes = graph.selectedNodes();
-            for (const SdfGraphNodeId id : selectedNodes) {
-                if (graph.isOutputNode(id)) {
-                    continue;
-                }
-                const SdfGraphNodeId duplicate = graph.duplicateNode(id);
-                if (duplicate != 0) {
-                    duplicates.push_back(duplicate);
-                }
-            }
-            if (!duplicates.empty() && graph.setSelectedNodes(duplicates, duplicates.back())) {
-                dirty.scene = true;
-            }
+        if (hasSelection && m_eventBus != nullptr && ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D)) {
+            m_eventBus->emit(DuplicateSelectionEvent{graph.selectedNodes()});
         }
         if (hasSelection && ImGui::IsKeyPressed(ImGuiKey_F)) {
             frameSelectedNodes(layouts, graph, frame, m_canvasPanX, m_canvasPanY);
@@ -231,6 +224,7 @@ EditorDirtyState NodeEditor::draw(SceneGraph& sceneGraph)
         && !m_draggingInputLink
         && !mouseInsideNode
         && ImGui::IsWindowHovered()
+        && !ImGui::GetIO().KeyShift
         && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
         && !ImGui::IsAnyItemHovered()) {
         m_draggingSelectionRect = true;

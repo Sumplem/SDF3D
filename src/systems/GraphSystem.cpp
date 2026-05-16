@@ -1,8 +1,12 @@
 #include "sdf3d/systems/GraphSystem.h"
 
+#include "sdf3d/core/EventBus.h"
 #include "sdf3d/scene/SdfNodeDefinition.h"
+#include "sdf3d/systems/SelectionSystem.h"
 
 #include <algorithm>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace sdf3d {
@@ -85,6 +89,65 @@ SdfGraphNodeId GraphSystem::duplicateNode(SdfGraph& graph, SdfGraphNodeId id)
     graphNode.editorPropertiesCollapsed = it->second.editorPropertiesCollapsed;
     graph.m_nodes.emplace(duplicateId, std::move(graphNode));
     return duplicateId;
+}
+
+std::vector<SdfGraphNodeId> GraphSystem::duplicateSelection(SdfGraph& graph, const std::vector<SdfGraphNodeId>& ids, EventBus& eventBus)
+{
+    std::vector<SdfGraphNodeId> sourceIds;
+    sourceIds.reserve(ids.size());
+    for (const SdfGraphNodeId id : ids) {
+        if (id == 0 || isOutputNode(graph, id) || graph.m_nodes.find(id) == graph.m_nodes.end()) {
+            continue;
+        }
+        if (std::find(sourceIds.begin(), sourceIds.end(), id) == sourceIds.end()) {
+            sourceIds.push_back(id);
+        }
+    }
+
+    std::unordered_set<SdfGraphNodeId> sourceSet;
+    sourceSet.reserve(sourceIds.size());
+    for (const SdfGraphNodeId id : sourceIds) {
+        sourceSet.insert(id);
+    }
+
+    std::unordered_map<SdfGraphNodeId, SdfGraphNodeId> duplicateIdsBySource;
+    duplicateIdsBySource.reserve(sourceIds.size());
+    std::vector<SdfGraphNodeId> duplicateIds;
+    duplicateIds.reserve(sourceIds.size());
+    for (const SdfGraphNodeId id : sourceIds) {
+        const SdfGraphNodeId duplicateId = duplicateNode(graph, id);
+        if (duplicateId == 0) {
+            continue;
+        }
+        duplicateIdsBySource.emplace(id, duplicateId);
+        duplicateIds.push_back(duplicateId);
+    }
+
+    if (duplicateIds.empty()) {
+        return {};
+    }
+
+    const std::vector<SdfGraphLink> originalLinks = graph.m_links;
+    for (const SdfGraphLink& linkToCopy : originalLinks) {
+        if (sourceSet.find(linkToCopy.fromNode) == sourceSet.end()
+            || sourceSet.find(linkToCopy.toNode) == sourceSet.end()) {
+            continue;
+        }
+
+        const auto fromIt = duplicateIdsBySource.find(linkToCopy.fromNode);
+        const auto toIt = duplicateIdsBySource.find(linkToCopy.toNode);
+        if (fromIt == duplicateIdsBySource.end() || toIt == duplicateIdsBySource.end()) {
+            continue;
+        }
+
+        (void)link(graph, fromIt->second, linkToCopy.fromSocket, toIt->second, linkToCopy.toSocket);
+    }
+
+    const SdfGraphNodeId primary = duplicateIds.back();
+    SelectionSystem::setSelectedNodes(graph, duplicateIds, primary);
+    eventBus.emit(SelectionEvent{duplicateIds, primary});
+    eventBus.emit(SceneDirtyEvent{});
+    return duplicateIds;
 }
 
 bool GraphSystem::deleteNode(SdfGraph& graph, SdfGraphNodeId id)

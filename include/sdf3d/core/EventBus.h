@@ -1,8 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <cstdint>
 #include <cstddef>
 #include <functional>
+#include <string>
 #include <typeindex>
 #include <unordered_map>
 #include <utility>
@@ -16,6 +18,27 @@ struct SceneDirtyEvent {
 
 /// Emitted when material uniforms changed without shader topology changes.
 struct MaterialDirtyEvent {
+};
+
+/// Requests duplication of selected graph nodes.
+struct DuplicateSelectionEvent {
+    std::vector<std::uint64_t> selectedNodeIds;
+};
+
+/// Emitted when graph selection changes through decoupled systems.
+struct SelectionEvent {
+    std::vector<std::uint64_t> nodeIds;
+    std::uint64_t primaryNodeId = 0;
+};
+
+/// Requests graph save to a concrete path.
+struct SaveGraphEvent {
+    std::string path;
+};
+
+/// Requests graph load from a concrete path.
+struct LoadGraphEvent {
+    std::string path;
 };
 
 /// Typed in-process pub/sub bus for decoupled runtime systems.

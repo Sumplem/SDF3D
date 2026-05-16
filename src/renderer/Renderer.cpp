@@ -15,6 +15,7 @@ Renderer::~Renderer()
 bool Renderer::init(const std::filesystem::path& shaderRoot)
 {
     m_fboRenderer.init();
+    m_uniformUploader.init();
 
     // AGENT: Shader files stay in assets so runtime asset loading and later
     // hot-reload use one path through ShaderManager.
@@ -23,6 +24,7 @@ bool Renderer::init(const std::filesystem::path& shaderRoot)
 
 void Renderer::shutdown()
 {
+    m_uniformUploader.shutdown();
     m_fboRenderer.shutdown();
     m_shaderManager.shutdown();
 }

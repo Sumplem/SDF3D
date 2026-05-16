@@ -1,0 +1,46 @@
+{
+  "links": [],
+  "nextId": 2,
+  "nodes": [
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 560.0,
+        "y": 40.0
+      },
+      "id": 1,
+      "inputs": [
+        {
+          "direction": "Input",
+          "multiInput": false,
+          "name": "surface",
+          "type": "Sdf"
+        }
+      ],
+      "material": {
+        "albedo": [
+          0.800000011920929,
+          0.800000011920929,
+          0.800000011920929
+        ],
+        "emission": 0.0,
+        "metallic": 0.0,
+        "roughness": 0.5
+      },
+      "name": "Output",
+      "outputs": [],
+      "parameters": {},
+      "stableId": 0,
+      "type": "Output"
+    }
+  ],
+  "outputNode": 1,
+  "schema": "sdf3d.graph",
+  "selection": {
+    "nodes": [
+      1
+    ],
+    "primary": 1
+  },
+  "version": 1
+}

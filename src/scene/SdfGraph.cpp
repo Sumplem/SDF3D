@@ -137,4 +137,9 @@ const std::vector<SdfGraphLink>& SdfGraph::links() const
     return m_links;
 }
 
+SdfGraphNodeId SdfGraph::nextNodeIdForSerialization() const
+{
+    return m_nextId;
+}
+
 } // namespace sdf3d

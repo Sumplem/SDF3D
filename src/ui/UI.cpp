@@ -1,8 +1,21 @@
 #include "sdf3d/ui/UI.h"
 
+#include "sdf3d/core/EventBus.h"
+
 #include <imgui.h>
 
 namespace sdf3d {
+namespace {
+
+constexpr const char* DEFAULT_GRAPH_PATH = "sdf3d_graph.json";
+
+} // namespace
+
+void UI::setEventBus(EventBus* eventBus)
+{
+    m_eventBus = eventBus;
+    m_nodeEditor.setEventBus(eventBus);
+}
 
 void UI::drawMainMenu(SceneGraph& sceneGraph)
 {
@@ -11,6 +24,17 @@ void UI::drawMainMenu(SceneGraph& sceneGraph)
     }
 
     if (ImGui::BeginMenu("File")) {
+        if (ImGui::MenuItem("Save Graph")) {
+            if (m_eventBus != nullptr) {
+                m_eventBus->emit(SaveGraphEvent{DEFAULT_GRAPH_PATH});
+            }
+        }
+        if (ImGui::MenuItem("Load Graph")) {
+            if (m_eventBus != nullptr) {
+                m_eventBus->emit(LoadGraphEvent{DEFAULT_GRAPH_PATH});
+            }
+        }
+        ImGui::Separator();
         ImGui::MenuItem("Exit");
         ImGui::EndMenu();
     }

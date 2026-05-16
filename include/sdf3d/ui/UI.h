@@ -13,9 +13,13 @@
 
 namespace sdf3d {
 
+class EventBus;
+
 /// Coordinates editor UI panels and scene edit dirty state.
 class UI {
 public:
+    void setEventBus(EventBus* eventBus);
+
     /// Draws menu entries that can mutate the scene.
     void drawMainMenu(SceneGraph& sceneGraph);
 
@@ -34,6 +38,7 @@ private:
     void markSceneDirty();
     void markMaterialDirty();
 
+    EventBus* m_eventBus = nullptr;
     SelectionSystem m_selectionSystem;
     AddMenu m_addMenu;
     NodeEditor m_nodeEditor;

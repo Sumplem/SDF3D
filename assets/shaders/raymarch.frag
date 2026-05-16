@@ -8,16 +8,27 @@ uniform vec3 uCameraTarget;
 uniform vec3 uCameraUp;
 uniform float uFovDegrees;
 uniform int uMaterialCount;
-uniform vec3 uMaterialAlbedo[64];
-uniform float uMaterialRoughness[64];
-uniform float uMaterialMetallic[64];
-uniform float uMaterialEmission[64];
+
+struct GpuMaterial {
+    vec4 albedoRoughness;
+    vec4 metallicEmission;
+};
+
+layout(std430, binding = 0) readonly buffer MaterialBuffer {
+    GpuMaterial uMaterials[];
+};
 
 const int MAX_STEPS = 128;
 const float MAX_DISTANCE = 100.0;
 const float SURFACE_EPSILON = 0.001;
+const float NORMAL_EPSILON = 0.00035;
 const float PI = 3.14159265358979323846;
-const int MAX_MATERIALS = 64;
+const float SHADOW_MIN_DISTANCE = 0.01;
+const float SHADOW_MAX_DISTANCE = 32.0;
+const float SHADOW_SOFTNESS = 10.0;
+const int AO_STEPS = 5;
+const float AO_STEP_SIZE = 0.08;
+const float AO_STRENGTH = 1.4;
 
 struct SdfMaterialSample {
     vec3 albedo;
@@ -29,7 +40,7 @@ struct SdfMaterialSample {
 SdfMaterialSample sampleMaterial(int materialId)
 {
     SdfMaterialSample material;
-    if (materialId < 0 || materialId >= uMaterialCount || materialId >= MAX_MATERIALS) {
+    if (materialId < 0 || materialId >= uMaterialCount) {
         material.albedo = vec3(0.78, 0.82, 0.88);
         material.roughness = 0.5;
         material.metallic = 0.0;
@@ -37,10 +48,11 @@ SdfMaterialSample sampleMaterial(int materialId)
         return material;
     }
 
-    material.albedo = uMaterialAlbedo[materialId];
-    material.roughness = clamp(uMaterialRoughness[materialId], 0.02, 1.0);
-    material.metallic = clamp(uMaterialMetallic[materialId], 0.0, 1.0);
-    material.emission = uMaterialEmission[materialId];
+    GpuMaterial gpuMaterial = uMaterials[materialId];
+    material.albedo = gpuMaterial.albedoRoughness.rgb;
+    material.roughness = clamp(gpuMaterial.albedoRoughness.a, 0.02, 1.0);
+    material.metallic = clamp(gpuMaterial.metallicEmission.x, 0.0, 1.0);
+    material.emission = gpuMaterial.metallicEmission.y;
     return material;
 }
 
@@ -81,7 +93,7 @@ vec3 estimateNormal(vec3 p)
 {
     // AGENT: Central differences are cheap and stable enough for the M2
     // hardcoded scene; analytic normals can be introduced per-node later.
-    vec2 e = vec2(SURFACE_EPSILON, 0.0);
+    vec2 e = vec2(NORMAL_EPSILON, 0.0);
     return normalize(vec3(
         sceneSDF(p + e.xyy) - sceneSDF(p - e.xyy),
         sceneSDF(p + e.yxy) - sceneSDF(p - e.yxy),
@@ -108,6 +120,90 @@ float raymarch(vec3 rayOrigin, vec3 rayDirection, out vec3 hitPosition)
     }
 
     return -1.0;
+}
+
+float softShadow(vec3 rayOrigin, vec3 rayDirection)
+{
+    float visibility = 1.0;
+    float distanceTraveled = SHADOW_MIN_DISTANCE;
+
+    for (int i = 0; i < MAX_STEPS; ++i) {
+        if (distanceTraveled >= SHADOW_MAX_DISTANCE) {
+            break;
+        }
+
+        float distanceToScene = sceneSDF(rayOrigin + rayDirection * distanceTraveled);
+        if (distanceToScene < SURFACE_EPSILON) {
+            return 0.0;
+        }
+
+        visibility = min(visibility, SHADOW_SOFTNESS * distanceToScene / distanceTraveled);
+        distanceTraveled += clamp(distanceToScene, 0.02, 0.5);
+    }
+
+    return clamp(visibility, 0.0, 1.0);
+}
+
+float ambientOcclusion(vec3 position, vec3 normal)
+{
+    float occlusion = 0.0;
+    float weight = 1.0;
+
+    for (int i = 1; i <= AO_STEPS; ++i) {
+        float sampleDistance = AO_STEP_SIZE * float(i);
+        float sceneDistance = sceneSDF(position + normal * sampleDistance);
+        occlusion += (sampleDistance - sceneDistance) * weight;
+        weight *= 0.55;
+    }
+
+    return clamp(1.0 - occlusion * AO_STRENGTH, 0.0, 1.0);
+}
+
+float distributionGGX(vec3 normal, vec3 halfVector, float roughness)
+{
+    float alpha = roughness * roughness;
+    float alphaSquared = alpha * alpha;
+    float nDotH = max(dot(normal, halfVector), 0.0);
+    float nDotHSquared = nDotH * nDotH;
+    float denominator = nDotHSquared * (alphaSquared - 1.0) + 1.0;
+    return alphaSquared / max(PI * denominator * denominator, 0.0001);
+}
+
+float geometrySchlickGGX(float nDotDirection, float roughness)
+{
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+    return nDotDirection / max(nDotDirection * (1.0 - k) + k, 0.0001);
+}
+
+float geometrySmith(vec3 normal, vec3 viewDirection, vec3 lightDirection, float roughness)
+{
+    float nDotV = max(dot(normal, viewDirection), 0.0);
+    float nDotL = max(dot(normal, lightDirection), 0.0);
+    return geometrySchlickGGX(nDotV, roughness) * geometrySchlickGGX(nDotL, roughness);
+}
+
+vec3 fresnelSchlick(float cosTheta, vec3 f0)
+{
+    return f0 + (1.0 - f0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+vec3 pbrDirectLighting(vec3 normal, vec3 viewDirection, vec3 lightDirection, vec3 albedo, float roughness, float metallic)
+{
+    vec3 halfVector = normalize(viewDirection + lightDirection);
+    float nDotL = max(dot(normal, lightDirection), 0.0);
+    float nDotV = max(dot(normal, viewDirection), 0.0);
+    float hDotV = max(dot(halfVector, viewDirection), 0.0);
+
+    vec3 f0 = mix(vec3(0.04), albedo, metallic);
+    vec3 fresnel = fresnelSchlick(hDotV, f0);
+    float distribution = distributionGGX(normal, halfVector, roughness);
+    float geometry = geometrySmith(normal, viewDirection, lightDirection, roughness);
+    vec3 specular = distribution * geometry * fresnel / max(4.0 * nDotV * nDotL, 0.0001);
+
+    vec3 diffuse = (vec3(1.0) - fresnel) * (1.0 - metallic) * albedo / PI;
+    vec3 lightColor = vec3(1.15, 1.10, 1.0);
+    return (diffuse + specular) * lightColor * nDotL;
 }
 
 float gridLine(vec2 p)
@@ -167,21 +263,16 @@ void main()
     vec3 normal = estimateNormal(hitPosition);
     vec3 lightDirection = normalize(vec3(-0.4, 0.7, 0.5));
     vec3 viewDirection = normalize(rayOrigin - hitPosition);
-    vec3 halfVector = normalize(lightDirection + viewDirection);
-
-    float diffuse = max(dot(normal, lightDirection), 0.0);
+    float shadow = softShadow(hitPosition + normal * SURFACE_EPSILON * 2.0, lightDirection);
+    float occlusion = ambientOcclusion(hitPosition, normal);
     SdfMaterialSample material = sceneMaterial(hitPosition);
     vec3 baseColor = material.albedo;
     float roughness = material.roughness;
     float metallic = material.metallic;
 
-    // AGENT: This keeps the Phase 1 Blinn-Phong model but maps material
-    // roughness/metallic to visible controls instead of unused uniforms.
-    float shininess = mix(96.0, 8.0, roughness);
-    float specular = pow(max(dot(normal, halfVector), 0.0), shininess) * mix(0.5, 1.1, metallic) * (1.0 - roughness * 0.55);
-    vec3 diffuseColor = baseColor * (1.0 - metallic * 0.45);
-    vec3 specularColor = mix(vec3(0.35), baseColor, metallic);
-    vec3 color = diffuseColor * (0.18 + diffuse * 0.78) + specularColor * specular + baseColor * material.emission;
+    vec3 ambient = baseColor * 0.18 * occlusion * (1.0 - metallic * 0.35);
+    vec3 direct = pbrDirectLighting(normal, viewDirection, lightDirection, baseColor, roughness, metallic) * shadow;
+    vec3 color = ambient + direct + baseColor * material.emission;
 
     outColor = vec4(color, 1.0);
 }

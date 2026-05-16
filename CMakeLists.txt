@@ -23,7 +23,6 @@ add_executable(sdf3d
     src/renderer/UniformUploader.cpp
     src/scene/SdfGraph.cpp
     src/scene/SdfGraphCompiler.cpp
-    src/scene/GraphMigrator.cpp
     src/scene/SdfNodeDefinition.cpp
     src/scene/SceneGraph.cpp
     src/scene/SdfCompiler.cpp
@@ -37,7 +36,11 @@ add_executable(sdf3d
     src/systems/glsl_emitter/GlslEmitterSdfHelpers.cpp
     src/systems/glsl_emitter/GlslEmitterSceneMaterial.cpp
     src/systems/GlslNodeNames.cpp
+    src/systems/GraphSerializer.cpp
     src/systems/GraphSystem.cpp
+    src/systems/GraphSystemSerialization.cpp
+    src/systems/JsonGraphSerializer.cpp
+    src/systems/json_graph_serializer/JsonGraphSerializerConversions.cpp
     src/systems/MaterialSystem.cpp
     src/systems/SelectionSystem.cpp
     src/ui/AddMenu.cpp
@@ -81,7 +84,6 @@ add_executable(sdf3d_tests
     tests/sdf_node_tests.cpp
     src/scene/SdfGraph.cpp
     src/scene/SdfGraphCompiler.cpp
-    src/scene/GraphMigrator.cpp
     src/scene/SdfNodeDefinition.cpp
     src/scene/SdfCompiler.cpp
     src/systems/CompilerSystem.cpp
@@ -112,6 +114,66 @@ if(MSVC)
     target_compile_options(sdf3d_tests PRIVATE /W4)
 else()
     target_compile_options(sdf3d_tests PRIVATE -Wall -Wextra)
+endif()
+
+add_executable(sdf3d_graph_tests
+    tests/test_sdf_graph.cpp
+    src/scene/SdfGraph.cpp
+    src/scene/SdfNodeDefinition.cpp
+    src/systems/GraphSystem.cpp
+    src/systems/SelectionSystem.cpp
+)
+
+target_compile_features(sdf3d_graph_tests PRIVATE cxx_std_17)
+
+target_include_directories(sdf3d_graph_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(sdf3d_graph_tests PRIVATE
+    glm::glm
+)
+
+if(MSVC)
+    target_compile_options(sdf3d_graph_tests PRIVATE /W4)
+else()
+    target_compile_options(sdf3d_graph_tests PRIVATE -Wall -Wextra)
+endif()
+
+add_executable(sdf3d_graph_compiler_tests
+    tests/test_sdf_graph_compiler.cpp
+    src/scene/SdfGraph.cpp
+    src/scene/SdfGraphCompiler.cpp
+    src/scene/SdfNodeDefinition.cpp
+    src/scene/SdfCompiler.cpp
+    src/systems/CompilerSystem.cpp
+    src/systems/GlslEmitter.cpp
+    src/systems/glsl_emitter/GlslEmitterBooleanExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterFormatting.cpp
+    src/systems/glsl_emitter/GlslEmitterMaterialExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfHelpers.cpp
+    src/systems/glsl_emitter/GlslEmitterSceneMaterial.cpp
+    src/systems/GlslNodeNames.cpp
+    src/systems/GraphSystem.cpp
+    src/systems/MaterialSystem.cpp
+    src/systems/SelectionSystem.cpp
+)
+
+target_compile_features(sdf3d_graph_compiler_tests PRIVATE cxx_std_17)
+
+target_include_directories(sdf3d_graph_compiler_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(sdf3d_graph_compiler_tests PRIVATE
+    glm::glm
+)
+
+if(MSVC)
+    target_compile_options(sdf3d_graph_compiler_tests PRIVATE /W4)
+else()
+    target_compile_options(sdf3d_graph_compiler_tests PRIVATE -Wall -Wextra)
 endif()
 
 add_executable(sdf3d_uniform_uploader_tests
@@ -235,6 +297,60 @@ if(MSVC)
     target_compile_options(sdf3d_selection_tests PRIVATE /W4)
 else()
     target_compile_options(sdf3d_selection_tests PRIVATE -Wall -Wextra)
+endif()
+
+add_executable(sdf3d_graph_system_tests
+    tests/test_graph_system.cpp
+    src/core/EventBus.cpp
+    src/scene/SdfGraph.cpp
+    src/scene/SdfNodeDefinition.cpp
+    src/systems/GraphSystem.cpp
+    src/systems/SelectionSystem.cpp
+)
+
+target_compile_features(sdf3d_graph_system_tests PRIVATE cxx_std_17)
+
+target_include_directories(sdf3d_graph_system_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(sdf3d_graph_system_tests PRIVATE
+    glm::glm
+)
+
+if(MSVC)
+    target_compile_options(sdf3d_graph_system_tests PRIVATE /W4)
+else()
+    target_compile_options(sdf3d_graph_system_tests PRIVATE -Wall -Wextra)
+endif()
+
+add_executable(sdf3d_graph_serializer_tests
+    tests/test_graph_serializer.cpp
+    src/systems/GraphSerializer.cpp
+    src/systems/GraphSystem.cpp
+    src/systems/GraphSystemSerialization.cpp
+    src/systems/JsonGraphSerializer.cpp
+    src/systems/json_graph_serializer/JsonGraphSerializerConversions.cpp
+    src/systems/SelectionSystem.cpp
+    src/scene/SdfGraph.cpp
+    src/scene/SdfNodeDefinition.cpp
+)
+
+target_compile_features(sdf3d_graph_serializer_tests PRIVATE cxx_std_17)
+
+target_include_directories(sdf3d_graph_serializer_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(sdf3d_graph_serializer_tests PRIVATE
+    glm::glm
+    nlohmann_json::nlohmann_json
+)
+
+if(MSVC)
+    target_compile_options(sdf3d_graph_serializer_tests PRIVATE /W4)
+else()
+    target_compile_options(sdf3d_graph_serializer_tests PRIVATE -Wall -Wextra)
 endif()
 
 add_executable(sdf3d_glsl_emitter_tests

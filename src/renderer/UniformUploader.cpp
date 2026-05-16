@@ -1,33 +1,36 @@
 #include "sdf3d/renderer/UniformUploader.h"
 
-#include <string>
-
 #include <glad/gl.h>
 
 namespace sdf3d {
 namespace {
 
-constexpr size_t MAX_SHADER_MATERIALS = 64;
-
-void setUniformVec3(GLuint program, const std::string& name, const glm::vec3& value)
-{
-    const GLint location = glGetUniformLocation(program, name.c_str());
-    if (location >= 0) {
-        glUniform3fv(location, 1, &value.x);
-    }
-}
-
-void setUniformFloat(GLuint program, const std::string& name, float value)
-{
-    const GLint location = glGetUniformLocation(program, name.c_str());
-    if (location >= 0) {
-        glUniform1f(location, value);
-    }
-}
+constexpr GLuint MATERIAL_BUFFER_BINDING = 0;
 
 } // namespace
 
-void UniformUploader::upload(unsigned int program, int width, int height, const RenderCamera& camera, const std::vector<SdfCompiledMaterial>& materials) const
+UniformUploader::~UniformUploader()
+{
+    shutdown();
+}
+
+void UniformUploader::init()
+{
+    if (m_materialBuffer == 0) {
+        glGenBuffers(1, &m_materialBuffer);
+    }
+}
+
+void UniformUploader::shutdown()
+{
+    if (m_materialBuffer != 0) {
+        const GLuint buffer = m_materialBuffer;
+        glDeleteBuffers(1, &buffer);
+        m_materialBuffer = 0;
+    }
+}
+
+void UniformUploader::upload(unsigned int program, int width, int height, const RenderCamera& camera, const std::vector<SdfCompiledMaterial>& materials)
 {
     glUniform2f(glGetUniformLocation(program, "uResolution"), static_cast<float>(width), static_cast<float>(height));
     glUniform3fv(glGetUniformLocation(program, "uCameraPosition"), 1, &camera.position.x);
@@ -37,21 +40,39 @@ void UniformUploader::upload(unsigned int program, int width, int height, const 
 
     const size_t materialCount = materialCountForShader(materials.size());
     glUniform1i(glGetUniformLocation(program, "uMaterialCount"), static_cast<GLint>(materialCount));
-    for (size_t i = 0; i < materialCount; ++i) {
-        const SdfMaterial& material = materials[i].material;
-        const std::string index = std::to_string(i);
-        // AGENT: Uniform arrays keep first material path simple and avoid a
-        // renderer-side UBO layout contract until material count becomes large.
-        setUniformVec3(program, "uMaterialAlbedo[" + index + "]", material.albedo);
-        setUniformFloat(program, "uMaterialRoughness[" + index + "]", material.roughness);
-        setUniformFloat(program, "uMaterialMetallic[" + index + "]", material.metallic);
-        setUniformFloat(program, "uMaterialEmission[" + index + "]", material.emission);
+
+    if (m_materialBuffer == 0) {
+        init();
     }
+
+    const std::vector<GpuMaterial> packedMaterials = packMaterials(materials);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_materialBuffer);
+    glBufferData(
+        GL_SHADER_STORAGE_BUFFER,
+        static_cast<GLsizeiptr>(packedMaterials.size() * sizeof(GpuMaterial)),
+        packedMaterials.empty() ? nullptr : packedMaterials.data(),
+        GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, MATERIAL_BUFFER_BINDING, m_materialBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 size_t UniformUploader::materialCountForShader(size_t materialCount)
 {
-    return materialCount < MAX_SHADER_MATERIALS ? materialCount : MAX_SHADER_MATERIALS;
+    return materialCount;
+}
+
+std::vector<UniformUploader::GpuMaterial> UniformUploader::packMaterials(const std::vector<SdfCompiledMaterial>& materials)
+{
+    std::vector<GpuMaterial> packed;
+    packed.reserve(materials.size());
+    for (const SdfCompiledMaterial& compiledMaterial : materials) {
+        const SdfMaterial& material = compiledMaterial.material;
+        packed.push_back({
+            {material.albedo.x, material.albedo.y, material.albedo.z, material.roughness},
+            {material.metallic, material.emission, 0.0f, 0.0f},
+        });
+    }
+    return packed;
 }
 
 } // namespace sdf3d

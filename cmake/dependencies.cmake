@@ -28,11 +28,17 @@ FetchContent_Declare(
     GIT_TAG v1.91.9b-docking
 )
 
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.3
+)
+
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(glfw glm glad imgui)
+FetchContent_MakeAvailable(glfw glm glad imgui nlohmann_json)
 
 add_library(imgui STATIC
     ${imgui_SOURCE_DIR}/imgui.cpp
@@ -72,4 +78,5 @@ target_link_libraries(sdf3d PRIVATE
     glm::glm
     glad_gl_core_46
     imgui
+    nlohmann_json::nlohmann_json
 )

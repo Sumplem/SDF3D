@@ -7,6 +7,7 @@
 - Do not advance beyond approved file.
 - Do not modify unapproved files.
 - Future multi-file UI modules should be physically grouped in subfolders, e.g. NodeEditor internals live under `src/ui/node_editor/` with internal headers under `include/sdf3d/ui/node_editor/`.
+- File size rule: 400-600 lines → note it; 600-800 → flag + consider split; 800+ → hard stop and propose split before continuing.
 
 ## Current State
 
@@ -14,7 +15,7 @@
 - Local Windows paths seen in prior runs are historical only and not project requirements.
 - M3/M4-ish scene compiler and UI already exist.
 - Build currently passes with `cmake --build build --config Debug`.
-- Full test suite currently passes; see latest Material Separation entry below for exact executables.
+- Current focused test/build runs pass; see latest approved edit entries below.
 - GUI smoke test passed: debug `sdf3d.exe` stayed running for 3 seconds before test stop.
 
 ## Current Material / Compiler Model
@@ -32,11 +33,65 @@
   - subtract keeps base material
   - smooth ops blend material samples across the smooth boundary
 - `App::recompileScene()` sends GLSL to `Renderer::reloadScene()` and material list to `Renderer::setMaterials()`.
-- `UniformUploader` uploads up to 64 materials via uniform arrays.
+- `UniformUploader` uploads packed materials through an OpenGL SSBO (`std430`, binding 0), no old 64 uniform-array cap.
 - Material parameter edits mark material-dirty only and update renderer uniforms without shader reload.
-- Temporary migration helper exists: `GraphMigrator::injectMaterialOverrides()` wraps legacy primitive material payloads with `MaterialOverride` nodes.
+- `GraphMigrator` was removed after JSON save/load landed; do not reference or re-add it.
 
 ## Recent Approved Edits
+
+- Phase 2 ops first slice completed:
+  - Added `Repeat`, `Mirror`, `Twist`, and `Bend` node metadata under `SdfNodeCategory::Transform`.
+  - `Repeat` has `child` input, `sdf` output, and `x/y/z` cell-size params defaulting to `2.0`.
+  - `Mirror` has `child` input, `sdf` output, and `x/y/z` axis-toggle params; X defaults enabled.
+  - `Twist` has `child` input, `sdf` output, and `strength` param defaulting to `1.0`; it rotates XZ by Y-driven angle.
+  - `Bend` has `child` input, `sdf` output, and `strength` param defaulting to `0.5`; it rotates YZ by X-driven angle.
+  - `GlslEmitterSdfGeometry.cpp` emits Phase 2 geometry helper sampling transforms.
+  - `GlslEmitterMaterialExpressions.cpp` and `GlslEmitterSceneMaterial.cpp` apply the same domain transforms for material evaluation.
+  - Tests added in `tests/test_sdf_graph.cpp` and `tests/test_sdf_graph_compiler.cpp`.
+  - Build passed for `sdf3d_graph_tests`, `sdf3d_graph_compiler_tests`, `sdf3d_glsl_emitter_tests`, `sdf3d_tests`, and `sdf3d`.
+  - Test executables above passed, plus GUI smoke passed.
+
+- Material buffer completed:
+  - `assets/shaders/raymarch.frag` now reads materials from `layout(std430, binding = 0) readonly buffer MaterialBuffer`.
+  - `UniformUploader` owns material SSBO lifecycle and uploads packed `GpuMaterial` structs.
+  - `Renderer` initializes/shuts down `UniformUploader` GL resources.
+  - Old `uMaterialAlbedo[64]` / roughness / metallic / emission uniform arrays were removed.
+  - Old material cap test changed; `materialCountForShader(65) == 65`.
+  - `sdf3d_uniform_uploader_tests`, `sdf3d_material_system_tests`, `sdf3d_graph_compiler_tests`, and `sdf3d_tests` passed; GUI smoke passed.
+
+- Shader lighting updates completed:
+  - Added soft shadows and ambient occlusion in `raymarch.frag`.
+  - Added separate `NORMAL_EPSILON = 0.00035`; normal estimation no longer uses `SURFACE_EPSILON`.
+  - Replaced Blinn-Phong with Cook-Torrance GGX direct lighting.
+  - Emission remains unshadowed.
+  - Each shader step built `sdf3d`; GUI smoke passed.
+
+- Graph save/load and serializer abstraction completed:
+  - Added `GraphSerializer` interface and `JsonGraphSerializer` concrete implementation.
+  - JSON conversion internals live under `src/systems/json_graph_serializer/`; internal `.h` in `src` is intentional, not public API.
+  - Added pinned `nlohmann/json` via FetchContent.
+  - File menu has `Save Graph` / `Load Graph`, currently using `sdf3d_graph.json` in working directory.
+  - `GraphSystem::replaceGraphData()` validates loaded graph data before replacing live graph internals.
+  - `sdf3d_graph_serializer_tests` covers round-trip and failed-load preservation.
+
+- Duplicate with intra-group links completed:
+  - Added `DuplicateSelectionEvent` and `SelectionEvent`.
+  - `NodeEditor` emits `DuplicateSelectionEvent` on `Ctrl+D`.
+  - `GraphSystem::duplicateSelection()` duplicates selected non-output nodes, preserves only intra-selection links, drops external links, selects new nodes, and emits `SelectionEvent` + `SceneDirtyEvent`.
+  - `tests/test_graph_system.cpp` covers internal link duplication and output skip.
+
+- Cleanup and test split completed:
+  - Removed dead `GraphMigrator.h/.cpp`, CMake entries, and migrator tests.
+  - Split oversized `tests/sdf_node_tests.cpp` into:
+    - `tests/sdf_node_tests.cpp` (~311 lines)
+    - `tests/test_sdf_graph.cpp` (~210 lines)
+    - `tests/test_sdf_graph_compiler.cpp` (~299 lines)
+  - Added CMake targets `sdf3d_graph_tests` and `sdf3d_graph_compiler_tests`.
+
+- Node editor input fix completed:
+  - Shift+empty-canvas drag no longer starts selection rectangle; it remains pan-only.
+  - Shift+click on node title still toggles selection.
+  - Built `sdf3d`; GUI smoke passed.
 
 - Deferred material eval Step 1 and emitter split completed:
   - `SdfNode` now carries `stableId` so graph node IDs survive lowering.
@@ -168,7 +223,7 @@
 
 - `src/renderer/Renderer.cpp`
   - Implemented `setMaterials()`.
-  - Uploads material uniform arrays before draw, capped at 64.
+  - Stores compiled material list for SSBO upload before draw.
 
 - `src/app/App.cpp`
   - Calls `m_renderer.setMaterials(sceneGlsl.materials)` after initial compile and dirty recompiles.
@@ -296,17 +351,16 @@
   - `sceneMaterial(vec3 p)` returns `SdfMaterialSample`.
   - `raymarch.frag` samples albedo, roughness, metallic, and emission from that struct after hit.
   - SmoothUnion, SmoothIntersect, and SmoothSubtract recompute blend weights inside material evaluation while `sdf_node_<id>` helpers stay `float`.
-- Next material candidates:
-  - Move from uniform arrays to a material buffer when material count grows beyond 64.
-- Other candidates:
-  - Split remaining files over hard size gate before unrelated feature work:
-    - `src/ui/node_editor/NodeEditorCanvas.cpp` ~330 lines
-    - `tests/sdf_node_tests.cpp` ~724 lines
-  - Save/load graph schema.
-  - Remove migration helper after legacy scene migration period.
+- Phase 2 ops status:
+  - `Repeat`, `Mirror`, `Twist`, and `Bend` are implemented and covered by graph/compiler tests.
+  - Next ops need explicit scope before coding.
+- Next candidates:
+  - MaterialRegistry (named shared materials).
+  - Procedural materials.
+  - Full GI/path tracing remains later and needs explicit design discussion.
 
 ## Known Caveat
 
 - Need plan/approval before touching feature code.
 - GUI smoke should be rerun after major NodeEditor visual work.
-- `SdfNode::material` remains as payload storage for `MaterialOverride` and migration compatibility; do not re-enable primitive material editing/emission.
+- `SdfNode::material` remains as payload storage for `MaterialOverride` compatibility; do not re-enable primitive material editing/emission.

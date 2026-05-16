@@ -1,5 +1,6 @@
 #include "sdf3d/renderer/UniformUploader.h"
 
+#include <cstddef>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -18,14 +19,34 @@ void expect(bool condition, const std::string& testName, const std::string& mess
     }
 }
 
-void testMaterialCountCap(std::vector<TestFailure>& failures)
+void testMaterialCountForShader(std::vector<TestFailure>& failures)
 {
-    const std::string testName = "material count cap";
+    const std::string testName = "material count for shader";
 
     expect(sdf3d::UniformUploader::materialCountForShader(0) == 0, testName, "Expected zero materials.", failures);
     expect(sdf3d::UniformUploader::materialCountForShader(63) == 63, testName, "Expected under-cap count preserved.", failures);
-    expect(sdf3d::UniformUploader::materialCountForShader(64) == 64, testName, "Expected cap count preserved.", failures);
-    expect(sdf3d::UniformUploader::materialCountForShader(65) == 64, testName, "Expected over-cap count clamped.", failures);
+    expect(sdf3d::UniformUploader::materialCountForShader(65) == 65, testName, "Expected SSBO path not to clamp at old uniform cap.", failures);
+}
+
+void testPackedMaterialLayout(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "packed material layout";
+    std::vector<sdf3d::SdfCompiledMaterial> materials(2);
+    materials[1].material.albedo = {0.25f, 0.5f, 0.75f};
+    materials[1].material.roughness = 0.35f;
+    materials[1].material.metallic = 0.6f;
+    materials[1].material.emission = 1.25f;
+
+    const std::vector<sdf3d::UniformUploader::GpuMaterial> packed = sdf3d::UniformUploader::packMaterials(materials);
+
+    expect(sizeof(sdf3d::UniformUploader::GpuMaterial) == sizeof(float) * 8, testName, "Expected two vec4 material layout.", failures);
+    expect(packed.size() == 2, testName, "Expected all materials packed.", failures);
+    if (packed.size() == 2) {
+        expect(packed[1].albedoRoughness.x == 0.25f, testName, "Expected albedo x packed.", failures);
+        expect(packed[1].albedoRoughness.w == 0.35f, testName, "Expected roughness packed.", failures);
+        expect(packed[1].metallicEmission.x == 0.6f, testName, "Expected metallic packed.", failures);
+        expect(packed[1].metallicEmission.y == 1.25f, testName, "Expected emission packed.", failures);
+    }
 }
 
 } // namespace
@@ -34,7 +55,8 @@ int main()
 {
     std::vector<TestFailure> failures;
 
-    testMaterialCountCap(failures);
+    testMaterialCountForShader(failures);
+    testPackedMaterialLayout(failures);
 
     if (!failures.empty()) {
         for (const TestFailure& failure : failures) {

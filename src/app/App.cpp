@@ -2,6 +2,7 @@
 
 #include "sdf3d/core/ResourceManager.h"
 #include "sdf3d/math/Math.h"
+#include "sdf3d/systems/GraphSystem.h"
 
 #include <filesystem>
 #include <iostream>
@@ -109,11 +110,27 @@ bool App::init()
         return false;
     }
 
+    m_ui.setEventBus(&m_eventBus);
     m_eventBus.subscribe<SceneDirtyEvent>([this](const SceneDirtyEvent&) {
         recompileScene(true);
     });
     m_eventBus.subscribe<MaterialDirtyEvent>([this](const MaterialDirtyEvent&) {
         refreshMaterials();
+    });
+    m_eventBus.subscribe<DuplicateSelectionEvent>([this](const DuplicateSelectionEvent& event) {
+        GraphSystem::duplicateSelection(m_sceneGraph.graph(), event.selectedNodeIds, m_eventBus);
+    });
+    m_eventBus.subscribe<SaveGraphEvent>([this](const SaveGraphEvent& event) {
+        if (!m_graphSerializer.save(m_sceneGraph.graph(), event.path)) {
+            std::cerr << "[SDF3D][GraphSerializer] " << m_graphSerializer.lastError() << '\n';
+        }
+    });
+    m_eventBus.subscribe<LoadGraphEvent>([this](const LoadGraphEvent& event) {
+        if (!m_graphSerializer.load(m_sceneGraph.graph(), event.path)) {
+            std::cerr << "[SDF3D][GraphSerializer] " << m_graphSerializer.lastError() << '\n';
+            return;
+        }
+        m_eventBus.emit(SceneDirtyEvent{});
     });
 
     if (!recompileScene(false)) {

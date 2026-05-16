@@ -5,6 +5,7 @@
 #include "sdf3d/scene/SceneGraph.h"
 #include "sdf3d/scene/SdfCompiler.h"
 #include "sdf3d/systems/DiagnosticsSystem.h"
+#include "sdf3d/systems/JsonGraphSerializer.h"
 #include "sdf3d/systems/MaterialSystem.h"
 #include "sdf3d/ui/UI.h"
 #include "sdf3d/ui/Viewport.h"
@@ -44,6 +45,7 @@ private:
     Renderer m_renderer;
     SceneGraph m_sceneGraph;
     SdfCompiler m_sdfCompiler;
+    JsonGraphSerializer m_graphSerializer;
     MaterialSystem m_materialSystem;
     EventBus m_eventBus;
     DiagnosticsSystem m_diagnostics;

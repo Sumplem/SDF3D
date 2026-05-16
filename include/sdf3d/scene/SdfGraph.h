@@ -153,6 +153,9 @@ public:
     /// Returns all directed graph links.
     const std::vector<SdfGraphLink>& links() const;
 
+    /// Returns next stable graph node ID for serialization.
+    SdfGraphNodeId nextNodeIdForSerialization() const;
+
 private:
     friend class GraphSystem;
     friend class SelectionSystem;

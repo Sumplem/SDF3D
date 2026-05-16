@@ -134,6 +134,78 @@ std::string GlslEmitter::emitDomainNode(const SdfNodePtr& node, const std::strin
         return "vec2(" + hitDistance(child) + " * " + glslFloat(scale) + ", " + child + ".y)";
     }
 
+    case SdfNodeType::Repeat: {
+        if (node->children.empty()) {
+            result.errors.push_back("Repeat node has no child.");
+            return glslNoHit();
+        }
+        if (node->children.size() > 1) {
+            result.errors.push_back("Repeat node ignores extra children.");
+        }
+
+        const float x = std::max(parameterOr(*node, "x", 2.0f), 0.0001f);
+        const float y = std::max(parameterOr(*node, "y", 2.0f), 0.0001f);
+        const float z = std::max(parameterOr(*node, "z", 2.0f), 0.0001f);
+        const std::string cell = glslVec3(x, y, z);
+        const std::string repeatedPoint = "(mod(" + pointExpr + " + 0.5 * " + cell + ", " + cell + ") - 0.5 * " + cell + ")";
+        return emitNode(node->children.front(), repeatedPoint, result);
+    }
+
+    case SdfNodeType::Mirror: {
+        if (node->children.empty()) {
+            result.errors.push_back("Mirror node has no child.");
+            return glslNoHit();
+        }
+        if (node->children.size() > 1) {
+            result.errors.push_back("Mirror node ignores extra children.");
+        }
+
+        const bool mirrorX = parameterOr(*node, "x", 1.0f) >= 0.5f;
+        const bool mirrorY = parameterOr(*node, "y", 0.0f) >= 0.5f;
+        const bool mirrorZ = parameterOr(*node, "z", 0.0f) >= 0.5f;
+        const std::string xExpr = mirrorX ? "abs(" + pointExpr + ".x)" : pointExpr + ".x";
+        const std::string yExpr = mirrorY ? "abs(" + pointExpr + ".y)" : pointExpr + ".y";
+        const std::string zExpr = mirrorZ ? "abs(" + pointExpr + ".z)" : pointExpr + ".z";
+        const std::string mirroredPoint = "vec3(" + xExpr + ", " + yExpr + ", " + zExpr + ")";
+        return emitNode(node->children.front(), mirroredPoint, result);
+    }
+
+    case SdfNodeType::Twist: {
+        if (node->children.empty()) {
+            result.errors.push_back("Twist node has no child.");
+            return glslNoHit();
+        }
+        if (node->children.size() > 1) {
+            result.errors.push_back("Twist node ignores extra children.");
+        }
+
+        const std::string strength = glslFloat(parameterOr(*node, "strength", 1.0f));
+        const std::string angle = "(" + pointExpr + ".y * " + strength + ")";
+        const std::string c = "cos(" + angle + ")";
+        const std::string s = "sin(" + angle + ")";
+        const std::string twistedPoint = "vec3(" + c + " * " + pointExpr + ".x - " + s + " * " + pointExpr + ".z, "
+            + pointExpr + ".y, " + s + " * " + pointExpr + ".x + " + c + " * " + pointExpr + ".z)";
+        return emitNode(node->children.front(), twistedPoint, result);
+    }
+
+    case SdfNodeType::Bend: {
+        if (node->children.empty()) {
+            result.errors.push_back("Bend node has no child.");
+            return glslNoHit();
+        }
+        if (node->children.size() > 1) {
+            result.errors.push_back("Bend node ignores extra children.");
+        }
+
+        const std::string strength = glslFloat(parameterOr(*node, "strength", 0.5f));
+        const std::string angle = "(" + pointExpr + ".x * " + strength + ")";
+        const std::string c = "cos(" + angle + ")";
+        const std::string s = "sin(" + angle + ")";
+        const std::string bentPoint = "vec3(" + pointExpr + ".x, " + c + " * " + pointExpr + ".y - " + s + " * " + pointExpr + ".z, "
+            + s + " * " + pointExpr + ".y + " + c + " * " + pointExpr + ".z)";
+        return emitNode(node->children.front(), bentPoint, result);
+    }
+
     default:
         result.errors.push_back("Unsupported domain node type in compiler: " + glslNodeTypeName(node->type));
         return glslNoHit();
@@ -168,6 +240,10 @@ std::string GlslEmitter::emitNode(const SdfNodePtr& node, const std::string& poi
     case SdfNodeType::Translate:
     case SdfNodeType::Rotate:
     case SdfNodeType::Scale:
+    case SdfNodeType::Repeat:
+    case SdfNodeType::Mirror:
+    case SdfNodeType::Twist:
+    case SdfNodeType::Bend:
         return emitDomainNode(node, pointExpr, result);
 
     case SdfNodeType::MaterialOverride:

@@ -196,6 +196,70 @@ std::string emitGeometryExpression(const SdfNodePtr& node, const std::string& po
         const std::string scaledPoint = "(" + pointExpr + " / " + glslFloat(scale) + ")";
         return "(" + helperCallFor(node->children.front(), scaledPoint, context) + " * " + glslFloat(scale) + ")";
     }
+    case SdfNodeType::Repeat: {
+        if (node->children.empty()) {
+            result.errors.push_back("Repeat node has no child.");
+            return "1e6";
+        }
+        if (node->children.size() > 1) {
+            result.errors.push_back("Repeat node ignores extra children.");
+        }
+        const float x = std::max(parameterOr(*node, "x", 2.0f), 0.0001f);
+        const float y = std::max(parameterOr(*node, "y", 2.0f), 0.0001f);
+        const float z = std::max(parameterOr(*node, "z", 2.0f), 0.0001f);
+        const std::string cell = glslVec3(x, y, z);
+        const std::string repeatedPoint = "(mod(" + pointExpr + " + 0.5 * " + cell + ", " + cell + ") - 0.5 * " + cell + ")";
+        return helperCallFor(node->children.front(), repeatedPoint, context);
+    }
+    case SdfNodeType::Mirror: {
+        if (node->children.empty()) {
+            result.errors.push_back("Mirror node has no child.");
+            return "1e6";
+        }
+        if (node->children.size() > 1) {
+            result.errors.push_back("Mirror node ignores extra children.");
+        }
+        const bool mirrorX = parameterOr(*node, "x", 1.0f) >= 0.5f;
+        const bool mirrorY = parameterOr(*node, "y", 0.0f) >= 0.5f;
+        const bool mirrorZ = parameterOr(*node, "z", 0.0f) >= 0.5f;
+        const std::string xExpr = mirrorX ? "abs(" + pointExpr + ".x)" : pointExpr + ".x";
+        const std::string yExpr = mirrorY ? "abs(" + pointExpr + ".y)" : pointExpr + ".y";
+        const std::string zExpr = mirrorZ ? "abs(" + pointExpr + ".z)" : pointExpr + ".z";
+        const std::string mirroredPoint = "vec3(" + xExpr + ", " + yExpr + ", " + zExpr + ")";
+        return helperCallFor(node->children.front(), mirroredPoint, context);
+    }
+    case SdfNodeType::Twist: {
+        if (node->children.empty()) {
+            result.errors.push_back("Twist node has no child.");
+            return "1e6";
+        }
+        if (node->children.size() > 1) {
+            result.errors.push_back("Twist node ignores extra children.");
+        }
+        const std::string strength = glslFloat(parameterOr(*node, "strength", 1.0f));
+        const std::string angle = "(" + pointExpr + ".y * " + strength + ")";
+        const std::string c = "cos(" + angle + ")";
+        const std::string s = "sin(" + angle + ")";
+        const std::string twistedPoint = "vec3(" + c + " * " + pointExpr + ".x - " + s + " * " + pointExpr + ".z, "
+            + pointExpr + ".y, " + s + " * " + pointExpr + ".x + " + c + " * " + pointExpr + ".z)";
+        return helperCallFor(node->children.front(), twistedPoint, context);
+    }
+    case SdfNodeType::Bend: {
+        if (node->children.empty()) {
+            result.errors.push_back("Bend node has no child.");
+            return "1e6";
+        }
+        if (node->children.size() > 1) {
+            result.errors.push_back("Bend node ignores extra children.");
+        }
+        const std::string strength = glslFloat(parameterOr(*node, "strength", 0.5f));
+        const std::string angle = "(" + pointExpr + ".x * " + strength + ")";
+        const std::string c = "cos(" + angle + ")";
+        const std::string s = "sin(" + angle + ")";
+        const std::string bentPoint = "vec3(" + pointExpr + ".x, " + c + " * " + pointExpr + ".y - " + s + " * " + pointExpr + ".z, "
+            + s + " * " + pointExpr + ".y + " + c + " * " + pointExpr + ".z)";
+        return helperCallFor(node->children.front(), bentPoint, context);
+    }
     case SdfNodeType::MaterialOverride: {
         if (node->children.empty()) {
             result.errors.push_back("MaterialOverride node has no SDF input.");

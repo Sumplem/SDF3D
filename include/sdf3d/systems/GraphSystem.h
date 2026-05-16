@@ -3,8 +3,12 @@
 #include "sdf3d/scene/SdfGraph.h"
 
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace sdf3d {
+
+class EventBus;
 
 /// Owns SDF graph mutation and validation rules.
 class GraphSystem {
@@ -17,6 +21,19 @@ public:
 
     /// Duplicates one graph node payload and editor state without copying links.
     static SdfGraphNodeId duplicateNode(SdfGraph& graph, SdfGraphNodeId id);
+
+    /// Duplicates selected nodes and preserves links wholly inside the selection.
+    static std::vector<SdfGraphNodeId> duplicateSelection(SdfGraph& graph, const std::vector<SdfGraphNodeId>& ids, EventBus& eventBus);
+
+    /// Replaces graph internals after validating loaded serialized data.
+    static bool replaceGraphData(
+        SdfGraph& graph,
+        SdfGraphNodeId nextId,
+        SdfGraphNodeId outputNode,
+        SdfGraphNodeId selectedNode,
+        std::vector<SdfGraphNodeId> selectedNodes,
+        std::unordered_map<SdfGraphNodeId, SdfGraphNode> nodes,
+        std::vector<SdfGraphLink> links);
 
     /// Deletes a node and all links connected to it.
     static bool deleteNode(SdfGraph& graph, SdfGraphNodeId id);
