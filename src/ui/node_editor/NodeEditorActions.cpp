@@ -1,4 +1,5 @@
 #include "sdf3d/ui/node_editor/NodeEditorCanvas.h"
+#include "sdf3d/ui/node_editor/NodeEditorLayout.h"
 
 #include <algorithm>
 #include <vector>
@@ -49,7 +50,120 @@ bool wrapInMaterialOverride(SdfGraph& graph, const GraphNodeLayout& layout)
     return true;
 }
 
+std::vector<SdfGraphNodeId> deletableSelectedNodes(const SdfGraph& graph)
+{
+    std::vector<SdfGraphNodeId> ids;
+    for (const SdfGraphNodeId id : graph.selectedNodes()) {
+        if (!graph.isOutputNode(id) && graph.node(id) != nullptr) {
+            ids.push_back(id);
+        }
+    }
+    return ids;
+}
+
+void frameSelectedNodes(
+    const std::vector<GraphNodeLayout>& layouts,
+    const SdfGraph& graph,
+    const CanvasFrame& frame,
+    float& canvasPanX,
+    float& canvasPanY)
+{
+    ImVec2 boundsMin = {0.0f, 0.0f};
+    ImVec2 boundsMax = {0.0f, 0.0f};
+    bool hasBounds = false;
+    for (const GraphNodeLayout& layout : layouts) {
+        if (!graph.isNodeSelected(layout.id) || layout.node == nullptr) {
+            continue;
+        }
+        const float graphWidth = layout.size.x / frame.zoom;
+        const float graphHeight = layout.size.y / frame.zoom;
+        const ImVec2 min = {24.0f + layout.node->editorX, 24.0f + layout.node->editorY};
+        const ImVec2 max = {min.x + graphWidth, min.y + graphHeight};
+        if (!hasBounds) {
+            boundsMin = min;
+            boundsMax = max;
+            hasBounds = true;
+        } else {
+            boundsMin.x = std::min(boundsMin.x, min.x);
+            boundsMin.y = std::min(boundsMin.y, min.y);
+            boundsMax.x = std::max(boundsMax.x, max.x);
+            boundsMax.y = std::max(boundsMax.y, max.y);
+        }
+    }
+    if (!hasBounds) {
+        return;
+    }
+
+    const ImVec2 center = {(boundsMin.x + boundsMax.x) * 0.5f, (boundsMin.y + boundsMax.y) * 0.5f};
+    const ImVec2 canvasSize = {frame.end.x - frame.origin.x, frame.end.y - frame.origin.y};
+    canvasPanX = canvasSize.x * 0.5f - center.x * frame.zoom;
+    canvasPanY = canvasSize.y * 0.5f - center.y * frame.zoom;
+}
+
 } // namespace
+
+bool shortcutsEnabled()
+{
+    const ImGuiIO& io = ImGui::GetIO();
+    return ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !io.WantTextInput;
+}
+
+EditorDirtyState handleNodeEditorShortcuts(
+    SdfGraph& graph,
+    EventBus* eventBus,
+    const CanvasFrame& frame,
+    const std::vector<GraphNodeLayout>& layouts,
+    float& canvasPanX,
+    float& canvasPanY,
+    std::vector<SdfGraphNodeId>& pendingDelete)
+{
+    EditorDirtyState dirty;
+    if (!shortcutsEnabled()) {
+        return dirty;
+    }
+
+    const SdfGraphNodeId selectedNode = graph.selectedNode();
+    const bool hasSelection = selectedNode != 0 && graph.node(selectedNode) != nullptr;
+    if (ImGui::IsKeyPressed(ImGuiKey_P)) {
+        if (previewSelectedNode(graph)) {
+            dirty.scene = true;
+        }
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_L)) {
+        if (autoLayoutGraph(graph, frame, ImGui::GetIO().KeyShift)) {
+            dirty.scene = true;
+        }
+    }
+    if (hasSelection && ImGui::IsKeyPressed(ImGuiKey_Delete)) {
+        const std::vector<SdfGraphNodeId> ids = deletableSelectedNodes(graph);
+        pendingDelete.insert(pendingDelete.end(), ids.begin(), ids.end());
+    }
+    if (hasSelection && eventBus != nullptr && ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D)) {
+        eventBus->emit(DuplicateSelectionEvent{graph.selectedNodes()});
+    }
+    if (hasSelection && ImGui::IsKeyPressed(ImGuiKey_F)) {
+        frameSelectedNodes(layouts, graph, frame, canvasPanX, canvasPanY);
+    }
+
+    return dirty;
+}
+
+bool flushPendingDeletes(SdfGraph& graph, std::vector<SdfGraphNodeId>& pendingDelete)
+{
+    bool sceneDirty = false;
+    if (pendingDelete.empty()) {
+        return false;
+    }
+
+    std::sort(pendingDelete.begin(), pendingDelete.end());
+    pendingDelete.erase(std::unique(pendingDelete.begin(), pendingDelete.end()), pendingDelete.end());
+    for (const SdfGraphNodeId id : pendingDelete) {
+        if (graph.deleteNode(id)) {
+            sceneDirty = true;
+        }
+    }
+    return sceneDirty;
+}
 
 bool drawNodeActions(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNodeId& pendingDelete)
 {

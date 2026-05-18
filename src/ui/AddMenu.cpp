@@ -1,9 +1,11 @@
 #include "sdf3d/ui/AddMenu.h"
 
 #include "sdf3d/scene/SdfNodeDefinition.h"
+#include "sdf3d/systems/GraphSystem.h"
 #include "sdf3d/ui/node_editor/NodeEditorCanvas.h"
 
 #include <string>
+#include <optional>
 #include <utility>
 
 #include <imgui.h>
@@ -100,6 +102,18 @@ bool tryLinkNewNodeOutputToInput(SdfGraph& graph, SdfGraphNodeId newNode, SdfGra
     return false;
 }
 
+bool isPrimitiveNode(SdfNodeType type)
+{
+    return type == SdfNodeType::Sphere
+        || type == SdfNodeType::Box
+        || type == SdfNodeType::Cylinder
+        || type == SdfNodeType::Torus
+        || type == SdfNodeType::Plane
+        || type == SdfNodeType::Capsule
+        || type == SdfNodeType::Cone
+        || type == SdfNodeType::RoundBox;
+}
+
 } // namespace
 
 bool AddMenu::draw(SceneGraph& sceneGraph)
@@ -123,6 +137,7 @@ bool AddMenu::drawPopup(SceneGraph& sceneGraph, float editorX, float editorY)
         m_linkFromSocket.clear();
         m_linkToNode = 0;
         m_linkToSocket.clear();
+        m_spawnWorldPosition.reset();
         sceneDirty = drawItems(sceneGraph);
         m_spawnEditorX.reset();
         m_spawnEditorY.reset();
@@ -142,6 +157,7 @@ bool AddMenu::drawPopupFromOutput(SceneGraph& sceneGraph, float editorX, float e
         m_linkFromSocket = std::move(fromSocket);
         m_linkToNode = 0;
         m_linkToSocket.clear();
+        m_spawnWorldPosition.reset();
         sceneDirty = drawItems(sceneGraph);
         m_spawnEditorX.reset();
         m_spawnEditorY.reset();
@@ -161,9 +177,49 @@ bool AddMenu::drawPopupToInput(SceneGraph& sceneGraph, float editorX, float edit
         m_linkFromSocket.clear();
         m_linkToNode = toNode;
         m_linkToSocket = std::move(toSocket);
+        m_spawnWorldPosition.reset();
         sceneDirty = drawItems(sceneGraph);
         m_spawnEditorX.reset();
         m_spawnEditorY.reset();
+        ImGui::EndPopup();
+    }
+
+    return sceneDirty;
+}
+
+bool AddMenu::drawPopupBetween(SceneGraph& sceneGraph, float editorX, float editorY, SdfGraphNodeId fromNode, std::string fromSocket, SdfGraphNodeId toNode, std::string toSocket)
+{
+    bool sceneDirty = false;
+    if (ImGui::BeginPopup(node_editor::NODE_ADD_POPUP_ID)) {
+        m_spawnEditorX = editorX;
+        m_spawnEditorY = editorY;
+        m_linkFromNode = fromNode;
+        m_linkFromSocket = std::move(fromSocket);
+        m_linkToNode = toNode;
+        m_linkToSocket = std::move(toSocket);
+        m_spawnWorldPosition.reset();
+        sceneDirty = drawItems(sceneGraph);
+        m_spawnEditorX.reset();
+        m_spawnEditorY.reset();
+        ImGui::EndPopup();
+    }
+
+    return sceneDirty;
+}
+
+bool AddMenu::drawViewportPopup(SceneGraph& sceneGraph, glm::vec3 worldPosition)
+{
+    bool sceneDirty = false;
+    if (ImGui::BeginPopup(node_editor::NODE_ADD_POPUP_ID)) {
+        m_spawnEditorX.reset();
+        m_spawnEditorY.reset();
+        m_spawnWorldPosition = worldPosition;
+        m_linkFromNode = 0;
+        m_linkFromSocket.clear();
+        m_linkToNode = 0;
+        m_linkToSocket.clear();
+        sceneDirty = drawItems(sceneGraph);
+        m_spawnWorldPosition.reset();
         ImGui::EndPopup();
     }
 
@@ -174,13 +230,14 @@ bool AddMenu::drawItems(SceneGraph& sceneGraph)
 {
     bool sceneDirty = false;
     auto addAndLinkSelected = [&](SdfNodePtr node, const char* inputSocket) {
+        const bool popupLinkMode = m_linkFromNode != 0 || m_linkToNode != 0;
         const SdfGraphNodeId previousSelection = sceneGraph.graph().selectedNode();
         const bool previousFedOutput = nodeFeedsOutputSurface(sceneGraph, previousSelection);
         addPrimitive(sceneGraph, std::move(node), false);
         sceneDirty = true;
 
         const SdfGraphNodeId createdNode = sceneGraph.graph().selectedNode();
-        if (previousSelection != 0 && createdNode != 0 && previousSelection != createdNode) {
+        if (!popupLinkMode && previousSelection != 0 && createdNode != 0 && previousSelection != createdNode) {
             // AGENT: Operation shortcuts wrap the selected graph node by linking
             // it into the new operation, matching common node-editor behavior.
             if (sceneGraph.graph().link(previousSelection, createdNode, inputSocket)) {
@@ -254,8 +311,12 @@ void AddMenu::addPrimitive(SceneGraph& sceneGraph, SdfNodePtr node, bool linkToS
             graphNode->editorY = *m_spawnEditorY;
         }
     }
-    if (activeOutputNodeExists(sceneGraph) && !outputSurfaceLinked(sceneGraph) && node->type != SdfNodeType::Output) {
+    const bool viewportPrimitive = m_spawnWorldPosition && isPrimitiveNode(node->type);
+    if (!viewportPrimitive && activeOutputNodeExists(sceneGraph) && !outputSurfaceLinked(sceneGraph) && node->type != SdfNodeType::Output) {
         sceneGraph.graph().link(id, "sdf", sceneGraph.graph().outputNode(), "surface");
+    }
+    if (viewportPrimitive) {
+        GraphSystem::placePrimitiveAtWorldPosition(sceneGraph.graph(), id, *m_spawnWorldPosition);
     }
     if (linkToSelection) {
         tryLinkNewNodeToSelectedInput(sceneGraph.graph(), id, previousSelection);

@@ -145,6 +145,152 @@ bool drawExistingLinks(SdfGraph& graph, const CanvasFrame& frame, const std::vec
     return pendingRemoval && graph.unlink(pendingRemoval->fromNode, pendingRemoval->fromSocket, pendingRemoval->toNode, pendingRemoval->toSocket);
 }
 
+void drawEmptyGraphMessage(const CanvasFrame& frame, const std::vector<GraphNodeLayout>& layouts)
+{
+    if (layouts.empty()) {
+        frame.drawList->AddText({frame.origin.x + 16.0f, frame.origin.y + 16.0f}, IM_COL32(210, 215, 225, 255), "Empty graph");
+    }
+}
+
+bool mouseInsideAnyNode(const std::vector<GraphNodeLayout>& layouts, ImVec2 mouse)
+{
+    for (const GraphNodeLayout& layout : layouts) {
+        const ImVec2 nodeEnd = {layout.position.x + layout.size.x, layout.position.y + layout.size.y};
+        if (mouse.x >= layout.position.x && mouse.x <= nodeEnd.x && mouse.y >= layout.position.y && mouse.y <= nodeEnd.y) {
+            return true;
+        }
+    }
+    return false;
+}
+
+NodeDrawResult drawGraphNodes(
+    SdfGraph& graph,
+    const CanvasFrame& frame,
+    const std::vector<GraphNodeLayout>& layouts,
+    const std::vector<GraphSocketAnchor>& anchors,
+    NodeEditorDragState& drag,
+    std::vector<SdfGraphNodeId>& pendingDelete)
+{
+    NodeDrawResult result;
+    for (const GraphNodeLayout& layout : layouts) {
+        drawNodeBody(graph, layout, frame);
+        drawInactiveNodePreview(graph, layout, frame, anchors);
+        if (handleNodeTitleDrag(graph, layout, result.activeDraggedNode)) {
+            result.releasedDraggedNode = layout.id;
+        }
+        if (drawInputPins(
+                graph,
+                layout,
+                frame,
+                drag.draggingLink,
+                drag.dragOutputNode,
+                drag.dragOutputSocket,
+                drag.inputDragCandidateNode,
+                drag.inputDragCandidateSocket,
+                drag.draggingInputLink,
+                drag.dragInputNode,
+                drag.dragInputSocket,
+                drag.dragOutputFromInputDetach,
+                drag.detachedInputNode,
+                drag.detachedInputSocket)) {
+            result.dirty.scene = true;
+        }
+        drawOutputPins(graph, layout, frame, drag.draggingLink, drag.dragOutputNode, drag.dragOutputSocket, drag.dragOutputFromInputDetach);
+        SdfGraphNodeId actionDelete = 0;
+        if (drawNodeActions(graph, layout, actionDelete)) {
+            result.dirty.scene = true;
+        }
+        if (actionDelete != 0) {
+            if (graph.isNodeSelected(actionDelete)) {
+                for (const SdfGraphNodeId id : graph.selectedNodes()) {
+                    if (!graph.isOutputNode(id) && graph.node(id) != nullptr) {
+                        pendingDelete.push_back(id);
+                    }
+                }
+            } else {
+                pendingDelete.push_back(actionDelete);
+            }
+        }
+        const EditorDirtyState inlineDirty = drawNodeInlineProperties(layout, frame);
+        result.dirty.scene = result.dirty.scene || inlineDirty.scene;
+        result.dirty.material = result.dirty.material || inlineDirty.material;
+    }
+    return result;
+}
+
+bool drawNodeDragInsertion(
+    SdfGraph& graph,
+    const CanvasFrame& frame,
+    const std::vector<GraphNodeLayout>& layouts,
+    const std::vector<GraphSocketAnchor>& anchors,
+    SdfGraphNodeId activeDraggedNode,
+    SdfGraphNodeId releasedDraggedNode)
+{
+    if (activeDraggedNode != 0) {
+        for (const GraphNodeLayout& layout : layouts) {
+            if (layout.id == activeDraggedNode) {
+                drawLinkInsertionPreview(graph, layout, frame, anchors);
+                break;
+            }
+        }
+    }
+
+    if (releasedDraggedNode == 0) {
+        return false;
+    }
+    for (const GraphNodeLayout& layout : layouts) {
+        if (layout.id == releasedDraggedNode && insertNodeIntoLink(graph, layout, anchors)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void openNodeEditorContextPopup(
+    const CanvasFrame& frame,
+    bool removedLink,
+    const NodeEditorDragState& drag,
+    const SelectionRectState& selection,
+    bool mouseInsideNode,
+    const LinkDragResult& linkDrag,
+    NodeEditorPopupState& popup)
+{
+    if (!removedLink
+        && !drag.draggingLink
+        && !drag.draggingInputLink
+        && !selection.dragging
+        && !mouseInsideNode
+        && ImGui::IsWindowHovered()
+        && ImGui::IsMouseClicked(ImGuiMouseButton_Right)
+        && !ImGui::IsAnyItemHovered()) {
+        const ImVec2 popupPosition = canvasMouseGraphPosition(frame);
+        popup.editorX = popupPosition.x;
+        popup.editorY = popupPosition.y;
+        popup.linkFromNode = 0;
+        popup.linkFromSocket.clear();
+        popup.linkToNode = 0;
+        popup.linkToSocket.clear();
+        ImGui::OpenPopup(NODE_ADD_POPUP_ID);
+    }
+    if (linkDrag.releasedLinkOnEmpty || linkDrag.releasedInputLinkOnEmpty) {
+        const ImVec2 popupPosition = canvasMouseGraphPosition(frame);
+        popup.editorX = popupPosition.x;
+        popup.editorY = popupPosition.y;
+        if (linkDrag.releasedInputLinkOnEmpty && linkDrag.releasedToNode != 0 && !linkDrag.releasedToSocket.empty()) {
+            popup.linkFromNode = linkDrag.releasedFromNode;
+            popup.linkFromSocket = linkDrag.releasedFromSocket;
+            popup.linkToNode = linkDrag.releasedToNode;
+            popup.linkToSocket = linkDrag.releasedToSocket;
+        } else {
+            popup.linkFromNode = linkDrag.releasedFromNode;
+            popup.linkFromSocket = linkDrag.releasedFromSocket;
+            popup.linkToNode = 0;
+            popup.linkToSocket.clear();
+        }
+        ImGui::OpenPopup(NODE_ADD_POPUP_ID);
+    }
+}
+
 void drawNodeBody(SdfGraph& graph, const GraphNodeLayout& layout, const CanvasFrame& frame)
 {
     SdfGraphNode& node = *layout.node;
@@ -215,7 +361,9 @@ bool drawInputPins(
     bool& draggingInputLink,
     SdfGraphNodeId& dragInputNode,
     std::string& dragInputSocket,
-    bool& dragOutputFromInputDetach)
+    bool& dragOutputFromInputDetach,
+    SdfGraphNodeId& detachedInputNode,
+    std::string& detachedInputSocket)
 {
     bool sceneDirty = false;
     SdfGraphNode& node = *layout.node;
@@ -249,6 +397,8 @@ bool drawInputPins(
                     dragOutputNode = existing->fromNode;
                     dragOutputSocket = existing->fromSocket;
                     dragOutputFromInputDetach = true;
+                    detachedInputNode = layout.id;
+                    detachedInputSocket = socket.name;
                     sceneDirty = true;
                 }
             } else {

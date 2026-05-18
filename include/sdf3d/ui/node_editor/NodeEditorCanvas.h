@@ -3,6 +3,8 @@
 #include "sdf3d/scene/SdfGraph.h"
 #include "sdf3d/ui/EditorDirtyState.h"
 
+#include "sdf3d/core/EventBus.h"
+
 #include <optional>
 #include <string>
 #include <vector>
@@ -40,6 +42,50 @@ struct CanvasFrame {
     ImDrawList* drawList = nullptr;
 };
 
+struct NodeDrawResult {
+    EditorDirtyState dirty;
+    SdfGraphNodeId releasedDraggedNode = 0;
+    SdfGraphNodeId activeDraggedNode = 0;
+};
+
+struct LinkDragResult {
+    bool releasedLinkOnEmpty = false;
+    bool releasedInputLinkOnEmpty = false;
+    SdfGraphNodeId releasedFromNode = 0;
+    std::string releasedFromSocket;
+    SdfGraphNodeId releasedToNode = 0;
+    std::string releasedToSocket;
+};
+
+struct NodeEditorDragState {
+    bool draggingLink = false;
+    SdfGraphNodeId dragOutputNode = 0;
+    std::string dragOutputSocket;
+    bool dragOutputFromInputDetach = false;
+    SdfGraphNodeId detachedInputNode = 0;
+    std::string detachedInputSocket;
+    SdfGraphNodeId inputDragCandidateNode = 0;
+    std::string inputDragCandidateSocket;
+    bool draggingInputLink = false;
+    SdfGraphNodeId dragInputNode = 0;
+    std::string dragInputSocket;
+};
+
+struct NodeEditorPopupState {
+    float editorX = 0.0f;
+    float editorY = 0.0f;
+    SdfGraphNodeId linkFromNode = 0;
+    std::string linkFromSocket;
+    SdfGraphNodeId linkToNode = 0;
+    std::string linkToSocket;
+};
+
+struct SelectionRectState {
+    bool dragging = false;
+    ImVec2 start = {0.0f, 0.0f};
+    ImVec2 end = {0.0f, 0.0f};
+};
+
 std::optional<ImVec2> findSocketAnchor(
     const std::vector<GraphSocketAnchor>& anchors,
     SdfGraphNodeId node,
@@ -50,10 +96,21 @@ bool socketsCompatible(const SdfGraph& graph, SdfGraphNodeId fromNode, const std
 bool activeOutputNodeExists(const SdfGraph& graph);
 float distanceSquared(ImVec2 a, ImVec2 b);
 std::optional<SdfGraphLink> linkToInput(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket);
+std::optional<SdfGraphLink> effectiveLinkToInput(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket);
 bool mouseNearBezier(ImVec2 mouse, ImVec2 from, ImVec2 to);
 ImVec2 canvasMouseGraphPosition(const CanvasFrame& frame);
 
 bool previewSelectedNode(SdfGraph& graph);
+bool shortcutsEnabled();
+EditorDirtyState handleNodeEditorShortcuts(
+    SdfGraph& graph,
+    EventBus* eventBus,
+    const CanvasFrame& frame,
+    const std::vector<GraphNodeLayout>& layouts,
+    float& canvasPanX,
+    float& canvasPanY,
+    std::vector<SdfGraphNodeId>& pendingDelete);
+bool flushPendingDeletes(SdfGraph& graph, std::vector<SdfGraphNodeId>& pendingDelete);
 std::optional<SdfGraphLink> firstLinkFromOutput(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket);
 bool nodeHasMissingRequiredInput(const SdfGraph& graph, const SdfGraphNode& node);
 float scaleValue(const CanvasFrame& frame, float value);
@@ -66,8 +123,39 @@ void drawInactiveNodePreview(const SdfGraph& graph, const GraphNodeLayout& layou
 CanvasFrame beginCanvas(float panX, float panY, float zoom);
 void updateCanvasView(CanvasFrame& frame, float& panX, float& panY, float& zoom);
 void drawGrid(const CanvasFrame& frame);
+bool updateSelectionRectangle(
+    SdfGraph& graph,
+    const CanvasFrame& frame,
+    const std::vector<GraphNodeLayout>& layouts,
+    const NodeEditorDragState& drag,
+    bool mouseInsideNode,
+    SelectionRectState& selection);
 void buildLayoutsAndAnchors(SdfGraph& graph, const CanvasFrame& frame, std::vector<GraphNodeLayout>& layouts, std::vector<GraphSocketAnchor>& anchors);
+void drawEmptyGraphMessage(const CanvasFrame& frame, const std::vector<GraphNodeLayout>& layouts);
 bool drawExistingLinks(SdfGraph& graph, const CanvasFrame& frame, const std::vector<GraphSocketAnchor>& anchors);
+bool mouseInsideAnyNode(const std::vector<GraphNodeLayout>& layouts, ImVec2 mouse);
+NodeDrawResult drawGraphNodes(
+    SdfGraph& graph,
+    const CanvasFrame& frame,
+    const std::vector<GraphNodeLayout>& layouts,
+    const std::vector<GraphSocketAnchor>& anchors,
+    NodeEditorDragState& drag,
+    std::vector<SdfGraphNodeId>& pendingDelete);
+bool drawNodeDragInsertion(
+    SdfGraph& graph,
+    const CanvasFrame& frame,
+    const std::vector<GraphNodeLayout>& layouts,
+    const std::vector<GraphSocketAnchor>& anchors,
+    SdfGraphNodeId activeDraggedNode,
+    SdfGraphNodeId releasedDraggedNode);
+void openNodeEditorContextPopup(
+    const CanvasFrame& frame,
+    bool removedLink,
+    const NodeEditorDragState& drag,
+    const SelectionRectState& selection,
+    bool mouseInsideNode,
+    const LinkDragResult& linkDrag,
+    NodeEditorPopupState& popup);
 void drawNodeBody(SdfGraph& graph, const GraphNodeLayout& layout, const CanvasFrame& frame);
 bool handleNodeTitleDrag(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNodeId& activeDraggedNode);
 bool drawInputPins(
@@ -82,11 +170,19 @@ bool drawInputPins(
     bool& draggingInputLink,
     SdfGraphNodeId& dragInputNode,
     std::string& dragInputSocket,
-    bool& dragOutputFromInputDetach);
+    bool& dragOutputFromInputDetach,
+    SdfGraphNodeId& detachedInputNode,
+    std::string& detachedInputSocket);
 void drawOutputPins(SdfGraph& graph, const GraphNodeLayout& layout, const CanvasFrame& frame, bool& draggingLink, SdfGraphNodeId& dragOutputNode, std::string& dragOutputSocket, bool& dragOutputFromInputDetach);
 bool drawNodeActions(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNodeId& pendingDelete);
 EditorDirtyState drawNodeInlineProperties(const GraphNodeLayout& layout, const CanvasFrame& frame);
 bool updateActiveLinkDrag(SdfGraph& graph, const CanvasFrame& frame, const std::vector<GraphSocketAnchor>& anchors, bool& draggingLink, SdfGraphNodeId& dragOutputNode, std::string& dragOutputSocket, bool& releasedOnEmpty);
 bool updateActiveInputLinkDrag(SdfGraph& graph, const CanvasFrame& frame, const std::vector<GraphSocketAnchor>& anchors, bool& draggingInputLink, SdfGraphNodeId& dragInputNode, std::string& dragInputSocket, bool& releasedOnEmpty);
+EditorDirtyState updateNodeEditorLinkDrags(
+    SdfGraph& graph,
+    const CanvasFrame& frame,
+    const std::vector<GraphSocketAnchor>& anchors,
+    NodeEditorDragState& drag,
+    LinkDragResult& result);
 
 } // namespace sdf3d::node_editor

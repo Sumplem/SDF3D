@@ -5,6 +5,7 @@
 #include "sdf3d/systems/SelectionSystem.h"
 
 #include <algorithm>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -39,6 +40,78 @@ const SdfGraphSocket* findSocket(const std::vector<SdfGraphSocket>& sockets, con
     }
 
     return nullptr;
+}
+
+bool isPrimitiveNode(SdfNodeType type)
+{
+    return type == SdfNodeType::Sphere
+        || type == SdfNodeType::Box
+        || type == SdfNodeType::Cylinder
+        || type == SdfNodeType::Torus
+        || type == SdfNodeType::Plane
+        || type == SdfNodeType::Capsule
+        || type == SdfNodeType::Cone
+        || type == SdfNodeType::RoundBox;
+}
+
+float parameterOr(const SdfNode& node, const std::string& key, float fallback)
+{
+    const auto it = node.parameters.find(key);
+    return it == node.parameters.end() ? fallback : it->second;
+}
+
+glm::vec3 translatePosition(const SdfGraphNode& node)
+{
+    return {
+        parameterOr(node.payload, "x", 0.0f),
+        parameterOr(node.payload, "y", 0.0f),
+        parameterOr(node.payload, "z", 0.0f),
+    };
+}
+
+std::optional<SdfGraphLink> linkToInput(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket)
+{
+    for (const SdfGraphLink& link : graph.links()) {
+        if (link.toNode == node && link.toSocket == socket) {
+            return link;
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<SdfGraphLink> outputSurfaceLink(const SdfGraph& graph)
+{
+    for (const SdfGraphLink& link : graph.links()) {
+        if (link.toNode == graph.outputNode() && link.toSocket == "surface") {
+            return link;
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<SdfGraphLink> singleIncomingSdfLink(const SdfGraph& graph, SdfGraphNodeId node)
+{
+    std::optional<SdfGraphLink> result;
+    for (const SdfGraphLink& link : graph.links()) {
+        if (link.toNode != node) {
+            continue;
+        }
+
+        const bool fromSdf = link.fromSocket == "sdf";
+        const bool toSdfInput = link.toSocket == "child" || link.toSocket == "sdf";
+        if (!fromSdf || !toSdfInput) {
+            continue;
+        }
+
+        if (result) {
+            return std::nullopt;
+        }
+        result = link;
+    }
+
+    return result;
 }
 
 } // namespace
@@ -261,6 +334,139 @@ bool GraphSystem::hasLinks(const SdfGraph& graph, SdfGraphNodeId id)
     }
 
     return false;
+}
+
+SdfGraphNodeId GraphSystem::findDirectTranslateParent(const SdfGraph& graph, SdfGraphNodeId id)
+{
+    for (const SdfGraphLink& link : graph.m_links) {
+        if (link.fromNode != id || link.fromSocket != "sdf" || link.toSocket != "child") {
+            continue;
+        }
+        const auto targetIt = graph.m_nodes.find(link.toNode);
+        if (targetIt != graph.m_nodes.end() && targetIt->second.payload.type == SdfNodeType::Translate) {
+            return link.toNode;
+        }
+    }
+
+    return 0;
+}
+
+SdfGraphNodeId GraphSystem::ensureTranslateWrapperForNode(SdfGraph& graph, SdfGraphNodeId id)
+{
+    const auto nodeIt = graph.m_nodes.find(id);
+    if (nodeIt == graph.m_nodes.end()) {
+        return 0;
+    }
+    if (nodeIt->second.payload.type == SdfNodeType::Translate) {
+        SelectionSystem::setSelectedNode(graph, id);
+        return id;
+    }
+    if (!isPrimitiveNode(nodeIt->second.payload.type)) {
+        return 0;
+    }
+
+    if (const SdfGraphNodeId translateParent = findDirectTranslateParent(graph, id)) {
+        SelectionSystem::setSelectedNode(graph, translateParent);
+        return translateParent;
+    }
+
+    const std::vector<SdfGraphLink> links = graph.m_links;
+    const float editorX = nodeIt->second.editorX;
+    const float editorY = nodeIt->second.editorY;
+    const SdfGraphNodeId translateId = createNode(graph, SdfNodeType::Translate, "Translate");
+    auto translateIt = graph.m_nodes.find(translateId);
+    if (translateIt == graph.m_nodes.end()) {
+        return 0;
+    }
+
+    translateIt->second.editorX = editorX + 260.0f;
+    translateIt->second.editorY = editorY;
+    link(graph, id, "sdf", translateId, "child");
+
+    for (const SdfGraphLink& existing : links) {
+        if (existing.fromNode != id || existing.fromSocket != "sdf") {
+            continue;
+        }
+        unlink(graph, existing.fromNode, existing.fromSocket, existing.toNode, existing.toSocket);
+        link(graph, translateId, "sdf", existing.toNode, existing.toSocket);
+    }
+
+    SelectionSystem::setSelectedNode(graph, translateId);
+    return translateId;
+}
+
+glm::vec3 GraphSystem::accumulatedTranslatePosition(const SdfGraph& graph, SdfGraphNodeId translateId)
+{
+    glm::vec3 total = {0.0f, 0.0f, 0.0f};
+    std::vector<SdfGraphNodeId> visited;
+    SdfGraphNodeId currentId = translateId;
+
+    while (currentId != 0 && std::find(visited.begin(), visited.end(), currentId) == visited.end()) {
+        visited.push_back(currentId);
+        const auto currentIt = graph.m_nodes.find(currentId);
+        if (currentIt == graph.m_nodes.end()) {
+            break;
+        }
+
+        const SdfGraphNode& current = currentIt->second;
+        if (current.payload.type == SdfNodeType::Translate) {
+            total += translatePosition(current);
+            const std::optional<SdfGraphLink> childLink = linkToInput(graph, currentId, "child");
+            if (!childLink) {
+                break;
+            }
+            currentId = childLink->fromNode;
+            continue;
+        }
+
+        if (isPrimitiveNode(current.payload.type)) {
+            break;
+        }
+
+        const std::optional<SdfGraphLink> upstream = singleIncomingSdfLink(graph, currentId);
+        if (!upstream) {
+            break;
+        }
+        currentId = upstream->fromNode;
+    }
+
+    return total;
+}
+
+SdfGraphNodeId GraphSystem::placePrimitiveAtWorldPosition(SdfGraph& graph, SdfGraphNodeId primitiveNode, glm::vec3 worldPosition)
+{
+    const auto primitiveIt = graph.m_nodes.find(primitiveNode);
+    if (primitiveIt == graph.m_nodes.end() || !isPrimitiveNode(primitiveIt->second.payload.type)) {
+        return 0;
+    }
+
+    const std::optional<SdfGraphLink> existingOutput = outputSurfaceLink(graph);
+    const SdfGraphNodeId outputNode = graph.outputNode();
+    if (!existingOutput) {
+        link(graph, primitiveNode, "sdf", outputNode, "surface");
+    } else {
+        const float editorX = primitiveIt->second.editorX;
+        const float editorY = primitiveIt->second.editorY;
+        const SdfGraphNodeId unionNode = createNode(graph, SdfNodeType::Union, "Union");
+        if (auto unionIt = graph.m_nodes.find(unionNode); unionIt != graph.m_nodes.end()) {
+            unionIt->second.editorX = editorX + 520.0f;
+            unionIt->second.editorY = editorY;
+        }
+
+        unlink(graph, existingOutput->fromNode, existingOutput->fromSocket, existingOutput->toNode, existingOutput->toSocket);
+        link(graph, existingOutput->fromNode, existingOutput->fromSocket, unionNode, "left");
+        link(graph, primitiveNode, "sdf", unionNode, "right");
+        link(graph, unionNode, "sdf", outputNode, "surface");
+    }
+
+    const SdfGraphNodeId translateId = ensureTranslateWrapperForNode(graph, primitiveNode);
+    if (SdfGraphNode* translate = graph.node(translateId)) {
+        translate->payload.parameters["x"] = worldPosition.x;
+        translate->payload.parameters["y"] = worldPosition.y;
+        translate->payload.parameters["z"] = worldPosition.z;
+    }
+    SelectionSystem::setSelectedNode(graph, translateId);
+    return translateId;
 }
 
 } // namespace sdf3d

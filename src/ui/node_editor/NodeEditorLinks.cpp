@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace sdf3d::node_editor {
@@ -48,6 +49,18 @@ bool rectOverBezier(const GraphNodeLayout& layout, ImVec2 from, ImVec2 to)
     }
 
     return false;
+}
+
+bool isPrimitiveNode(SdfNodeType type)
+{
+    return type == SdfNodeType::Sphere
+        || type == SdfNodeType::Box
+        || type == SdfNodeType::Cylinder
+        || type == SdfNodeType::Torus
+        || type == SdfNodeType::Plane
+        || type == SdfNodeType::Capsule
+        || type == SdfNodeType::Cone
+        || type == SdfNodeType::RoundBox;
 }
 
 std::optional<LinkInsertionCandidate> findLinkInsertionCandidate(
@@ -151,6 +164,91 @@ std::optional<SdfGraphLink> linkToInput(const SdfGraph& graph, SdfGraphNodeId no
     return std::nullopt;
 }
 
+namespace {
+
+bool hasValidInput(
+    const SdfGraph& graph,
+    SdfGraphNodeId node,
+    const std::string& socket,
+    std::unordered_set<SdfGraphNodeId>& visiting);
+
+bool nodeProducesValidSdf(const SdfGraph& graph, SdfGraphNodeId id, std::unordered_set<SdfGraphNodeId>& visiting)
+{
+    if (visiting.find(id) != visiting.end()) {
+        return false;
+    }
+
+    const SdfGraphNode* node = graph.node(id);
+    if (node == nullptr) {
+        return false;
+    }
+    if (isPrimitiveNode(node->payload.type)) {
+        return true;
+    }
+
+    visiting.insert(id);
+    bool valid = true;
+    switch (node->payload.type) {
+    case SdfNodeType::Translate:
+    case SdfNodeType::Rotate:
+    case SdfNodeType::Scale:
+    case SdfNodeType::Repeat:
+    case SdfNodeType::Mirror:
+    case SdfNodeType::Twist:
+    case SdfNodeType::Bend:
+        valid = hasValidInput(graph, id, "child", visiting);
+        break;
+    case SdfNodeType::MaterialOverride:
+        valid = hasValidInput(graph, id, "sdf", visiting);
+        break;
+    case SdfNodeType::Subtract:
+    case SdfNodeType::SmoothSubtract:
+        valid = hasValidInput(graph, id, "base", visiting);
+        break;
+    case SdfNodeType::Union:
+    case SdfNodeType::SmoothUnion:
+    case SdfNodeType::Intersect:
+    case SdfNodeType::SmoothIntersect:
+        valid = false;
+        for (const SdfGraphSocket& input : node->inputs) {
+            if (input.type == SdfSocketType::Sdf && hasValidInput(graph, id, input.name, visiting)) {
+                valid = true;
+                break;
+            }
+        }
+        break;
+    default:
+        valid = true;
+        break;
+    }
+
+    visiting.erase(id);
+    return valid;
+}
+
+bool hasValidInput(
+    const SdfGraph& graph,
+    SdfGraphNodeId node,
+    const std::string& socket,
+    std::unordered_set<SdfGraphNodeId>& visiting)
+{
+    const std::optional<SdfGraphLink> link = linkToInput(graph, node, socket);
+    return link && nodeProducesValidSdf(graph, link->fromNode, visiting);
+}
+
+} // namespace
+
+std::optional<SdfGraphLink> effectiveLinkToInput(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket)
+{
+    const std::optional<SdfGraphLink> link = linkToInput(graph, node, socket);
+    if (!link) {
+        return std::nullopt;
+    }
+
+    std::unordered_set<SdfGraphNodeId> visiting;
+    return nodeProducesValidSdf(graph, link->fromNode, visiting) ? link : std::nullopt;
+}
+
 bool previewSelectedNode(SdfGraph& graph)
 {
     const SdfGraphNodeId selectedNode = graph.selectedNode();
@@ -191,7 +289,7 @@ std::optional<SdfGraphLink> firstLinkFromOutput(const SdfGraph& graph, SdfGraphN
 bool nodeHasMissingRequiredInput(const SdfGraph& graph, const SdfGraphNode& node)
 {
     for (const SdfGraphSocket& input : node.inputs) {
-        if (input.type == SdfSocketType::Sdf && !linkToInput(graph, node.id, input.name)) {
+        if (input.type == SdfSocketType::Sdf && !effectiveLinkToInput(graph, node.id, input.name)) {
             return true;
         }
     }
@@ -267,6 +365,44 @@ bool mouseNearBezier(ImVec2 mouse, ImVec2 from, ImVec2 to)
     }
 
     return false;
+}
+
+EditorDirtyState updateNodeEditorLinkDrags(
+    SdfGraph& graph,
+    const CanvasFrame& frame,
+    const std::vector<GraphSocketAnchor>& anchors,
+    NodeEditorDragState& drag,
+    LinkDragResult& result)
+{
+    EditorDirtyState dirty;
+    result.releasedFromNode = drag.dragOutputNode;
+    result.releasedFromSocket = drag.dragOutputSocket;
+    const bool suppressOutputPopup = drag.dragOutputFromInputDetach;
+    result.releasedToNode = drag.dragInputNode;
+    result.releasedToSocket = drag.dragInputSocket;
+
+    if (updateActiveLinkDrag(graph, frame, anchors, drag.draggingLink, drag.dragOutputNode, drag.dragOutputSocket, result.releasedLinkOnEmpty)) {
+        dirty.scene = true;
+    }
+    if (!drag.draggingLink) {
+        drag.dragOutputFromInputDetach = false;
+        if (suppressOutputPopup) {
+            if (result.releasedLinkOnEmpty && drag.detachedInputNode != 0 && !drag.detachedInputSocket.empty()) {
+                result.releasedInputLinkOnEmpty = true;
+                result.releasedToNode = drag.detachedInputNode;
+                result.releasedToSocket = drag.detachedInputSocket;
+            }
+            result.releasedLinkOnEmpty = false;
+            drag.detachedInputNode = 0;
+            drag.detachedInputSocket.clear();
+        }
+    }
+
+    if (updateActiveInputLinkDrag(graph, frame, anchors, drag.draggingInputLink, drag.dragInputNode, drag.dragInputSocket, result.releasedInputLinkOnEmpty)) {
+        dirty.scene = true;
+    }
+
+    return dirty;
 }
 
 } // namespace sdf3d::node_editor

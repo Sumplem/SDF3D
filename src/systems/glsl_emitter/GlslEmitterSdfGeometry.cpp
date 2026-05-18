@@ -7,6 +7,18 @@
 
 namespace sdf3d::glsl_emitter {
 
+namespace {
+
+constexpr float warpCorrection = 1.5f;
+
+int axisIndexFor(const SdfNode& node, float defaultAxis)
+{
+    const float rawAxis = parameterOr(node, "axis", defaultAxis);
+    return static_cast<int>(std::clamp(rawAxis, 0.0f, 2.0f) + 0.5f);
+}
+
+} // namespace
+
 uint64_t helperIdFor(const SdfNodePtr& node, SdfHelperEmitContext& context)
 {
     if (node->stableId != 0) {
@@ -207,8 +219,22 @@ std::string emitGeometryExpression(const SdfNodePtr& node, const std::string& po
         const float x = std::max(parameterOr(*node, "x", 2.0f), 0.0001f);
         const float y = std::max(parameterOr(*node, "y", 2.0f), 0.0001f);
         const float z = std::max(parameterOr(*node, "z", 2.0f), 0.0001f);
+        const bool repeatX = parameterOr(*node, "repeatX", 1.0f) >= 0.5f;
+        const bool repeatY = parameterOr(*node, "repeatY", 1.0f) >= 0.5f;
+        const bool repeatZ = parameterOr(*node, "repeatZ", 1.0f) >= 0.5f;
         const std::string cell = glslVec3(x, y, z);
-        const std::string repeatedPoint = "(mod(" + pointExpr + " + 0.5 * " + cell + ", " + cell + ") - 0.5 * " + cell + ")";
+        std::string repeatedPoint = pointExpr;
+        if (repeatX && repeatY && repeatZ) {
+            repeatedPoint = "(mod(" + pointExpr + " + 0.5 * " + cell + ", " + cell + ") - 0.5 * " + cell + ")";
+        } else if (repeatX || repeatY || repeatZ) {
+            const std::string xSize = glslFloat(x);
+            const std::string ySize = glslFloat(y);
+            const std::string zSize = glslFloat(z);
+            const std::string xExpr = repeatX ? "(mod(" + pointExpr + ".x + 0.5 * " + xSize + ", " + xSize + ") - 0.5 * " + xSize + ")" : pointExpr + ".x";
+            const std::string yExpr = repeatY ? "(mod(" + pointExpr + ".y + 0.5 * " + ySize + ", " + ySize + ") - 0.5 * " + ySize + ")" : pointExpr + ".y";
+            const std::string zExpr = repeatZ ? "(mod(" + pointExpr + ".z + 0.5 * " + zSize + ", " + zSize + ") - 0.5 * " + zSize + ")" : pointExpr + ".z";
+            repeatedPoint = "vec3(" + xExpr + ", " + yExpr + ", " + zExpr + ")";
+        }
         return helperCallFor(node->children.front(), repeatedPoint, context);
     }
     case SdfNodeType::Mirror: {
@@ -236,13 +262,26 @@ std::string emitGeometryExpression(const SdfNodePtr& node, const std::string& po
         if (node->children.size() > 1) {
             result.errors.push_back("Twist node ignores extra children.");
         }
-        const std::string strength = glslFloat(parameterOr(*node, "strength", 1.0f));
-        const std::string angle = "(" + pointExpr + ".y * " + strength + ")";
+        const float strengthValue = parameterOr(*node, "strength", 1.0f);
+        const std::string strength = glslFloat(strengthValue);
+        const int axis = axisIndexFor(*node, 1.0f);
+        const std::string axisCoord = axis == 0 ? pointExpr + ".x" : (axis == 1 ? pointExpr + ".y" : pointExpr + ".z");
+        const std::string angle = "(" + axisCoord + " * " + strength + ")";
         const std::string c = "cos(" + angle + ")";
         const std::string s = "sin(" + angle + ")";
-        const std::string twistedPoint = "vec3(" + c + " * " + pointExpr + ".x - " + s + " * " + pointExpr + ".z, "
-            + pointExpr + ".y, " + s + " * " + pointExpr + ".x + " + c + " * " + pointExpr + ".z)";
-        return helperCallFor(node->children.front(), twistedPoint, context);
+        std::string twistedPoint;
+        if (axis == 0) {
+            twistedPoint = "vec3(" + pointExpr + ".x, " + c + " * " + pointExpr + ".y - " + s + " * " + pointExpr + ".z, "
+                + s + " * " + pointExpr + ".y + " + c + " * " + pointExpr + ".z)";
+        } else if (axis == 1) {
+            twistedPoint = "vec3(" + c + " * " + pointExpr + ".x - " + s + " * " + pointExpr + ".z, "
+                + pointExpr + ".y, " + s + " * " + pointExpr + ".x + " + c + " * " + pointExpr + ".z)";
+        } else {
+            twistedPoint = "vec3(" + c + " * " + pointExpr + ".x - " + s + " * " + pointExpr + ".y, "
+                + s + " * " + pointExpr + ".x + " + c + " * " + pointExpr + ".y, " + pointExpr + ".z)";
+        }
+        const std::string correction = "(1.0 + abs(" + glslFloat(strengthValue) + ") * " + glslFloat(warpCorrection) + ")";
+        return "(" + helperCallFor(node->children.front(), twistedPoint, context) + " / " + correction + ")";
     }
     case SdfNodeType::Bend: {
         if (node->children.empty()) {
@@ -252,13 +291,26 @@ std::string emitGeometryExpression(const SdfNodePtr& node, const std::string& po
         if (node->children.size() > 1) {
             result.errors.push_back("Bend node ignores extra children.");
         }
-        const std::string strength = glslFloat(parameterOr(*node, "strength", 0.5f));
-        const std::string angle = "(" + pointExpr + ".x * " + strength + ")";
+        const float strengthValue = parameterOr(*node, "strength", 0.5f);
+        const std::string strength = glslFloat(strengthValue);
+        const int axis = axisIndexFor(*node, 0.0f);
+        const std::string axisCoord = axis == 0 ? pointExpr + ".x" : (axis == 1 ? pointExpr + ".y" : pointExpr + ".z");
+        const std::string angle = "(" + axisCoord + " * " + strength + ")";
         const std::string c = "cos(" + angle + ")";
         const std::string s = "sin(" + angle + ")";
-        const std::string bentPoint = "vec3(" + pointExpr + ".x, " + c + " * " + pointExpr + ".y - " + s + " * " + pointExpr + ".z, "
-            + s + " * " + pointExpr + ".y + " + c + " * " + pointExpr + ".z)";
-        return helperCallFor(node->children.front(), bentPoint, context);
+        std::string bentPoint;
+        if (axis == 0) {
+            bentPoint = "vec3(" + pointExpr + ".x, " + c + " * " + pointExpr + ".y - " + s + " * " + pointExpr + ".z, "
+                + s + " * " + pointExpr + ".y + " + c + " * " + pointExpr + ".z)";
+        } else if (axis == 1) {
+            bentPoint = "vec3(" + c + " * " + pointExpr + ".x - " + s + " * " + pointExpr + ".z, "
+                + pointExpr + ".y, " + s + " * " + pointExpr + ".x + " + c + " * " + pointExpr + ".z)";
+        } else {
+            bentPoint = "vec3(" + c + " * " + pointExpr + ".x - " + s + " * " + pointExpr + ".y, "
+                + s + " * " + pointExpr + ".x + " + c + " * " + pointExpr + ".y, " + pointExpr + ".z)";
+        }
+        const std::string correction = "(1.0 + abs(" + glslFloat(strengthValue) + ") * " + glslFloat(warpCorrection) + ")";
+        return "(" + helperCallFor(node->children.front(), bentPoint, context) + " / " + correction + ")";
     }
     case SdfNodeType::MaterialOverride: {
         if (node->children.empty()) {

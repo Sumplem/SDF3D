@@ -1,12 +1,73 @@
 {
-  "links": [],
-  "nextId": 2,
+  "links": [
+    {
+      "from": {
+        "node": 2,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 3,
+        "socket": "child"
+      }
+    },
+    {
+      "from": {
+        "node": 6,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 1,
+        "socket": "surface"
+      }
+    },
+    {
+      "from": {
+        "node": 3,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 6,
+        "socket": "left"
+      }
+    },
+    {
+      "from": {
+        "node": 7,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 6,
+        "socket": "right"
+      }
+    },
+    {
+      "from": {
+        "node": 8,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 7,
+        "socket": "child"
+      }
+    },
+    {
+      "from": {
+        "node": 3,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 8,
+        "socket": "sdf"
+      }
+    }
+  ],
+  "nextId": 9,
   "nodes": [
     {
       "editor": {
         "propertiesCollapsed": false,
-        "x": 560.0,
-        "y": 40.0
+        "x": 1974.981201171875,
+        "y": -80.45481872558594
       },
       "id": 1,
       "inputs": [
@@ -32,15 +93,214 @@
       "parameters": {},
       "stableId": 0,
       "type": "Output"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 174.981201171875,
+        "y": -80.45481872558594
+      },
+      "id": 2,
+      "inputs": [],
+      "material": {
+        "albedo": [
+          0.800000011920929,
+          0.800000011920929,
+          0.800000011920929
+        ],
+        "emission": 0.0,
+        "metallic": 0.0,
+        "roughness": 0.5
+      },
+      "name": "Sphere",
+      "outputs": [
+        {
+          "direction": "Output",
+          "multiInput": false,
+          "name": "sdf",
+          "type": "Sdf"
+        }
+      ],
+      "parameters": {
+        "radius": 1.0
+      },
+      "stableId": 0,
+      "type": "Sphere"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 534.981201171875,
+        "y": -80.45481872558594
+      },
+      "id": 3,
+      "inputs": [
+        {
+          "direction": "Input",
+          "multiInput": false,
+          "name": "child",
+          "type": "Sdf"
+        }
+      ],
+      "material": {
+        "albedo": [
+          0.800000011920929,
+          0.800000011920929,
+          0.800000011920929
+        ],
+        "emission": 0.0,
+        "metallic": 0.0,
+        "roughness": 0.5
+      },
+      "name": "Translate",
+      "outputs": [
+        {
+          "direction": "Output",
+          "multiInput": false,
+          "name": "sdf",
+          "type": "Sdf"
+        }
+      ],
+      "parameters": {
+        "x": 0.6228519082069397,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "stableId": 0,
+      "type": "Translate"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 1614.981201171875,
+        "y": -80.45481872558594
+      },
+      "id": 6,
+      "inputs": [
+        {
+          "direction": "Input",
+          "multiInput": false,
+          "name": "left",
+          "type": "Sdf"
+        },
+        {
+          "direction": "Input",
+          "multiInput": false,
+          "name": "right",
+          "type": "Sdf"
+        }
+      ],
+      "material": {
+        "albedo": [
+          0.800000011920929,
+          0.800000011920929,
+          0.800000011920929
+        ],
+        "emission": 0.0,
+        "metallic": 0.0,
+        "roughness": 0.5
+      },
+      "name": "Smooth Union",
+      "outputs": [
+        {
+          "direction": "Output",
+          "multiInput": false,
+          "name": "sdf",
+          "type": "Sdf"
+        }
+      ],
+      "parameters": {
+        "smoothness": 0.25
+      },
+      "stableId": 0,
+      "type": "SmoothUnion"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 1254.981201171875,
+        "y": 147.54518127441406
+      },
+      "id": 7,
+      "inputs": [
+        {
+          "direction": "Input",
+          "multiInput": false,
+          "name": "child",
+          "type": "Sdf"
+        }
+      ],
+      "material": {
+        "albedo": [
+          0.800000011920929,
+          0.800000011920929,
+          0.800000011920929
+        ],
+        "emission": 0.0,
+        "metallic": 0.0,
+        "roughness": 0.5
+      },
+      "name": "Translate",
+      "outputs": [
+        {
+          "direction": "Output",
+          "multiInput": false,
+          "name": "sdf",
+          "type": "Sdf"
+        }
+      ],
+      "parameters": {
+        "x": -1.0399999618530273,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "stableId": 0,
+      "type": "Translate"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 894.981201171875,
+        "y": 147.54518127441406
+      },
+      "id": 8,
+      "inputs": [
+        {
+          "direction": "Input",
+          "multiInput": false,
+          "name": "sdf",
+          "type": "Sdf"
+        }
+      ],
+      "material": {
+        "albedo": [
+          0.7058823108673096,
+          0.11072663217782974,
+          0.11072663217782974
+        ],
+        "emission": 0.0,
+        "metallic": 0.0,
+        "roughness": 0.5
+      },
+      "name": "Material Override",
+      "outputs": [
+        {
+          "direction": "Output",
+          "multiInput": false,
+          "name": "sdf",
+          "type": "Sdf"
+        }
+      ],
+      "parameters": {},
+      "stableId": 0,
+      "type": "MaterialOverride"
     }
   ],
   "outputNode": 1,
   "schema": "sdf3d.graph",
   "selection": {
-    "nodes": [
-      1
-    ],
-    "primary": 1
+    "nodes": [],
+    "primary": 0
   },
   "version": 1
 }

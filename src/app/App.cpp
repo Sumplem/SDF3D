@@ -230,7 +230,10 @@ void App::drawDockspace()
 void App::drawPanels()
 {
     m_ui.drawPanels(m_sceneGraph, m_diagnostics.typedEntries());
-    m_viewport.draw(m_renderer);
+    const EditorDirtyState viewportDirty = m_viewport.draw(m_renderer, m_sceneGraph);
+    if (viewportDirty.scene) {
+        m_eventBus.emit(SceneDirtyEvent{});
+    }
 }
 
 void App::endFrame()

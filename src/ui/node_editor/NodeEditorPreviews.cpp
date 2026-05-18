@@ -33,7 +33,7 @@ std::optional<SdfGraphLink> bypassSourceLink(const SdfGraph& graph, const SdfGra
             continue;
         }
 
-        if (const std::optional<SdfGraphLink> link = linkToInput(graph, node.id, input.name)) {
+        if (const std::optional<SdfGraphLink> link = effectiveLinkToInput(graph, node.id, input.name)) {
             return link;
         }
     }
@@ -59,7 +59,7 @@ void drawInactiveNodePreview(
     frame.drawList->AddRect(layout.position, nodeEnd, inactiveColor, scaleValue(frame, 6.0f), 0, scaleValue(frame, 2.0f));
 
     for (const SdfGraphSocket& input : node.inputs) {
-        if (input.type != SdfSocketType::Sdf || linkToInput(graph, layout.id, input.name)) {
+        if (input.type != SdfSocketType::Sdf || effectiveLinkToInput(graph, layout.id, input.name)) {
             continue;
         }
 

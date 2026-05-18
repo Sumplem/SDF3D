@@ -2,6 +2,8 @@
 
 #include "sdf3d/scene/SdfGraph.h"
 
+#include <glm/glm.hpp>
+
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -58,6 +60,18 @@ public:
 
     /// Returns true when any link starts from or ends at the node.
     static bool hasLinks(const SdfGraph& graph, SdfGraphNodeId id);
+
+    /// Returns direct Translate parent connected to node's `sdf` output, or 0.
+    static SdfGraphNodeId findDirectTranslateParent(const SdfGraph& graph, SdfGraphNodeId id);
+
+    /// Reuses or creates a Translate wrapper for a primitive node and selects it.
+    static SdfGraphNodeId ensureTranslateWrapperForNode(SdfGraph& graph, SdfGraphNodeId id);
+
+    /// Computes effective Translate offset upstream of a Translate node through unary SDF pass-through nodes.
+    static glm::vec3 accumulatedTranslatePosition(const SdfGraph& graph, SdfGraphNodeId translateId);
+
+    /// Wraps primitive, places it, and unions it with current Output surface if needed.
+    static SdfGraphNodeId placePrimitiveAtWorldPosition(SdfGraph& graph, SdfGraphNodeId primitiveNode, glm::vec3 worldPosition);
 };
 
 } // namespace sdf3d

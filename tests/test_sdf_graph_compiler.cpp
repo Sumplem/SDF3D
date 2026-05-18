@@ -231,6 +231,29 @@ void testGraphCompilerBypassSingleInputUnion(std::vector<TestFailure>& failures)
     expect(contains(result.glsl, "length(p) - 1.250000"), testName, "Expected union to compile linked child.", failures);
 }
 
+void testGraphCompilerBypassInvalidUnionInput(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph compiler bypass invalid union input";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    if (sdf3d::SdfGraphNode* node = graph.node(sphere)) {
+        node->payload.parameters["radius"] = 1.25f;
+    }
+    const sdf3d::SdfGraphNodeId translate = graph.createNode(sdf3d::SdfNodeType::Translate, "Translate");
+    const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
+    graph.link(sphere, unionNode, "left");
+    graph.link(translate, unionNode, "right");
+    graph.link(unionNode, "sdf", graph.outputNode(), "surface");
+
+    const sdf3d::SdfCompiler compiler;
+    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+
+    expect(!result.errors.empty(), testName, "Expected invalid upstream input warning.", failures);
+    expect(contains(result.glsl, "length(p) - 1.250000"), testName, "Expected union to bypass invalid input and keep valid child.", failures);
+    expect(!contains(result.glsl, "min("), testName, "Expected union not to emit min with invalid input.", failures);
+}
+
 void testGraphCompilerBypassSubtractBase(std::vector<TestFailure>& failures)
 {
     const std::string testName = "graph compiler bypass subtract base";
@@ -278,6 +301,7 @@ void testGraphCompilerRepeat(std::vector<TestFailure>& failures)
         node->payload.parameters["x"] = 3.0f;
         node->payload.parameters["y"] = 4.0f;
         node->payload.parameters["z"] = 5.0f;
+        node->payload.parameters["repeatY"] = 0.0f;
     }
     graph.link(sphere, repeat, "child");
     graph.link(repeat, "sdf", graph.outputNode(), "surface");
@@ -286,7 +310,29 @@ void testGraphCompilerRepeat(std::vector<TestFailure>& failures)
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
-    expect(contains(result.glsl, "mod(p + 0.5 * vec3(3.000000, 4.000000, 5.000000)"), testName, "Expected repeat domain transform.", failures);
+    expect(contains(result.glsl, "vec3((mod(p.x + 0.5 * 3.000000, 3.000000) - 0.5 * 3.000000), p.y, (mod(p.z + 0.5 * 5.000000, 5.000000) - 0.5 * 5.000000))"), testName, "Expected repeat to skip disabled y axis.", failures);
+}
+
+void testGraphCompilerRepeatAllAxesDefault(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph compiler repeat all axes default";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId repeat = graph.createNode(sdf3d::SdfNodeType::Repeat, "Repeat");
+    if (sdf3d::SdfGraphNode* node = graph.node(repeat)) {
+        node->payload.parameters["x"] = 3.0f;
+        node->payload.parameters["y"] = 4.0f;
+        node->payload.parameters["z"] = 5.0f;
+    }
+    graph.link(sphere, repeat, "child");
+    graph.link(repeat, "sdf", graph.outputNode(), "surface");
+
+    const sdf3d::SdfCompiler compiler;
+    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+
+    expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
+    expect(contains(result.glsl, "mod(p + 0.5 * vec3(3.000000, 4.000000, 5.000000)"), testName, "Expected default repeat to affect all axes.", failures);
 }
 
 void testGraphCompilerMirror(std::vector<TestFailure>& failures)
@@ -320,6 +366,7 @@ void testGraphCompilerTwist(std::vector<TestFailure>& failures)
     const sdf3d::SdfGraphNodeId twist = graph.createNode(sdf3d::SdfNodeType::Twist, "Twist");
     if (sdf3d::SdfGraphNode* node = graph.node(twist)) {
         node->payload.parameters["strength"] = 1.25f;
+        node->payload.parameters["axis"] = 2.0f;
     }
     graph.link(sphere, twist, "child");
     graph.link(twist, "sdf", graph.outputNode(), "surface");
@@ -328,8 +375,9 @@ void testGraphCompilerTwist(std::vector<TestFailure>& failures)
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
-    expect(contains(result.glsl, "cos((p.y * 1.250000))"), testName, "Expected twist cosine angle.", failures);
-    expect(contains(result.glsl, "sin((p.y * 1.250000))"), testName, "Expected twist sine angle.", failures);
+    expect(contains(result.glsl, "cos((p.z * 1.250000))"), testName, "Expected twist z-axis cosine angle.", failures);
+    expect(contains(result.glsl, "sin((p.z * 1.250000))"), testName, "Expected twist z-axis sine angle.", failures);
+    expect(contains(result.glsl, " / (1.0 + abs(1.250000) * 1.500000)"), testName, "Expected twist distance correction.", failures);
 }
 
 void testGraphCompilerBend(std::vector<TestFailure>& failures)
@@ -341,6 +389,7 @@ void testGraphCompilerBend(std::vector<TestFailure>& failures)
     const sdf3d::SdfGraphNodeId bend = graph.createNode(sdf3d::SdfNodeType::Bend, "Bend");
     if (sdf3d::SdfGraphNode* node = graph.node(bend)) {
         node->payload.parameters["strength"] = 0.75f;
+        node->payload.parameters["axis"] = 1.0f;
     }
     graph.link(sphere, bend, "child");
     graph.link(bend, "sdf", graph.outputNode(), "surface");
@@ -349,8 +398,9 @@ void testGraphCompilerBend(std::vector<TestFailure>& failures)
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
-    expect(contains(result.glsl, "cos((p.x * 0.750000))"), testName, "Expected bend cosine angle.", failures);
-    expect(contains(result.glsl, "sin((p.x * 0.750000))"), testName, "Expected bend sine angle.", failures);
+    expect(contains(result.glsl, "cos((p.y * 0.750000))"), testName, "Expected bend y-axis cosine angle.", failures);
+    expect(contains(result.glsl, "sin((p.y * 0.750000))"), testName, "Expected bend y-axis sine angle.", failures);
+    expect(contains(result.glsl, " / (1.0 + abs(0.750000) * 1.500000)"), testName, "Expected bend distance correction.", failures);
 }
 
 } // namespace
@@ -370,9 +420,11 @@ int main()
     testGraphCompilerSocketOrdering(failures);
     testGraphCompilerIncompleteUnion(failures);
     testGraphCompilerBypassSingleInputUnion(failures);
+    testGraphCompilerBypassInvalidUnionInput(failures);
     testGraphCompilerBypassSubtractBase(failures);
     testGraphCompilerMissingTransformChild(failures);
     testGraphCompilerRepeat(failures);
+    testGraphCompilerRepeatAllAxesDefault(failures);
     testGraphCompilerMirror(failures);
     testGraphCompilerTwist(failures);
     testGraphCompilerBend(failures);

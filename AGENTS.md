@@ -13,7 +13,7 @@
 
 - Use the current repo root / process working directory. Do not assume a fixed absolute path; this repo may live at different paths on different machines.
 - Local Windows paths seen in prior runs are historical only and not project requirements.
-- M3/M4-ish scene compiler and UI already exist.
+- Graph-first editor is active: node canvas, typed sockets, Output node, auto layout, viewport Translate gizmo, viewport Add popup, JSON save/load, deferred material eval.
 - Build currently passes with `cmake --build build --config Debug`.
 - Current focused test/build runs pass; see latest approved edit entries below.
 - GUI smoke test passed: debug `sdf3d.exe` stayed running for 3 seconds before test stop.
@@ -32,12 +32,45 @@
   - union/intersect choose winner material by distance
   - subtract keeps base material
   - smooth ops blend material samples across the smooth boundary
+- Graph lowering drops invalid upstream nodes whose required inputs are not met; downstream boolean-like nodes see those links as absent and may bypass with remaining valid inputs.
+- Node editor mirrors effective input validity with orange missing-pin rings and bypass preview; physical wires from invalid upstream nodes do not count as valid effective inputs.
 - `App::recompileScene()` sends GLSL to `Renderer::reloadScene()` and material list to `Renderer::setMaterials()`.
 - `UniformUploader` uploads packed materials through an OpenGL SSBO (`std430`, binding 0), no old 64 uniform-array cap.
 - Material parameter edits mark material-dirty only and update renderer uniforms without shader reload.
 - `GraphMigrator` was removed after JSON save/load landed; do not reference or re-add it.
 
 ## Recent Approved Edits
+
+- Node editor layout, gizmo, viewport Add, and effective bypass batch completed:
+  - `NodeEditor::draw()` was split across existing node editor files:
+    - `NodeEditorActions.cpp` owns shortcuts and pending-delete flush.
+    - `NodeEditorLinks.cpp` owns link drag state and socket/link helpers.
+    - `NodeEditorView.cpp` owns selection rectangle and canvas view behavior.
+    - `NodeEditorCanvas.cpp` owns node draw loop, popup opening, and empty-graph message.
+  - `NodeEditor` state is grouped into `NodeEditorDragState`, `NodeEditorPopupState`, and `SelectionRectState`.
+  - Dragging from an empty input opens Add popup and auto-links the new node output back to the target input.
+  - Dragging from an occupied input preserves old source + target input; `AddMenu::drawPopupBetween(...)` inserts the new node between them.
+  - Popup-created ops avoid selection-wrap behavior to prevent accidental cycles.
+  - Auto layout now assigns columns by walking backward from Output/sinks via incoming links; Output remains rightmost.
+  - Layout rows are assigned left-to-right from parent row using socket order, preserving empty row slots.
+  - Existing `Translate` nodes are editable in viewport with a mouse gizmo.
+  - Selecting a primitive with no Translate creates/reuses a Translate wrapper through `GraphSystem::ensureTranslateWrapperForNode(...)`.
+  - Selecting a primitive already feeding a direct Translate shows gizmo at that Translate, not origin.
+  - Translate chains accumulate position through unary pass-through nodes; ambiguity at branch/multi-input nodes stops accumulation.
+  - Gizmo drag stores world origin for mouse projection and writes only local delta to the selected Translate node.
+  - Graph rewrite/query logic moved from UI into `GraphSystem`:
+    - `findDirectTranslateParent(...)`
+    - `ensureTranslateWrapperForNode(...)`
+    - `accumulatedTranslatePosition(...)`
+    - `placePrimitiveAtWorldPosition(...)`
+  - Viewport right-click release opens Add popup if not orbit-dragging; right-click drag still orbits.
+  - Viewport primitive add wraps the primitive in Translate at click world position.
+  - If Output is empty, placed Translate links to Output. If Output is already linked, a Union is created with old root left, new Translate right, Union to Output.
+  - Compiler lowering now drops invalid upstream nodes before downstream required-input logic.
+  - Regression fixed: `prim -> union.left`, invalid `trans(no child) -> union.right`, `union -> output` bypasses to valid prim instead of emitting invalid `min(...)` artifact.
+  - Node editor effective input checks mirror compiler bypass behavior, including physical wires from invalid upstream nodes.
+  - Builds/tests passed for `sdf3d`, `sdf3d_tests`, `sdf3d_graph_tests`, `sdf3d_graph_compiler_tests`, `sdf3d_glsl_emitter_tests`; GUI smoke passed.
+  - File-size notes: `GraphSystem.cpp` is in note range, `NodeEditorCanvas.cpp` is in note range, `tests/test_sdf_graph.cpp` is in note range; user declined test split for now.
 
 - Phase 2 ops first slice completed:
   - Added `Repeat`, `Mirror`, `Twist`, and `Bend` node metadata under `SdfNodeCategory::Transform`.
@@ -342,25 +375,21 @@
 
 ## Next Proposed Step
 
-- Deferred Material Eval is implemented:
-  - `CompilerSystem` emits per-node `sdf_node_<id>` helpers.
-  - `sceneSDF(vec3 p)` is a thin wrapper around the root helper.
-  - `sceneMaterial(vec3 p)` evaluates material once after hit confirmation.
-  - `raymarch.frag` no longer calls `sceneSDFWithMaterial()`.
-- Smooth op material blending is implemented:
-  - `sceneMaterial(vec3 p)` returns `SdfMaterialSample`.
-  - `raymarch.frag` samples albedo, roughness, metallic, and emission from that struct after hit.
-  - SmoothUnion, SmoothIntersect, and SmoothSubtract recompute blend weights inside material evaluation while `sdf_node_<id>` helpers stay `float`.
-- Phase 2 ops status:
-  - `Repeat`, `Mirror`, `Twist`, and `Bend` are implemented and covered by graph/compiler tests.
-  - Next ops need explicit scope before coding.
-- Next candidates:
+- Deferred Material Eval, smooth material blending, Phase 2 ops, auto layout, Translate gizmo, viewport Add, and effective bypass propagation are implemented.
+- Good next candidates:
+  - Shared required-input / effective-validity graph query so compiler and UI bypass logic do not drift.
+  - Rotate/scale gizmos after Translate behavior is stable.
+  - Viewport picking/selection.
   - MaterialRegistry (named shared materials).
   - Procedural materials.
   - Full GI/path tracing remains later and needs explicit design discussion.
+- Notes:
+  - Avoid splitting `tests/test_sdf_graph.cpp` unless user reopens it; user declined split for now.
 
 ## Known Caveat
 
 - Need plan/approval before touching feature code.
 - GUI smoke should be rerun after major NodeEditor visual work.
 - `SdfNode::material` remains as payload storage for `MaterialOverride` compatibility; do not re-enable primitive material editing/emission.
+- Bypass behavior is intentional. Do not hard-disable single-valid-input boolean bypasses.
+- `LNK1168` usually means debug `sdf3d.exe` is still running; stop app then rebuild.

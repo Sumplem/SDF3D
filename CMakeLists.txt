@@ -47,6 +47,7 @@ add_executable(sdf3d
     src/ui/node_editor/NodeEditorActions.cpp
     src/ui/node_editor/NodeEditorCanvas.cpp
     src/ui/node_editor/NodeEditorInputLinks.cpp
+    src/ui/node_editor/NodeEditorLayout.cpp
     src/ui/node_editor/NodeEditorLinks.cpp
     src/ui/node_editor/NodeEditor.cpp
     src/ui/node_editor/NodeEditorProperties.cpp
@@ -56,6 +57,7 @@ add_executable(sdf3d
     src/ui/SceneOutliner.cpp
     src/ui/UI.cpp
     src/ui/Viewport.cpp
+    src/ui/viewport/TranslateGizmo.cpp
 )
 
 target_compile_features(sdf3d PRIVATE cxx_std_17)
@@ -122,6 +124,7 @@ add_executable(sdf3d_graph_tests
     src/scene/SdfNodeDefinition.cpp
     src/systems/GraphSystem.cpp
     src/systems/SelectionSystem.cpp
+    src/ui/node_editor/NodeEditorLayout.cpp
 )
 
 target_compile_features(sdf3d_graph_tests PRIVATE cxx_std_17)
@@ -132,6 +135,7 @@ target_include_directories(sdf3d_graph_tests PRIVATE
 
 target_link_libraries(sdf3d_graph_tests PRIVATE
     glm::glm
+    imgui
 )
 
 if(MSVC)

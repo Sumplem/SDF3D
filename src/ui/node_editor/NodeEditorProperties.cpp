@@ -13,6 +13,40 @@ namespace {
 
 constexpr float FIELD_HEIGHT = 20.0f;
 constexpr float LABEL_WIDTH = 76.0f;
+constexpr float enabledThreshold = 0.5f;
+constexpr float disabledValue = 0.0f;
+constexpr float enabledValue = 1.0f;
+constexpr int axisX = 0;
+constexpr int axisZ = 2;
+constexpr int axisCount = 3;
+
+bool isBooleanParameter(const SdfParameterDefinition& definition)
+{
+    return definition.minValue == disabledValue && definition.maxValue == enabledValue && definition.step == enabledValue;
+}
+
+bool drawBoolParameter(const std::string& id, float& value)
+{
+    bool enabled = value >= enabledThreshold;
+    if (!ImGui::Checkbox(id.c_str(), &enabled)) {
+        return false;
+    }
+
+    value = enabled ? enabledValue : disabledValue;
+    return true;
+}
+
+bool drawAxisParameter(const std::string& id, float& value)
+{
+    const char* axisLabels[] = {"X", "Y", "Z"};
+    int axis = static_cast<int>(std::clamp(value, static_cast<float>(axisX), static_cast<float>(axisZ)) + enabledThreshold);
+    if (!ImGui::Combo(id.c_str(), &axis, axisLabels, axisCount)) {
+        return false;
+    }
+
+    value = static_cast<float>(axis);
+    return true;
+}
 
 std::vector<std::string> orderedParameterKeys(const SdfNode& node, std::unordered_map<std::string, SdfParameterDefinition>& parameterDefinitions)
 {
@@ -119,7 +153,16 @@ EditorDirtyState drawNodeInlineProperties(const GraphNodeLayout& layout, const C
         drawLabel(frame, {layout.contentPosition.x, y + scaleValue(frame, 3.0f)}, key.c_str());
         ImGui::SetCursorScreenPos({fieldX, y});
         ImGui::SetNextItemWidth(fieldWidth);
-        if (ImGui::DragFloat(("##node-param-" + std::to_string(layout.id) + "-" + key).c_str(), &value, step, minValue, maxValue)) {
+        const std::string id = "##node-param-" + std::to_string(layout.id) + "-" + key;
+        bool changed = false;
+        if (definition != parameterDefinitions.end() && isBooleanParameter(definition->second)) {
+            changed = drawBoolParameter(id, value);
+        } else if ((node.type == SdfNodeType::Twist || node.type == SdfNodeType::Bend) && key == "axis") {
+            changed = drawAxisParameter(id, value);
+        } else {
+            changed = ImGui::DragFloat(id.c_str(), &value, step, minValue, maxValue);
+        }
+        if (changed) {
             dirty.scene = true;
         }
         y += rowHeight;

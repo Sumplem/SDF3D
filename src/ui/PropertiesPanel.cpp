@@ -12,6 +12,46 @@
 
 namespace sdf3d {
 
+namespace {
+
+constexpr float enabledThreshold = 0.5f;
+constexpr float disabledValue = 0.0f;
+constexpr float enabledValue = 1.0f;
+constexpr int axisX = 0;
+constexpr int axisY = 1;
+constexpr int axisZ = 2;
+constexpr int axisCount = 3;
+
+bool isBooleanParameter(const SdfParameterDefinition& definition)
+{
+    return definition.minValue == disabledValue && definition.maxValue == enabledValue && definition.step == enabledValue;
+}
+
+bool drawBoolParameter(const std::string& key, float& value)
+{
+    bool enabled = value >= enabledThreshold;
+    if (!ImGui::Checkbox(key.c_str(), &enabled)) {
+        return false;
+    }
+
+    value = enabled ? enabledValue : disabledValue;
+    return true;
+}
+
+bool drawAxisParameter(float& value)
+{
+    const char* axisLabels[] = {"X", "Y", "Z"};
+    int axis = static_cast<int>(std::clamp(value, static_cast<float>(axisX), static_cast<float>(axisZ)) + enabledThreshold);
+    if (!ImGui::Combo("Axis", &axis, axisLabels, axisCount)) {
+        return false;
+    }
+
+    value = static_cast<float>(axis);
+    return true;
+}
+
+} // namespace
+
 EditorDirtyState PropertiesPanel::draw(SceneGraph& sceneGraph)
 {
     EditorDirtyState dirty;
@@ -103,6 +143,19 @@ EditorDirtyState PropertiesPanel::draw(SceneGraph& sceneGraph)
     for (const std::string& key : keys) {
         float& value = selected->parameters[key];
         const auto definition = parameterDefinitions.find(key);
+        if (definition != parameterDefinitions.end() && isBooleanParameter(definition->second)) {
+            if (drawBoolParameter(key, value)) {
+                dirty.scene = true;
+            }
+            continue;
+        }
+        if ((selected->type == SdfNodeType::Twist || selected->type == SdfNodeType::Bend) && key == "axis") {
+            if (drawAxisParameter(value)) {
+                dirty.scene = true;
+            }
+            continue;
+        }
+
         const float step = definition != parameterDefinitions.end() ? definition->second.step : 0.01f;
         const float minValue = definition != parameterDefinitions.end() ? definition->second.minValue : 0.0f;
         const float maxValue = definition != parameterDefinitions.end() ? definition->second.maxValue : 0.0f;
