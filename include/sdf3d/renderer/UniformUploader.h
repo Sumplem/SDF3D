@@ -28,6 +28,7 @@ struct RenderCamera {
 struct RenderGizmo {
     bool visible = false;
     glm::vec3 center = {0.0f, 0.0f, 0.0f};
+    glm::mat3 orientation = glm::mat3{1.0f};
     float arrowLength = 1.0f;
     float arrowRadius = 0.035f;
     float ringRadius = 0.85f;
@@ -44,6 +45,11 @@ public:
     struct GpuMaterial {
         glm::vec4 albedoRoughness = {0.8f, 0.8f, 0.8f, 0.5f};
         glm::vec4 metallicEmission = {0.0f, 0.0f, 0.0f, 0.0f};
+    };
+
+    struct GpuNodeParam {
+        glm::uvec4 id = {0u, 0u, 0u, 0u};
+        glm::vec4 data0 = {0.0f, 0.0f, 0.0f, 0.0f};
     };
 
     UniformUploader() = default;
@@ -66,7 +72,8 @@ public:
         const RenderCamera& camera,
         const RenderGizmo& gizmo,
         RenderQuality quality,
-        const std::vector<SdfCompiledMaterial>& materials);
+        const std::vector<SdfCompiledMaterial>& materials,
+        const std::vector<SdfCompiledNodeParam>& nodeParams);
 
     /// Returns material count visible to shader storage buffer.
     static size_t materialCountForShader(size_t materialCount);
@@ -74,8 +81,12 @@ public:
     /// Packs compiler material data into shader storage buffer layout.
     static std::vector<GpuMaterial> packMaterials(const std::vector<SdfCompiledMaterial>& materials);
 
+    /// Packs compiler node parameters into shader storage buffer layout.
+    static std::vector<GpuNodeParam> packNodeParams(const std::vector<SdfCompiledNodeParam>& nodeParams);
+
 private:
     uint32_t m_materialBuffer = 0;
+    uint32_t m_nodeParamBuffer = 0;
 };
 
 } // namespace sdf3d

@@ -1,6 +1,7 @@
 #include "sdf3d/ui/node_editor/NodeEditorCanvas.h"
 
 #include "sdf3d/scene/SdfNodeDefinition.h"
+#include "sdf3d/scene/SdfRotationParams.h"
 
 #include <algorithm>
 #include <string>
@@ -66,6 +67,9 @@ std::vector<std::string> orderedParameterKeys(const SdfNode& node, std::unordere
     std::vector<std::string> customKeys;
     for (const auto& [key, value] : node.parameters) {
         (void)value;
+        if (node.type == SdfNodeType::Rotate && isHiddenRotationQuaternionParameter(key)) {
+            continue;
+        }
         if (addedKeys.find(key) == addedKeys.end()) {
             customKeys.push_back(key);
         }
@@ -163,6 +167,13 @@ EditorDirtyState drawNodeInlineProperties(const GraphNodeLayout& layout, const C
             changed = ImGui::DragFloat(id.c_str(), &value, step, minValue, maxValue);
         }
         if (changed) {
+            if (node.type == SdfNodeType::Rotate && (key == "xDegrees" || key == "yDegrees" || key == "zDegrees")) {
+                storeRotationQuaternion(node, rotationQuaternionFromEulerDegrees({
+                    node.parameters["xDegrees"],
+                    node.parameters["yDegrees"],
+                    node.parameters["zDegrees"],
+                }));
+            }
             dirty.scene = true;
         }
         y += rowHeight;

@@ -271,6 +271,7 @@ bool App::recompileScene(bool keepPreviousProgramOnFailure)
 
     m_diagnostics.add(DiagnosticSeverity::Info, "Renderer", "Shader validation passed.");
     m_renderer.setMaterials(sceneGlsl.materials);
+    m_renderer.setNodeParams(sceneGlsl.nodeParams);
     return true;
 }
 

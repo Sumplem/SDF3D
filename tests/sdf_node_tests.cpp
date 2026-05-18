@@ -43,7 +43,7 @@ void testDefaultSphere(std::vector<TestFailure>& failures)
     expect(!contains(result.glsl, "sdf3d_box"), testName, "Expected box helper to be omitted.", failures);
     expect(!contains(result.glsl, "sdf3d_cylinder"), testName, "Expected cylinder helper to be omitted.", failures);
     expect(!contains(result.glsl, "sdf3d_smin"), testName, "Expected smooth-min helper to be omitted.", failures);
-    expect(!contains(result.glsl, "sdf3d_rotationXYZ"), testName, "Expected rotation helper to be omitted.", failures);
+    expect(!contains(result.glsl, "sdf3d_rotationQuat"), testName, "Expected rotation helper to be omitted.", failures);
 }
 
 void testEmptyScene(std::vector<TestFailure>& failures)
@@ -240,8 +240,8 @@ void testRotate(std::vector<TestFailure>& failures)
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
     expect(result.usesRotate, testName, "Expected rotation helper flag.", failures);
-    expect(contains(result.glsl, "mat3 sdf3d_rotationXYZ"), testName, "Expected rotation helper.", failures);
-    expect(contains(result.glsl, "transpose(sdf3d_rotationXYZ(vec3(15.000000, 30.000000, 45.000000)))"), testName, "Expected inverse rotation expression.", failures);
+    expect(contains(result.glsl, "mat3 sdf3d_rotationQuat"), testName, "Expected rotation helper.", failures);
+    expect(contains(result.glsl, "transpose(sdf3d_rotationQuat(vec4("), testName, "Expected inverse quaternion rotation expression.", failures);
 }
 
 void testMaterialMetadata(std::vector<TestFailure>& failures)

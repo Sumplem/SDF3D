@@ -1,6 +1,7 @@
 #include "sdf3d/ui/PropertiesPanel.h"
 
 #include "sdf3d/scene/SdfNodeDefinition.h"
+#include "sdf3d/scene/SdfRotationParams.h"
 
 #include <algorithm>
 #include <string>
@@ -133,6 +134,9 @@ EditorDirtyState PropertiesPanel::draw(SceneGraph& sceneGraph)
     std::vector<std::string> customKeys;
     for (const auto& [key, value] : selected->parameters) {
         (void)value;
+        if (selected->type == SdfNodeType::Rotate && isHiddenRotationQuaternionParameter(key)) {
+            continue;
+        }
         if (addedKeys.find(key) == addedKeys.end()) {
             customKeys.push_back(key);
         }
@@ -160,6 +164,13 @@ EditorDirtyState PropertiesPanel::draw(SceneGraph& sceneGraph)
         const float minValue = definition != parameterDefinitions.end() ? definition->second.minValue : 0.0f;
         const float maxValue = definition != parameterDefinitions.end() ? definition->second.maxValue : 0.0f;
         if (ImGui::DragFloat(key.c_str(), &value, step, minValue, maxValue)) {
+            if (selected->type == SdfNodeType::Rotate && (key == "xDegrees" || key == "yDegrees" || key == "zDegrees")) {
+                storeRotationQuaternion(*selected, rotationQuaternionFromEulerDegrees({
+                    selected->parameters["xDegrees"],
+                    selected->parameters["yDegrees"],
+                    selected->parameters["zDegrees"],
+                }));
+            }
             dirty.scene = true;
         }
     }

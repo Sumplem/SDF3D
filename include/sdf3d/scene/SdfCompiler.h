@@ -3,6 +3,8 @@
 #include "sdf3d/scene/SdfGraph.h"
 #include "sdf3d/scene/SdfNode.h"
 
+#include <array>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -13,6 +15,12 @@ struct SdfCompiledMaterial {
     SdfMaterial material;
 };
 
+/// Runtime node parameters uploaded beside generated GLSL for edit-time fast updates.
+struct SdfCompiledNodeParam {
+    uint64_t nodeId = 0;
+    std::array<float, 4> data0 = {0.0f, 0.0f, 0.0f, 0.0f};
+};
+
 /// Result of compiling an SDF node tree into GLSL.
 struct SdfCompileResult {
     std::string glsl;
@@ -20,6 +28,7 @@ struct SdfCompileResult {
     // AGENT: Material list stays beside GLSL so the compiler owns deterministic
     // material ID assignment without coupling SdfNode to renderer uniform layout.
     std::vector<SdfCompiledMaterial> materials;
+    std::vector<SdfCompiledNodeParam> nodeParams;
     bool usesBox = false;
     bool usesCylinder = false;
     bool usesSmoothMin = false;

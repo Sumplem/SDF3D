@@ -22,7 +22,7 @@
 - `SdfNodeType::MaterialOverride` is the explicit editable material node.
 - `SdfNode` still carries `SdfMaterial` payload storage for compatibility/migration, but UI and compiler material assignment must treat it as active only on `MaterialOverride`.
 - Properties panel and inline node controls show material controls only for `MaterialOverride`.
-- `CompilerSystem::compile(graph)` lowers graph to a temporary tree, then `GlslEmitter` emits geometry helpers plus deferred material GLSL.
+- `CompilerSystem::compile(graph)` lowers graph to a temporary tree, then `GlslEmitter` emits geometry helpers plus deferred material GLSL and runtime node params.
 - Primitive nodes emit geometry-only `sdf_node_<id>` helpers and use default material id `0`.
 - `MaterialOverride` nodes pass child SDF distance through in geometry helpers and contribute material ids only in deferred `sceneMaterial`.
 - Generated GLSL exposes `float sceneSDF(vec3 p)` plus `SdfMaterialSample sceneMaterial(vec3 p)`.
@@ -33,22 +33,36 @@
   - smooth ops blend material samples across the smooth boundary
 - Graph lowering drops invalid upstream nodes whose required inputs are not met; downstream boolean-like nodes see those links as absent and may bypass with remaining valid inputs.
 - Node editor mirrors effective input validity with orange missing-pin rings and bypass preview; physical wires from invalid upstream nodes do not count as valid effective inputs.
-- `App::recompileScene()` sends GLSL to `Renderer::reloadScene()` and material list to `Renderer::setMaterials()`.
+- `App::recompileScene()` sends GLSL to `Renderer::reloadScene()`, materials to `Renderer::setMaterials()`, and runtime node params to `Renderer::setNodeParams()`.
 - `UniformUploader` uploads packed materials through an OpenGL SSBO (`std430`, binding 0), no old 64 uniform-array cap.
+- `UniformUploader` uploads runtime node params through an OpenGL SSBO (`std430`, binding 1). Generated graph GLSL reads Translate/Rotate/Scale params with `sdf3d_nodeParam0(...)`; legacy tree/no-stable-ID compiles still bake constants.
 - Material parameter edits mark material-dirty only and update renderer uniforms without shader reload.
 - `GraphMigrator` was removed after JSON save/load landed; do not reference or re-add it.
 
 ## Current Gizmo / Viewport Selection Model
 
 - Edit shader is `raymarch_edit.frag`; it renders scene + gizmo SDF in one raymarch path.
-- Viewport left-click CPU-raymarches graph SDF through `GraphSystem::pickNodeByRay(...)` and selects the hit primitive node.
+- Viewport left-click CPU-raymarches graph SDF through `GraphSystem::pickNodeByRay(...)`; boolean inputs are raymarched per branch so each boolean input is independently selectable and returns nearest branch transform when present.
 - Yellow selection highlight uses `uHighlightNodeId` and generated `sceneNodeSDF(int nodeId, vec3 p)`.
-- For chained transforms, `GraphSystem::highlightNodeForSelection(...)` resolves primitive/inner-transform selection to the final pass-through transform in that chain so highlight evaluates in visible world space.
+- For transform selection, `GraphSystem::highlightNodeForSelection(...)` returns the selected transform directly. For primitive selection it walks unary pass-through parents until a boolean input boundary.
 - Highlight shader uses a smooth distance band, not exact zero, so chained transform raymarch step error does not hide selected primitive tint.
 - Transform wrappers may chain: selecting an existing Translate can add/reuse Rotate/Scale wrappers without breaking the chain.
+- Affine transform wrappers use canonical branch order: `Scale -> Rotate -> Translate` before boolean/material/output boundaries. Ensure-wrapper calls reuse existing Scale/Rotate/Translate anywhere in the unary branch chain before creating a new node.
+- Rotate graph nodes use hidden quaternion params `qx/qy/qz/qw` as runtime source of truth when present. `xDegrees/yDegrees/zDegrees` remain the visible UI adapter and compatibility fallback; UI Euler edits refresh the hidden quaternion.
+- Gizmo drags write graph params and set `EditorDirtyState::params`, causing `Viewport` to refresh `Renderer::setNodeParams(GraphSystem::collectNodeParams(...))` without `SceneDirtyEvent` or shader reload. Topology changes still recompile.
+- Scale and Rotate gizmos are oriented by the branch Rotate transform: `RenderGizmo::orientation` uploads to `uGizmoOrientation`; CPU scale hit-test/drag projection, CPU rotate ring hit-test/drag plane, and `raymarch_edit.frag` render path use the same rotated local axes. Translate gizmo remains world-axis.
 - `GraphSystem.cpp`, `TranslateGizmo.cpp`, and `raymarch_edit.frag` are over 600/500-line pressure; split before adding more large gizmo or graph logic.
 
 ## Recent Approved Edits
+
+- Viewport selection/gizmo correction batch completed:
+  - Fixed `GraphSystem::highlightNodeForSelection(...)`: selected transform returns itself; primitive selection walks only unary pass-through parents and stops at boolean input boundary.
+  - `GraphSystem::pickNodeByRay(...)` now raymarches boolean inputs per branch, including nested booleans, so viewport selection returns the nearest branch transform instead of the whole boolean.
+  - Added runtime node param SSBO (`binding = 1`) for Translate/Rotate/Scale edits; gizmo drags update params without shader recompile while topology edits still recompile.
+  - Transform ensure-wrapper logic now reuses existing Scale/Rotate/Translate in the unary branch chain and preserves canonical branch order `Scale -> Rotate -> Translate`.
+  - Rotate now stores hidden quaternion params `qx/qy/qz/qw`; compiler, runtime params, CPU picking, and gizmo orientation use quaternion math. Euler degree params remain visible UI compatibility fields.
+  - Scale and Rotate gizmo rendering/hit-test/drag use `uGizmoOrientation` from branch Rotate; Translate remains world-axis.
+  - Focused build passed for `sdf3d`, `sdf3d_tests`, `sdf3d_graph_system_tests`, `sdf3d_graph_compiler_tests`, and `sdf3d_glsl_emitter_tests`; focused tests passed for those test executables.
 
 - Node editor layout, gizmo, viewport Add, and effective bypass batch completed:
   - `NodeEditor::draw()` was split across existing node editor files:

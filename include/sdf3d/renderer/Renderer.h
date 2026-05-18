@@ -44,6 +44,9 @@ public:
     /// Stores material uniforms emitted by the SDF compiler.
     void setMaterials(std::vector<SdfCompiledMaterial> materials);
 
+    /// Stores node parameters emitted by the SDF compiler or refreshed from graph edits.
+    void setNodeParams(std::vector<SdfCompiledNodeParam> nodeParams);
+
     /// Returns the latest shader compile/link/reload error, or empty on success.
     const std::string& lastError() const;
 
@@ -59,6 +62,7 @@ private:
     // AGENT: Renderer stores compiler-owned material order so every render can
     // re-upload uniforms after program relink without scene graph traversal.
     std::vector<SdfCompiledMaterial> m_materials;
+    std::vector<SdfCompiledNodeParam> m_nodeParams;
 };
 
 } // namespace sdf3d

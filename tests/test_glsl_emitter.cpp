@@ -121,6 +121,25 @@ void testMaterialOverrideSdfHelper(std::vector<TestFailure>& failures)
     }
 }
 
+void testTransformSdfHelperUsesRuntimeNodeParam(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "transform sdf helper uses runtime node param";
+    sdf3d::GlslEmitter emitter;
+    sdf3d::SdfCompileResult result;
+    sdf3d::SdfNodePtr sphere = sdf3d::makeSphereNode();
+    sphere->stableId = 10;
+    sdf3d::SdfNodePtr translate = sdf3d::makeTranslateNode(sphere, {1.0f, 2.0f, 3.0f}, "Translate");
+    translate->stableId = 20;
+
+    const sdf3d::GlslSdfHelperBlock block = emitter.emitSdfHelpers(translate, result);
+
+    expect(result.errors.empty(), testName, "Expected no helper errors.", failures);
+    expect(block.helpers.size() == 2, testName, "Expected child and translate helper.", failures);
+    if (block.helpers.size() == 2) {
+        expect(contains(block.helpers[1].glsl, "sdf3d_nodeParam0(20u, 0u, vec4(1.000000, 2.000000, 3.000000, 0.000000)).xyz"), testName, "Expected translate helper to read runtime node params.", failures);
+    }
+}
+
 } // namespace
 
 int main()
@@ -132,6 +151,7 @@ int main()
     testNullNode(failures);
     testSdfHelperOrder(failures);
     testMaterialOverrideSdfHelper(failures);
+    testTransformSdfHelperUsesRuntimeNodeParam(failures);
 
     if (!failures.empty()) {
         for (const TestFailure& failure : failures) {

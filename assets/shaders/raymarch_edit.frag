@@ -11,6 +11,7 @@ uniform int uMaterialCount;
 
 uniform bool uGizmoVisible;
 uniform vec3 uGizmoCenter;
+uniform mat3 uGizmoOrientation;
 uniform float uGizmoArrowLength;
 uniform float uGizmoArrowRadius;
 uniform float uGizmoR;
@@ -197,7 +198,7 @@ float translateGizmoSDF(vec3 p, out int axis)
 
 float rotateGizmoSDF(vec3 p, out int axis)
 {
-    vec3 local = p - uGizmoCenter;
+    vec3 local = transpose(uGizmoOrientation) * (p - uGizmoCenter);
     vec2 torus = vec2(max(uGizmoR, 0.0001), max(uGizmoTube, 0.0001));
     float xDistance = sdTorus(local.yxz, torus);
     float yDistance = sdTorus(local, torus);
@@ -211,9 +212,12 @@ float scaleGizmoSDF(vec3 p, out int axis)
     vec3 halfSize = vec3(max(uGizmoArrowRadius * 2.5, 0.0001));
     vec3 center = uGizmoCenter;
 
-    float xDistance = sdBox(p - (center + vec3(length, 0.0, 0.0)), halfSize);
-    float yDistance = sdBox(p - (center + vec3(0.0, length, 0.0)), halfSize);
-    float zDistance = sdBox(p - (center + vec3(0.0, 0.0, length)), halfSize);
+    vec3 xAxis = uGizmoOrientation * vec3(1.0, 0.0, 0.0);
+    vec3 yAxis = uGizmoOrientation * vec3(0.0, 1.0, 0.0);
+    vec3 zAxis = uGizmoOrientation * vec3(0.0, 0.0, 1.0);
+    float xDistance = sdBox(transpose(uGizmoOrientation) * (p - (center + xAxis * length)), halfSize);
+    float yDistance = sdBox(transpose(uGizmoOrientation) * (p - (center + yAxis * length)), halfSize);
+    float zDistance = sdBox(transpose(uGizmoOrientation) * (p - (center + zAxis * length)), halfSize);
     return nearestAxisDistance(xDistance, yDistance, zDistance, axis);
 }
 

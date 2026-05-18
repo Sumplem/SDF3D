@@ -6,6 +6,7 @@ namespace sdf3d {
 struct EditorDirtyState {
     bool scene = false;
     bool material = false;
+    bool params = false;
 };
 
 } // namespace sdf3d

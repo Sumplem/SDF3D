@@ -12,16 +12,6 @@
     },
     {
       "from": {
-        "node": 6,
-        "socket": "sdf"
-      },
-      "to": {
-        "node": 1,
-        "socket": "surface"
-      }
-    },
-    {
-      "from": {
         "node": 3,
         "socket": "sdf"
       },
@@ -59,15 +49,105 @@
         "node": 8,
         "socket": "sdf"
       }
+    },
+    {
+      "from": {
+        "node": 10,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 11,
+        "socket": "right"
+      }
+    },
+    {
+      "from": {
+        "node": 9,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 10,
+        "socket": "child"
+      }
+    },
+    {
+      "from": {
+        "node": 6,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 11,
+        "socket": "left"
+      }
+    },
+    {
+      "from": {
+        "node": 2,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 9,
+        "socket": "sdf"
+      }
+    },
+    {
+      "from": {
+        "node": 13,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 14,
+        "socket": "right"
+      }
+    },
+    {
+      "from": {
+        "node": 12,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 13,
+        "socket": "child"
+      }
+    },
+    {
+      "from": {
+        "node": 11,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 14,
+        "socket": "left"
+      }
+    },
+    {
+      "from": {
+        "node": 14,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 1,
+        "socket": "surface"
+      }
+    },
+    {
+      "from": {
+        "node": 2,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 12,
+        "socket": "sdf"
+      }
     }
   ],
-  "nextId": 9,
+  "nextId": 15,
   "nodes": [
     {
       "editor": {
         "propertiesCollapsed": false,
-        "x": 1974.981201171875,
-        "y": -80.45481872558594
+        "x": 2780.3916015625,
+        "y": 50.800537109375
       },
       "id": 1,
       "inputs": [
@@ -97,8 +177,8 @@
     {
       "editor": {
         "propertiesCollapsed": false,
-        "x": 174.981201171875,
-        "y": -80.45481872558594
+        "x": 260.3917236328125,
+        "y": 50.800537109375
       },
       "id": 2,
       "inputs": [],
@@ -130,8 +210,8 @@
     {
       "editor": {
         "propertiesCollapsed": false,
-        "x": 534.981201171875,
-        "y": -80.45481872558594
+        "x": 620.3917236328125,
+        "y": 50.800537109375
       },
       "id": 3,
       "inputs": [
@@ -163,7 +243,7 @@
       ],
       "parameters": {
         "x": 0.6228519082069397,
-        "y": 0.0,
+        "y": 0.1746940016746521,
         "z": 0.0
       },
       "stableId": 0,
@@ -172,8 +252,8 @@
     {
       "editor": {
         "propertiesCollapsed": false,
-        "x": 1614.981201171875,
-        "y": -80.45481872558594
+        "x": 1700.3917236328125,
+        "y": 50.800537109375
       },
       "id": 6,
       "inputs": [
@@ -218,8 +298,8 @@
     {
       "editor": {
         "propertiesCollapsed": false,
-        "x": 1254.981201171875,
-        "y": 147.54518127441406
+        "x": 1340.3917236328125,
+        "y": 506.800537109375
       },
       "id": 7,
       "inputs": [
@@ -260,8 +340,8 @@
     {
       "editor": {
         "propertiesCollapsed": false,
-        "x": 894.981201171875,
-        "y": 147.54518127441406
+        "x": 943.1035766601563,
+        "y": 505.91925048828125
       },
       "id": 8,
       "inputs": [
@@ -294,6 +374,258 @@
       "parameters": {},
       "stableId": 0,
       "type": "MaterialOverride"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 1340.3917236328125,
+        "y": 278.800537109375
+      },
+      "id": 9,
+      "inputs": [
+        {
+          "direction": "Input",
+          "multiInput": false,
+          "name": "sdf",
+          "type": "Sdf"
+        }
+      ],
+      "material": {
+        "albedo": [
+          0.11072666943073273,
+          0.7058823108673096,
+          0.11072666943073273
+        ],
+        "emission": 0.0,
+        "metallic": 0.0,
+        "roughness": 0.5
+      },
+      "name": "Material Override",
+      "outputs": [
+        {
+          "direction": "Output",
+          "multiInput": false,
+          "name": "sdf",
+          "type": "Sdf"
+        }
+      ],
+      "parameters": {},
+      "stableId": 0,
+      "type": "MaterialOverride"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 1700.3917236328125,
+        "y": 278.800537109375
+      },
+      "id": 10,
+      "inputs": [
+        {
+          "direction": "Input",
+          "multiInput": false,
+          "name": "child",
+          "type": "Sdf"
+        }
+      ],
+      "material": {
+        "albedo": [
+          0.800000011920929,
+          0.800000011920929,
+          0.800000011920929
+        ],
+        "emission": 0.0,
+        "metallic": 0.0,
+        "roughness": 0.5
+      },
+      "name": "Translate",
+      "outputs": [
+        {
+          "direction": "Output",
+          "multiInput": false,
+          "name": "sdf",
+          "type": "Sdf"
+        }
+      ],
+      "parameters": {
+        "x": 0.8240256905555725,
+        "y": 1.1235949993133545,
+        "z": 0.0
+      },
+      "stableId": 0,
+      "type": "Translate"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 2060.3916015625,
+        "y": 50.800537109375
+      },
+      "id": 11,
+      "inputs": [
+        {
+          "direction": "Input",
+          "multiInput": false,
+          "name": "left",
+          "type": "Sdf"
+        },
+        {
+          "direction": "Input",
+          "multiInput": false,
+          "name": "right",
+          "type": "Sdf"
+        }
+      ],
+      "material": {
+        "albedo": [
+          0.800000011920929,
+          0.800000011920929,
+          0.800000011920929
+        ],
+        "emission": 0.0,
+        "metallic": 0.0,
+        "roughness": 0.5
+      },
+      "name": "Smooth Union",
+      "outputs": [
+        {
+          "direction": "Output",
+          "multiInput": false,
+          "name": "sdf",
+          "type": "Sdf"
+        }
+      ],
+      "parameters": {
+        "smoothness": 0.25
+      },
+      "stableId": 0,
+      "type": "SmoothUnion"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 1700.3917236328125,
+        "y": 506.800537109375
+      },
+      "id": 12,
+      "inputs": [
+        {
+          "direction": "Input",
+          "multiInput": false,
+          "name": "sdf",
+          "type": "Sdf"
+        }
+      ],
+      "material": {
+        "albedo": [
+          0.11072666943073273,
+          0.30327707529067993,
+          0.7058823108673096
+        ],
+        "emission": 0.0,
+        "metallic": 0.0,
+        "roughness": 0.5
+      },
+      "name": "Material Override",
+      "outputs": [
+        {
+          "direction": "Output",
+          "multiInput": false,
+          "name": "sdf",
+          "type": "Sdf"
+        }
+      ],
+      "parameters": {},
+      "stableId": 0,
+      "type": "MaterialOverride"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 2060.3916015625,
+        "y": 506.800537109375
+      },
+      "id": 13,
+      "inputs": [
+        {
+          "direction": "Input",
+          "multiInput": false,
+          "name": "child",
+          "type": "Sdf"
+        }
+      ],
+      "material": {
+        "albedo": [
+          0.800000011920929,
+          0.800000011920929,
+          0.800000011920929
+        ],
+        "emission": 0.0,
+        "metallic": 0.0,
+        "roughness": 0.5
+      },
+      "name": "Translate",
+      "outputs": [
+        {
+          "direction": "Output",
+          "multiInput": false,
+          "name": "sdf",
+          "type": "Sdf"
+        }
+      ],
+      "parameters": {
+        "x": -1.0399999618530273,
+        "y": 0.9926964640617371,
+        "z": 0.0
+      },
+      "stableId": 0,
+      "type": "Translate"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 2420.3916015625,
+        "y": 50.800537109375
+      },
+      "id": 14,
+      "inputs": [
+        {
+          "direction": "Input",
+          "multiInput": false,
+          "name": "left",
+          "type": "Sdf"
+        },
+        {
+          "direction": "Input",
+          "multiInput": false,
+          "name": "right",
+          "type": "Sdf"
+        }
+      ],
+      "material": {
+        "albedo": [
+          0.800000011920929,
+          0.800000011920929,
+          0.800000011920929
+        ],
+        "emission": 0.0,
+        "metallic": 0.0,
+        "roughness": 0.5
+      },
+      "name": "Smooth Union",
+      "outputs": [
+        {
+          "direction": "Output",
+          "multiInput": false,
+          "name": "sdf",
+          "type": "Sdf"
+        }
+      ],
+      "parameters": {
+        "smoothness": 0.25
+      },
+      "stableId": 0,
+      "type": "SmoothUnion"
     }
   ],
   "outputNode": 1,

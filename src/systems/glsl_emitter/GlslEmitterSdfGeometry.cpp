@@ -1,6 +1,7 @@
 #include "GlslEmitterSdfHelperContext.h"
 
 #include "GlslEmitterFormatting.h"
+#include "sdf3d/scene/SdfRotationParams.h"
 #include "sdf3d/systems/GlslNodeNames.h"
 
 #include <algorithm>
@@ -178,7 +179,10 @@ std::string emitGeometryExpression(const SdfNodePtr& node, const std::string& po
         const float x = parameterOr(*node, "x", 0.0f);
         const float y = parameterOr(*node, "y", 0.0f);
         const float z = parameterOr(*node, "z", 0.0f);
-        const std::string translatedPoint = "(" + pointExpr + " - " + glslVec3(x, y, z) + ")";
+        const std::string translate = node->stableId != 0
+            ? glslNodeParam0(helperIdFor(node, context), glslVec4(x, y, z, 0.0f)) + ".xyz"
+            : glslVec3(x, y, z);
+        const std::string translatedPoint = "(" + pointExpr + " - " + translate + ")";
         return helperCallFor(node->children.front(), translatedPoint, context);
     }
     case SdfNodeType::Rotate: {
@@ -190,10 +194,11 @@ std::string emitGeometryExpression(const SdfNodePtr& node, const std::string& po
             result.errors.push_back("Rotate node ignores extra children.");
         }
         result.usesRotate = true;
-        const float x = parameterOr(*node, "xDegrees", 0.0f);
-        const float y = parameterOr(*node, "yDegrees", 0.0f);
-        const float z = parameterOr(*node, "zDegrees", 0.0f);
-        const std::string rotatedPoint = "(transpose(sdf3d_rotationXYZ(" + glslVec3(x, y, z) + ")) * " + pointExpr + ")";
+        const glm::vec4 fallback = rotationQuaternionForNode(*node);
+        const std::string rotation = node->stableId != 0
+            ? glslNodeParam0(helperIdFor(node, context), glslVec4(fallback.x, fallback.y, fallback.z, fallback.w))
+            : glslVec4(fallback.x, fallback.y, fallback.z, fallback.w);
+        const std::string rotatedPoint = "(transpose(sdf3d_rotationQuat(" + rotation + ")) * " + pointExpr + ")";
         return helperCallFor(node->children.front(), rotatedPoint, context);
     }
     case SdfNodeType::Scale: {
@@ -209,9 +214,13 @@ std::string emitGeometryExpression(const SdfNodePtr& node, const std::string& po
         const float y = std::max(parameterOr(*node, "y", uniformScale), 0.0001f);
         const float z = std::max(parameterOr(*node, "z", uniformScale), 0.0001f);
         const float distanceScale = std::min({x, y, z});
-        const std::string scale = glslVec3(x, y, z);
+        const std::string scaleParam = node->stableId != 0
+            ? glslNodeParam0(helperIdFor(node, context), glslVec4(x, y, z, distanceScale))
+            : glslVec4(x, y, z, distanceScale);
+        const std::string scale = node->stableId != 0 ? "(" + scaleParam + ".xyz)" : glslVec3(x, y, z);
         const std::string scaledPoint = "(" + pointExpr + " / " + scale + ")";
-        return "(" + helperCallFor(node->children.front(), scaledPoint, context) + " * " + glslFloat(distanceScale) + ")";
+        const std::string distanceScaleExpr = node->stableId != 0 ? scaleParam + ".w" : glslFloat(distanceScale);
+        return "(" + helperCallFor(node->children.front(), scaledPoint, context) + " * " + distanceScaleExpr + ")";
     }
     case SdfNodeType::Repeat: {
         if (node->children.empty()) {

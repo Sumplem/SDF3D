@@ -28,8 +28,9 @@ private:
     };
 
     glm::vec3 m_dragWorldOrigin = {0.0f, 0.0f, 0.0f};
+    glm::mat3 m_dragOrientation = glm::mat3{1.0f};
     glm::vec3 m_dragStartLocalPosition = {0.0f, 0.0f, 0.0f};
-    glm::vec3 m_dragStartEulerDegrees = {0.0f, 0.0f, 0.0f};
+    glm::vec4 m_dragStartQuaternion = {0.0f, 0.0f, 0.0f, 1.0f};
     float m_dragStartScale = 1.0f;
     float m_dragStartAxisT = 0.0f;
     float m_dragStartAngle = 0.0f;

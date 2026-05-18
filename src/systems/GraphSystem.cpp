@@ -2,6 +2,7 @@
 
 #include "sdf3d/core/EventBus.h"
 #include "sdf3d/scene/SdfNodeDefinition.h"
+#include "sdf3d/scene/SdfRotationParams.h"
 #include "sdf3d/systems/SelectionSystem.h"
 
 #include <algorithm>
@@ -64,6 +65,27 @@ bool isTransformPassThroughNode(SdfNodeType type)
         || type == SdfNodeType::Twist
         || type == SdfNodeType::Bend
         || type == SdfNodeType::MaterialOverride;
+}
+
+bool isAffineTransformNode(SdfNodeType type)
+{
+    return type == SdfNodeType::Scale
+        || type == SdfNodeType::Rotate
+        || type == SdfNodeType::Translate;
+}
+
+int affineTransformOrder(SdfNodeType type)
+{
+    if (type == SdfNodeType::Scale) {
+        return 0;
+    }
+    if (type == SdfNodeType::Rotate) {
+        return 1;
+    }
+    if (type == SdfNodeType::Translate) {
+        return 2;
+    }
+    return 100;
 }
 
 bool canWrapWithTransform(SdfNodeType type)
@@ -168,6 +190,124 @@ SdfGraphNodeId findPassThroughParentOfType(const SdfGraph& graph, SdfGraphNodeId
         currentId = parentId;
     }
     return 0;
+}
+
+SdfGraphNodeId findPassThroughChildOfType(const SdfGraph& graph, SdfGraphNodeId id, SdfNodeType type)
+{
+    std::vector<SdfGraphNodeId> visited;
+    SdfGraphNodeId currentId = id;
+    while (currentId != 0 && std::find(visited.begin(), visited.end(), currentId) == visited.end()) {
+        visited.push_back(currentId);
+        const std::optional<SdfGraphLink> childLink = linkToInput(graph, currentId, "child");
+        const std::optional<SdfGraphLink> sdfLink = childLink ? childLink : linkToInput(graph, currentId, "sdf");
+        if (!sdfLink) {
+            return 0;
+        }
+
+        const SdfGraphNode* child = graph.node(sdfLink->fromNode);
+        if (child == nullptr || !canWrapWithTransform(child->payload.type)) {
+            return 0;
+        }
+        if (child->payload.type == type) {
+            return child->id;
+        }
+        if (!isTransformPassThroughNode(child->payload.type)) {
+            return 0;
+        }
+        currentId = child->id;
+    }
+
+    return 0;
+}
+
+SdfGraphNodeId findPassThroughNodeOfTypeInChain(const SdfGraph& graph, SdfGraphNodeId id, SdfNodeType type)
+{
+    const SdfGraphNode* node = graph.node(id);
+    if (node != nullptr && node->payload.type == type) {
+        return id;
+    }
+    if (const SdfGraphNodeId parent = findPassThroughParentOfType(graph, id, type)) {
+        return parent;
+    }
+    return findPassThroughChildOfType(graph, id, type);
+}
+
+SdfGraphNodeId affineChainStart(const SdfGraph& graph, SdfGraphNodeId id)
+{
+    SdfGraphNodeId currentId = id;
+    std::vector<SdfGraphNodeId> visited;
+    while (currentId != 0 && std::find(visited.begin(), visited.end(), currentId) == visited.end()) {
+        visited.push_back(currentId);
+        const SdfGraphNode* current = graph.node(currentId);
+        if (current == nullptr || !isAffineTransformNode(current->payload.type)) {
+            return currentId;
+        }
+
+        const std::optional<SdfGraphLink> child = linkToInput(graph, currentId, "child");
+        if (!child) {
+            return currentId;
+        }
+        const SdfGraphNode* upstream = graph.node(child->fromNode);
+        if (upstream == nullptr || (!isPrimitiveNode(upstream->payload.type) && !isAffineTransformNode(upstream->payload.type))) {
+            return currentId;
+        }
+        currentId = upstream->id;
+    }
+
+    return currentId;
+}
+
+SdfGraphNodeId canonicalTransformInsertionChild(const SdfGraph& graph, SdfGraphNodeId id, SdfNodeType type)
+{
+    SdfGraphNodeId childId = affineChainStart(graph, id);
+    SdfGraphNodeId currentId = childId;
+    const int targetOrder = affineTransformOrder(type);
+    std::vector<SdfGraphNodeId> visited;
+    while (currentId != 0 && std::find(visited.begin(), visited.end(), currentId) == visited.end()) {
+        visited.push_back(currentId);
+        const SdfGraphNodeId parentId = singlePassThroughParent(graph, currentId);
+        const SdfGraphNode* parent = graph.node(parentId);
+        if (parent == nullptr || !isAffineTransformNode(parent->payload.type)) {
+            break;
+        }
+        if (affineTransformOrder(parent->payload.type) >= targetOrder) {
+            break;
+        }
+        childId = parentId;
+        currentId = parentId;
+    }
+
+    return childId;
+}
+
+SdfGraphNodeId insertTransformAfter(SdfGraph& graph, SdfGraphNodeId childId, SdfNodeType type, const char* name)
+{
+    const SdfGraphNode* child = graph.node(childId);
+    if (child == nullptr) {
+        return 0;
+    }
+
+    const std::vector<SdfGraphLink> links = graph.links();
+    const SdfGraphNodeId transformId = GraphSystem::createNode(graph, type, name);
+    SdfGraphNode* transform = graph.node(transformId);
+    if (transform == nullptr) {
+        return 0;
+    }
+
+    transform->editorX = child->editorX + 260.0f;
+    transform->editorY = child->editorY;
+    GraphSystem::link(graph, childId, "sdf", transformId, "child");
+
+    for (const SdfGraphLink& existing : links) {
+        if (existing.fromNode != childId || existing.fromSocket != "sdf") {
+            continue;
+        }
+        GraphSystem::unlink(graph, existing.fromNode, existing.fromSocket, existing.toNode, existing.toSocket);
+        GraphSystem::link(graph, transformId, "sdf", existing.toNode, existing.toSocket);
+    }
+
+    SelectionSystem::setSelectedNode(graph, transformId);
+    return transformId;
 }
 
 } // namespace
@@ -443,42 +583,20 @@ SdfGraphNodeId GraphSystem::ensureTranslateWrapperForNode(SdfGraph& graph, SdfGr
     if (nodeIt == graph.m_nodes.end()) {
         return 0;
     }
-    if (nodeIt->second.payload.type == SdfNodeType::Translate) {
-        SelectionSystem::setSelectedNode(graph, id);
-        return id;
-    }
     if (!canWrapWithTransform(nodeIt->second.payload.type)) {
         return 0;
     }
 
-    if (const SdfGraphNodeId translateParent = findPassThroughParentOfType(graph, id, SdfNodeType::Translate)) {
-        SelectionSystem::setSelectedNode(graph, translateParent);
-        return translateParent;
+    if (const SdfGraphNodeId existingTranslate = findPassThroughNodeOfTypeInChain(graph, id, SdfNodeType::Translate)) {
+        SelectionSystem::setSelectedNode(graph, existingTranslate);
+        return existingTranslate;
     }
 
-    const std::vector<SdfGraphLink> links = graph.m_links;
-    const float editorX = nodeIt->second.editorX;
-    const float editorY = nodeIt->second.editorY;
-    const SdfGraphNodeId translateId = createNode(graph, SdfNodeType::Translate, "Translate");
-    auto translateIt = graph.m_nodes.find(translateId);
-    if (translateIt == graph.m_nodes.end()) {
+    const SdfGraphNodeId childId = canonicalTransformInsertionChild(graph, id, SdfNodeType::Translate);
+    if (childId == 0) {
         return 0;
     }
-
-    translateIt->second.editorX = editorX + 260.0f;
-    translateIt->second.editorY = editorY;
-    link(graph, id, "sdf", translateId, "child");
-
-    for (const SdfGraphLink& existing : links) {
-        if (existing.fromNode != id || existing.fromSocket != "sdf") {
-            continue;
-        }
-        unlink(graph, existing.fromNode, existing.fromSocket, existing.toNode, existing.toSocket);
-        link(graph, translateId, "sdf", existing.toNode, existing.toSocket);
-    }
-
-    SelectionSystem::setSelectedNode(graph, translateId);
-    return translateId;
+    return insertTransformAfter(graph, childId, SdfNodeType::Translate, "Translate");
 }
 
 SdfGraphNodeId GraphSystem::ensureRotateWrapperForNode(SdfGraph& graph, SdfGraphNodeId id)
@@ -487,42 +605,20 @@ SdfGraphNodeId GraphSystem::ensureRotateWrapperForNode(SdfGraph& graph, SdfGraph
     if (nodeIt == graph.m_nodes.end()) {
         return 0;
     }
-    if (nodeIt->second.payload.type == SdfNodeType::Rotate) {
-        SelectionSystem::setSelectedNode(graph, id);
-        return id;
-    }
     if (!canWrapWithTransform(nodeIt->second.payload.type)) {
         return 0;
     }
 
-    if (const SdfGraphNodeId rotateParent = findPassThroughParentOfType(graph, id, SdfNodeType::Rotate)) {
-        SelectionSystem::setSelectedNode(graph, rotateParent);
-        return rotateParent;
+    if (const SdfGraphNodeId existingRotate = findPassThroughNodeOfTypeInChain(graph, id, SdfNodeType::Rotate)) {
+        SelectionSystem::setSelectedNode(graph, existingRotate);
+        return existingRotate;
     }
 
-    const std::vector<SdfGraphLink> links = graph.m_links;
-    const float editorX = nodeIt->second.editorX;
-    const float editorY = nodeIt->second.editorY;
-    const SdfGraphNodeId rotateId = createNode(graph, SdfNodeType::Rotate, "Rotate");
-    auto rotateIt = graph.m_nodes.find(rotateId);
-    if (rotateIt == graph.m_nodes.end()) {
+    const SdfGraphNodeId childId = canonicalTransformInsertionChild(graph, id, SdfNodeType::Rotate);
+    if (childId == 0) {
         return 0;
     }
-
-    rotateIt->second.editorX = editorX + 260.0f;
-    rotateIt->second.editorY = editorY;
-    link(graph, id, "sdf", rotateId, "child");
-
-    for (const SdfGraphLink& existing : links) {
-        if (existing.fromNode != id || existing.fromSocket != "sdf") {
-            continue;
-        }
-        unlink(graph, existing.fromNode, existing.fromSocket, existing.toNode, existing.toSocket);
-        link(graph, rotateId, "sdf", existing.toNode, existing.toSocket);
-    }
-
-    SelectionSystem::setSelectedNode(graph, rotateId);
-    return rotateId;
+    return insertTransformAfter(graph, childId, SdfNodeType::Rotate, "Rotate");
 }
 
 SdfGraphNodeId GraphSystem::ensureScaleWrapperForNode(SdfGraph& graph, SdfGraphNodeId id)
@@ -531,42 +627,20 @@ SdfGraphNodeId GraphSystem::ensureScaleWrapperForNode(SdfGraph& graph, SdfGraphN
     if (nodeIt == graph.m_nodes.end()) {
         return 0;
     }
-    if (nodeIt->second.payload.type == SdfNodeType::Scale) {
-        SelectionSystem::setSelectedNode(graph, id);
-        return id;
-    }
     if (!canWrapWithTransform(nodeIt->second.payload.type)) {
         return 0;
     }
 
-    if (const SdfGraphNodeId scaleParent = findPassThroughParentOfType(graph, id, SdfNodeType::Scale)) {
-        SelectionSystem::setSelectedNode(graph, scaleParent);
-        return scaleParent;
+    if (const SdfGraphNodeId existingScale = findPassThroughNodeOfTypeInChain(graph, id, SdfNodeType::Scale)) {
+        SelectionSystem::setSelectedNode(graph, existingScale);
+        return existingScale;
     }
 
-    const std::vector<SdfGraphLink> links = graph.m_links;
-    const float editorX = nodeIt->second.editorX;
-    const float editorY = nodeIt->second.editorY;
-    const SdfGraphNodeId scaleId = createNode(graph, SdfNodeType::Scale, "Scale");
-    auto scaleIt = graph.m_nodes.find(scaleId);
-    if (scaleIt == graph.m_nodes.end()) {
+    const SdfGraphNodeId childId = canonicalTransformInsertionChild(graph, id, SdfNodeType::Scale);
+    if (childId == 0) {
         return 0;
     }
-
-    scaleIt->second.editorX = editorX + 260.0f;
-    scaleIt->second.editorY = editorY;
-    link(graph, id, "sdf", scaleId, "child");
-
-    for (const SdfGraphLink& existing : links) {
-        if (existing.fromNode != id || existing.fromSocket != "sdf") {
-            continue;
-        }
-        unlink(graph, existing.fromNode, existing.fromSocket, existing.toNode, existing.toSocket);
-        link(graph, scaleId, "sdf", existing.toNode, existing.toSocket);
-    }
-
-    SelectionSystem::setSelectedNode(graph, scaleId);
-    return scaleId;
+    return insertTransformAfter(graph, childId, SdfNodeType::Scale, "Scale");
 }
 
 glm::vec3 GraphSystem::accumulatedTranslatePosition(const SdfGraph& graph, SdfGraphNodeId translateId)
@@ -605,6 +679,52 @@ glm::vec3 GraphSystem::accumulatedTranslatePosition(const SdfGraph& graph, SdfGr
     }
 
     return total;
+}
+
+std::vector<SdfCompiledNodeParam> GraphSystem::collectNodeParams(const SdfGraph& graph)
+{
+    std::vector<SdfCompiledNodeParam> params;
+    params.reserve(graph.nodes().size());
+    for (const auto& [id, node] : graph.nodes()) {
+        SdfCompiledNodeParam param;
+        param.nodeId = id;
+        switch (node.payload.type) {
+        case SdfNodeType::Translate:
+            param.data0 = {
+                parameterOr(node.payload, "x", 0.0f),
+                parameterOr(node.payload, "y", 0.0f),
+                parameterOr(node.payload, "z", 0.0f),
+                0.0f,
+            };
+            params.push_back(param);
+            break;
+        case SdfNodeType::Rotate:
+        {
+            const glm::vec4 q = rotationQuaternionForNode(node.payload);
+            param.data0 = {
+                q.x,
+                q.y,
+                q.z,
+                q.w,
+            };
+            params.push_back(param);
+            break;
+        }
+        case SdfNodeType::Scale: {
+            const float uniformScale = parameterOr(node.payload, "scale", 1.0f);
+            const float x = std::max(parameterOr(node.payload, "x", uniformScale), 0.0001f);
+            const float y = std::max(parameterOr(node.payload, "y", uniformScale), 0.0001f);
+            const float z = std::max(parameterOr(node.payload, "z", uniformScale), 0.0001f);
+            param.data0 = {x, y, z, std::min({x, y, z})};
+            params.push_back(param);
+            break;
+        }
+        default:
+            break;
+        }
+    }
+
+    return params;
 }
 
 SdfGraphNodeId GraphSystem::placePrimitiveAtWorldPosition(SdfGraph& graph, SdfGraphNodeId primitiveNode, glm::vec3 worldPosition)

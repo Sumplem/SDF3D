@@ -1,6 +1,7 @@
 #include "sdf3d/renderer/UniformUploader.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -49,6 +50,24 @@ void testPackedMaterialLayout(std::vector<TestFailure>& failures)
     }
 }
 
+void testPackedNodeParamLayout(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "packed node param layout";
+    std::vector<sdf3d::SdfCompiledNodeParam> params(1);
+    params[0].nodeId = (static_cast<uint64_t>(2) << 32u) | 7u;
+    params[0].data0 = {1.0f, 2.0f, 3.0f, 4.0f};
+
+    const std::vector<sdf3d::UniformUploader::GpuNodeParam> packed = sdf3d::UniformUploader::packNodeParams(params);
+
+    expect(sizeof(sdf3d::UniformUploader::GpuNodeParam) == sizeof(float) * 8, testName, "Expected two vec4 node param layout.", failures);
+    expect(packed.size() == 1, testName, "Expected one node param packed.", failures);
+    if (packed.size() == 1) {
+        expect(packed[0].id.x == 7u, testName, "Expected low node id packed.", failures);
+        expect(packed[0].id.y == 2u, testName, "Expected high node id packed.", failures);
+        expect(packed[0].data0.z == 3.0f, testName, "Expected data vec packed.", failures);
+    }
+}
+
 void testRenderGizmoDefaults(std::vector<TestFailure>& failures)
 {
     const std::string testName = "render gizmo defaults";
@@ -81,6 +100,7 @@ int main()
 
     testMaterialCountForShader(failures);
     testPackedMaterialLayout(failures);
+    testPackedNodeParamLayout(failures);
     testRenderGizmoDefaults(failures);
     testRenderQualityValues(failures);
 

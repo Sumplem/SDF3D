@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sdf3d/scene/SdfGraph.h"
+#include "sdf3d/scene/SdfCompiler.h"
 
 #include <glm/glm.hpp>
 
@@ -77,6 +78,9 @@ public:
 
     /// CPU-raymarches the effective graph SDF and returns the hit graph node ID, or 0.
     static SdfGraphNodeId pickNodeByRay(const SdfGraph& graph, glm::vec3 rayOrigin, glm::vec3 rayDirection);
+
+    /// Packs graph node parameters for renderer-side fast param updates.
+    static std::vector<SdfCompiledNodeParam> collectNodeParams(const SdfGraph& graph);
 
     /// Returns the SDF helper node ID that should be highlighted for current selection.
     static SdfGraphNodeId highlightNodeForSelection(const SdfGraph& graph);

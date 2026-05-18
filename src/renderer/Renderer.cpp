@@ -43,7 +43,7 @@ void Renderer::render(const RenderCamera& camera)
 
     glUseProgram(program);
 
-    m_uniformUploader.upload(program, m_fboRenderer.width(), m_fboRenderer.height(), camera, m_gizmo, m_quality, m_materials);
+    m_uniformUploader.upload(program, m_fboRenderer.width(), m_fboRenderer.height(), camera, m_gizmo, m_quality, m_materials, m_nodeParams);
 
     m_fboRenderer.drawFullscreenTriangle();
 
@@ -69,6 +69,11 @@ void Renderer::setQuality(RenderQuality quality)
 void Renderer::setMaterials(std::vector<SdfCompiledMaterial> materials)
 {
     m_materials = std::move(materials);
+}
+
+void Renderer::setNodeParams(std::vector<SdfCompiledNodeParam> nodeParams)
+{
+    m_nodeParams = std::move(nodeParams);
 }
 
 const std::string& Renderer::lastError() const

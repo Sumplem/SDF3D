@@ -126,6 +126,10 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SceneGraph& sceneGraph)
         dirty.scene = true;
     }
 
+    if (gizmoDirty.params) {
+        renderer.setNodeParams(GraphSystem::collectNodeParams(sceneGraph.graph()));
+        dirty.params = true;
+    }
     dirty.scene = dirty.scene || gizmoDirty.scene;
     ImGui::End();
     return dirty;

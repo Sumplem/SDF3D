@@ -1,5 +1,6 @@
 #include "GlslEmitterFormatting.h"
 
+#include <cstdint>
 #include <iomanip>
 #include <sstream>
 
@@ -25,6 +26,18 @@ std::string glslFloat(float value)
 std::string glslVec3(float x, float y, float z)
 {
     return "vec3(" + glslFloat(x) + ", " + glslFloat(y) + ", " + glslFloat(z) + ")";
+}
+
+std::string glslVec4(float x, float y, float z, float w)
+{
+    return "vec4(" + glslFloat(x) + ", " + glslFloat(y) + ", " + glslFloat(z) + ", " + glslFloat(w) + ")";
+}
+
+std::string glslNodeParam0(uint64_t nodeId, const std::string& fallback)
+{
+    const uint32_t low = static_cast<uint32_t>(nodeId & 0xffffffffu);
+    const uint32_t high = static_cast<uint32_t>(nodeId >> 32u);
+    return "sdf3d_nodeParam0(" + std::to_string(low) + "u, " + std::to_string(high) + "u, " + fallback + ")";
 }
 
 std::string glslHit(const std::string& distanceExpr, int materialId)

@@ -141,7 +141,9 @@ void testGraphCompilerLinkedTransform(std::vector<TestFailure>& failures)
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
-    expect(contains(result.glsl, "p - vec3(3.000000, 0.000000, -1.000000)"), testName, "Expected linked transform expression.", failures);
+    expect(contains(result.glsl, "sdf3d_nodeParam0("), testName, "Expected runtime node param lookup.", failures);
+    expect(contains(result.glsl, "vec4(3.000000, 0.000000, -1.000000, 0.000000)).xyz"), testName, "Expected linked transform fallback expression.", failures);
+    expect(result.nodeParams.size() == 1, testName, "Expected transform node param.", failures);
     expect(contains(result.glsl, "float sceneNodeSDF(int nodeId, vec3 p)"), testName, "Expected node highlight SDF entry point.", failures);
     expect(contains(result.glsl, "case "), testName, "Expected node highlight SDF switch cases.", failures);
 }
@@ -165,8 +167,10 @@ void testGraphCompilerNonUniformScale(std::vector<TestFailure>& failures)
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
-    expect(contains(result.glsl, "p / vec3(2.000000, 3.000000, 4.000000)"), testName, "Expected non-uniform scaled point expression.", failures);
-    expect(contains(result.glsl, "* 2.000000"), testName, "Expected min-axis distance rescale expression.", failures);
+    expect(contains(result.glsl, "vec4(2.000000, 3.000000, 4.000000, 2.000000)"), testName, "Expected non-uniform scale fallback params.", failures);
+    expect(contains(result.glsl, ".xyz"), testName, "Expected runtime scale vector expression.", failures);
+    expect(contains(result.glsl, ".w"), testName, "Expected runtime min-axis distance rescale expression.", failures);
+    expect(result.nodeParams.size() == 1, testName, "Expected scale node param.", failures);
 }
 
 void testGraphCompilerCycle(std::vector<TestFailure>& failures)

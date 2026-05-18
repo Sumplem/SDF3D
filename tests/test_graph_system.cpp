@@ -1,5 +1,6 @@
 #include "sdf3d/core/EventBus.h"
 #include "sdf3d/scene/SdfGraph.h"
+#include "sdf3d/scene/SdfRotationParams.h"
 #include "sdf3d/systems/GraphSystem.h"
 
 #include <algorithm>
@@ -145,6 +146,48 @@ void testLoweredRequiredInputRules(std::vector<TestFailure>& failures)
     expect(!sdf3d::GraphSystem::loweredNodeHasRequiredInputs(sdf3d::SdfNodeType::MaterialOverride, {}, 0), testName, "Expected material override without sdf invalid.", failures);
 }
 
+void testCollectNodeParamsPacksTransformValues(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "collect node params packs transform values";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId translate = graph.createNode(sdf3d::SdfNodeType::Translate, "Translate");
+    if (sdf3d::SdfGraphNode* node = graph.node(translate)) {
+        node->payload.parameters["x"] = 1.0f;
+        node->payload.parameters["y"] = 2.0f;
+        node->payload.parameters["z"] = 3.0f;
+    }
+    const sdf3d::SdfGraphNodeId rotate = graph.createNode(sdf3d::SdfNodeType::Rotate, "Rotate");
+    if (sdf3d::SdfGraphNode* node = graph.node(rotate)) {
+        sdf3d::storeRotationQuaternion(node->payload, {0.0f, 0.0f, 0.70710677f, 0.70710677f});
+    }
+
+    const std::vector<sdf3d::SdfCompiledNodeParam> params = sdf3d::GraphSystem::collectNodeParams(graph);
+
+    expect(params.size() == 2, testName, "Expected two transform param entries.", failures);
+    const auto translateIt = std::find_if(params.begin(), params.end(), [translate](const sdf3d::SdfCompiledNodeParam& param) {
+        return param.nodeId == translate;
+    });
+    const auto rotateIt = std::find_if(params.begin(), params.end(), [rotate](const sdf3d::SdfCompiledNodeParam& param) {
+        return param.nodeId == rotate;
+    });
+    if (translateIt != params.end()) {
+        expect(translateIt->data0[0] == 1.0f, testName, "Expected x packed.", failures);
+        expect(translateIt->data0[1] == 2.0f, testName, "Expected y packed.", failures);
+        expect(translateIt->data0[2] == 3.0f, testName, "Expected z packed.", failures);
+    } else {
+        expect(false, testName, "Expected translate node id packed.", failures);
+    }
+    if (rotateIt != params.end()) {
+        expect(rotateIt->data0[0] == 0.0f, testName, "Expected qx packed.", failures);
+        expect(rotateIt->data0[1] == 0.0f, testName, "Expected qy packed.", failures);
+        expect(rotateIt->data0[2] > 0.7f && rotateIt->data0[2] < 0.71f, testName, "Expected qz packed.", failures);
+        expect(rotateIt->data0[3] > 0.7f && rotateIt->data0[3] < 0.71f, testName, "Expected qw packed.", failures);
+    } else {
+        expect(false, testName, "Expected rotate node id packed.", failures);
+    }
+}
+
 void testPickNodeByRaySelectsTranslatedPrimitive(std::vector<TestFailure>& failures)
 {
     const std::string testName = "pick node by ray selects translated primitive";
@@ -178,6 +221,112 @@ void testPickNodeByRayMissesEmptySpace(std::vector<TestFailure>& failures)
         {4.0f, 0.0f, 5.0f},
         glm::normalize(glm::vec3{0.0f, 0.0f, -1.0f}));
     expect(picked == 0, testName, "Expected off-axis ray to miss sphere.", failures);
+}
+
+void testPickNodeByRaySelectsBooleanInputBranchTransform(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "pick node by ray selects boolean input branch transform";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId firstTranslate = graph.createNode(sdf3d::SdfNodeType::Translate, "Trans1");
+    const sdf3d::SdfGraphNodeId secondTranslate = graph.createNode(sdf3d::SdfNodeType::Translate, "Trans2");
+    const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
+    if (sdf3d::SdfGraphNode* node = graph.node(firstTranslate)) {
+        node->payload.parameters["x"] = -2.0f;
+    }
+    if (sdf3d::SdfGraphNode* node = graph.node(secondTranslate)) {
+        node->payload.parameters["x"] = 4.0f;
+    }
+    expect(graph.link(sphere, "sdf", firstTranslate, "child"), testName, "Expected sphere to first translate link.", failures);
+    expect(graph.link(firstTranslate, "sdf", unionNode, "left"), testName, "Expected first translate to union left link.", failures);
+    expect(graph.link(firstTranslate, "sdf", secondTranslate, "child"), testName, "Expected first translate to second translate link.", failures);
+    expect(graph.link(secondTranslate, "sdf", unionNode, "right"), testName, "Expected second translate to union right link.", failures);
+    expect(graph.link(unionNode, "sdf", graph.outputNode(), "surface"), testName, "Expected union to output link.", failures);
+
+    const sdf3d::SdfGraphNodeId pickedLeft = sdf3d::GraphSystem::pickNodeByRay(
+        graph,
+        {-2.0f, 0.0f, 5.0f},
+        glm::normalize(glm::vec3{0.0f, 0.0f, -1.0f}));
+    expect(pickedLeft == firstTranslate, testName, "Expected left boolean input to select first transform.", failures);
+
+    const sdf3d::SdfGraphNodeId pickedRight = sdf3d::GraphSystem::pickNodeByRay(
+        graph,
+        {2.0f, 0.0f, 5.0f},
+        glm::normalize(glm::vec3{0.0f, 0.0f, -1.0f}));
+    expect(pickedRight == secondTranslate, testName, "Expected right boolean input to select second transform.", failures);
+}
+
+void testPickNodeByRaySelectsFirstBooleanInputWhenBranchesOverlap(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "pick node by ray selects first boolean input when branches overlap";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId firstTranslate = graph.createNode(sdf3d::SdfNodeType::Translate, "Trans1");
+    const sdf3d::SdfGraphNodeId secondTranslate = graph.createNode(sdf3d::SdfNodeType::Translate, "Trans2");
+    const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
+    expect(graph.link(sphere, "sdf", firstTranslate, "child"), testName, "Expected sphere to first translate link.", failures);
+    expect(graph.link(firstTranslate, "sdf", unionNode, "left"), testName, "Expected first translate to union left link.", failures);
+    expect(graph.link(firstTranslate, "sdf", secondTranslate, "child"), testName, "Expected first translate to second translate link.", failures);
+    expect(graph.link(secondTranslate, "sdf", unionNode, "right"), testName, "Expected second translate to union right link.", failures);
+    expect(graph.link(unionNode, "sdf", graph.outputNode(), "surface"), testName, "Expected union to output link.", failures);
+
+    const sdf3d::SdfGraphNodeId picked = sdf3d::GraphSystem::pickNodeByRay(
+        graph,
+        {0.0f, 0.0f, 5.0f},
+        glm::normalize(glm::vec3{0.0f, 0.0f, -1.0f}));
+    expect(picked == firstTranslate, testName, "Expected overlapping left branch to remain selectable.", failures);
+}
+
+void testPickNodeByRaySelectsNestedBooleanInputTransform(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "pick node by ray selects nested boolean input transform";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere1 = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere1");
+    const sdf3d::SdfGraphNodeId sphere2 = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere2");
+    const sdf3d::SdfGraphNodeId sphere3 = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere3");
+    const sdf3d::SdfGraphNodeId trans1 = graph.createNode(sdf3d::SdfNodeType::Translate, "T1");
+    const sdf3d::SdfGraphNodeId trans2 = graph.createNode(sdf3d::SdfNodeType::Translate, "T2");
+    const sdf3d::SdfGraphNodeId trans3 = graph.createNode(sdf3d::SdfNodeType::Translate, "T3");
+    const sdf3d::SdfGraphNodeId bool1 = graph.createNode(sdf3d::SdfNodeType::Union, "Bool1");
+    const sdf3d::SdfGraphNodeId bool2 = graph.createNode(sdf3d::SdfNodeType::Union, "Bool2");
+    if (sdf3d::SdfGraphNode* node = graph.node(trans1)) {
+        node->payload.parameters["x"] = -4.0f;
+    }
+    if (sdf3d::SdfGraphNode* node = graph.node(trans2)) {
+        node->payload.parameters["x"] = 0.0f;
+    }
+    if (sdf3d::SdfGraphNode* node = graph.node(trans3)) {
+        node->payload.parameters["x"] = 4.0f;
+    }
+    expect(graph.link(sphere1, "sdf", trans1, "child"), testName, "Expected sphere1 to T1 link.", failures);
+    expect(graph.link(sphere2, "sdf", trans2, "child"), testName, "Expected sphere2 to T2 link.", failures);
+    expect(graph.link(sphere3, "sdf", trans3, "child"), testName, "Expected sphere3 to T3 link.", failures);
+    expect(graph.link(trans1, "sdf", bool1, "left"), testName, "Expected T1 to Bool1 left link.", failures);
+    expect(graph.link(trans2, "sdf", bool1, "right"), testName, "Expected T2 to Bool1 right link.", failures);
+    expect(graph.link(bool1, "sdf", bool2, "left"), testName, "Expected Bool1 to Bool2 left link.", failures);
+    expect(graph.link(trans3, "sdf", bool2, "right"), testName, "Expected T3 to Bool2 right link.", failures);
+    expect(graph.link(bool2, "sdf", graph.outputNode(), "surface"), testName, "Expected Bool2 to output link.", failures);
+
+    const sdf3d::SdfGraphNodeId pickedT1 = sdf3d::GraphSystem::pickNodeByRay(
+        graph,
+        {-4.0f, 0.0f, 5.0f},
+        glm::normalize(glm::vec3{0.0f, 0.0f, -1.0f}));
+    expect(pickedT1 == trans1, testName, "Expected nested Bool1.left to select T1, not Bool1.", failures);
+
+    const sdf3d::SdfGraphNodeId pickedT2 = sdf3d::GraphSystem::pickNodeByRay(
+        graph,
+        {0.0f, 0.0f, 5.0f},
+        glm::normalize(glm::vec3{0.0f, 0.0f, -1.0f}));
+    expect(pickedT2 == trans2, testName, "Expected nested Bool1.right to select T2, not Bool1.", failures);
+
+    const sdf3d::SdfGraphNodeId pickedT3 = sdf3d::GraphSystem::pickNodeByRay(
+        graph,
+        {4.0f, 0.0f, 5.0f},
+        glm::normalize(glm::vec3{0.0f, 0.0f, -1.0f}));
+    expect(pickedT3 == trans3, testName, "Expected Bool2.right to select T3.", failures);
 }
 
 void testHighlightNodeForSelectionUsesTransformWrapper(std::vector<TestFailure>& failures)
@@ -215,13 +364,35 @@ void testHighlightNodeForSelectionFollowsTransformChain(std::vector<TestFailure>
     expect(sdf3d::GraphSystem::highlightNodeForSelection(graph) == scale, testName, "Expected primitive selection to highlight final transform in chain.", failures);
 
     graph.setSelectedNode(translate);
-    expect(sdf3d::GraphSystem::highlightNodeForSelection(graph) == scale, testName, "Expected inner transform selection to highlight final visible chain.", failures);
+    expect(sdf3d::GraphSystem::highlightNodeForSelection(graph) == translate, testName, "Expected inner transform selection to highlight itself.", failures);
 
     graph.setSelectedNode(rotate);
-    expect(sdf3d::GraphSystem::highlightNodeForSelection(graph) == scale, testName, "Expected middle transform selection to highlight final visible chain.", failures);
+    expect(sdf3d::GraphSystem::highlightNodeForSelection(graph) == rotate, testName, "Expected middle transform selection to highlight itself.", failures);
 
     graph.setSelectedNode(scale);
     expect(sdf3d::GraphSystem::highlightNodeForSelection(graph) == scale, testName, "Expected top transform selection to highlight itself.", failures);
+}
+
+void testHighlightNodeForSelectionStopsAtBranchedTransform(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "highlight node for selection stops at branched transform";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId firstTranslate = graph.createNode(sdf3d::SdfNodeType::Translate, "Trans1");
+    const sdf3d::SdfGraphNodeId secondTranslate = graph.createNode(sdf3d::SdfNodeType::Translate, "Trans2");
+    const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
+    expect(graph.link(sphere, "sdf", firstTranslate, "child"), testName, "Expected sphere to first translate link.", failures);
+    expect(graph.link(firstTranslate, "sdf", unionNode, "left"), testName, "Expected first translate to union left link.", failures);
+    expect(graph.link(firstTranslate, "sdf", secondTranslate, "child"), testName, "Expected first translate to second translate link.", failures);
+    expect(graph.link(secondTranslate, "sdf", unionNode, "right"), testName, "Expected second translate to union right link.", failures);
+    expect(graph.link(unionNode, "sdf", graph.outputNode(), "surface"), testName, "Expected union to output link.", failures);
+
+    graph.setSelectedNode(firstTranslate);
+    expect(sdf3d::GraphSystem::highlightNodeForSelection(graph) == firstTranslate, testName, "Expected selected transform to highlight itself.", failures);
+
+    graph.setSelectedNode(sphere);
+    expect(sdf3d::GraphSystem::highlightNodeForSelection(graph) == firstTranslate, testName, "Expected primitive selection to stop at branched transform.", failures);
 }
 
 void testEnsureTransformWrapperCanChainFromTransform(std::vector<TestFailure>& failures)
@@ -237,10 +408,31 @@ void testEnsureTransformWrapperCanChainFromTransform(std::vector<TestFailure>& f
     const sdf3d::SdfGraphNodeId rotate = sdf3d::GraphSystem::ensureRotateWrapperForNode(graph, translate);
 
     expect(rotate != 0, testName, "Expected rotate wrapper for selected transform.", failures);
-    expect(hasLink(graph, sphere, "sdf", translate, "child"), testName, "Expected primitive to stay linked to translate.", failures);
-    expect(hasLink(graph, translate, "sdf", rotate, "child"), testName, "Expected translate to feed rotate.", failures);
-    expect(hasLink(graph, rotate, "sdf", graph.outputNode(), "surface"), testName, "Expected rotate to feed output.", failures);
+    expect(hasLink(graph, sphere, "sdf", rotate, "child"), testName, "Expected rotate inserted below translate.", failures);
+    expect(hasLink(graph, rotate, "sdf", translate, "child"), testName, "Expected rotate to feed translate.", failures);
+    expect(hasLink(graph, translate, "sdf", graph.outputNode(), "surface"), testName, "Expected translate to feed output.", failures);
     expect(graph.selectedNode() == rotate, testName, "Expected new rotate wrapper selected.", failures);
+}
+
+void testEnsureTransformWrapperUsesCanonicalOrder(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "ensure transform wrapper uses canonical order";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId translate = graph.createNode(sdf3d::SdfNodeType::Translate, "Translate");
+    expect(graph.link(sphere, "sdf", translate, "child"), testName, "Expected sphere to translate link.", failures);
+    expect(graph.link(translate, "sdf", graph.outputNode(), "surface"), testName, "Expected translate to output link.", failures);
+
+    const sdf3d::SdfGraphNodeId scale = sdf3d::GraphSystem::ensureScaleWrapperForNode(graph, translate);
+    const sdf3d::SdfGraphNodeId rotate = sdf3d::GraphSystem::ensureRotateWrapperForNode(graph, translate);
+
+    expect(scale != 0, testName, "Expected scale wrapper.", failures);
+    expect(rotate != 0, testName, "Expected rotate wrapper.", failures);
+    expect(hasLink(graph, sphere, "sdf", scale, "child"), testName, "Expected scale below rotate/translate.", failures);
+    expect(hasLink(graph, scale, "sdf", rotate, "child"), testName, "Expected scale to feed rotate.", failures);
+    expect(hasLink(graph, rotate, "sdf", translate, "child"), testName, "Expected rotate to feed translate.", failures);
+    expect(hasLink(graph, translate, "sdf", graph.outputNode(), "surface"), testName, "Expected translate to stay outer transform.", failures);
 }
 
 void testEnsureTransformWrapperReusesExistingChainParent(std::vector<TestFailure>& failures)
@@ -262,6 +454,25 @@ void testEnsureTransformWrapperReusesExistingChainParent(std::vector<TestFailure
     expect(graph.selectedNode() == rotate, testName, "Expected existing rotate selected.", failures);
 }
 
+void testEnsureTransformWrapperReusesExistingChainChild(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "ensure transform wrapper reuses existing chain child";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId rotate = graph.createNode(sdf3d::SdfNodeType::Rotate, "Rotate");
+    const sdf3d::SdfGraphNodeId translate = graph.createNode(sdf3d::SdfNodeType::Translate, "Translate");
+    expect(graph.link(sphere, "sdf", rotate, "child"), testName, "Expected sphere to rotate link.", failures);
+    expect(graph.link(rotate, "sdf", translate, "child"), testName, "Expected rotate to translate link.", failures);
+    expect(graph.link(translate, "sdf", graph.outputNode(), "surface"), testName, "Expected translate to output link.", failures);
+
+    const sdf3d::SdfGraphNodeId reused = sdf3d::GraphSystem::ensureRotateWrapperForNode(graph, translate);
+
+    expect(reused == rotate, testName, "Expected selected outer transform to reuse existing upstream rotate.", failures);
+    expect(graph.links().size() == 3, testName, "Expected no duplicate wrapper links.", failures);
+    expect(graph.selectedNode() == rotate, testName, "Expected existing rotate selected.", failures);
+}
+
 } // namespace
 
 int main()
@@ -272,12 +483,19 @@ int main()
     testDuplicateSelectionSkipsOutput(failures);
     testEffectiveValidityDropsInvalidUpstream(failures);
     testLoweredRequiredInputRules(failures);
+    testCollectNodeParamsPacksTransformValues(failures);
     testPickNodeByRaySelectsTranslatedPrimitive(failures);
     testPickNodeByRayMissesEmptySpace(failures);
+    testPickNodeByRaySelectsBooleanInputBranchTransform(failures);
+    testPickNodeByRaySelectsFirstBooleanInputWhenBranchesOverlap(failures);
+    testPickNodeByRaySelectsNestedBooleanInputTransform(failures);
     testHighlightNodeForSelectionUsesTransformWrapper(failures);
     testHighlightNodeForSelectionFollowsTransformChain(failures);
+    testHighlightNodeForSelectionStopsAtBranchedTransform(failures);
     testEnsureTransformWrapperCanChainFromTransform(failures);
+    testEnsureTransformWrapperUsesCanonicalOrder(failures);
     testEnsureTransformWrapperReusesExistingChainParent(failures);
+    testEnsureTransformWrapperReusesExistingChainChild(failures);
 
     if (!failures.empty()) {
         for (const TestFailure& failure : failures) {

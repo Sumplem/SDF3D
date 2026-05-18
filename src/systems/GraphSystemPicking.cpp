@@ -1,5 +1,7 @@
 #include "sdf3d/systems/GraphSystem.h"
 
+#include "sdf3d/scene/SdfRotationParams.h"
+
 #include <algorithm>
 #include <cmath>
 #include <optional>
@@ -21,6 +23,7 @@ constexpr float WARP_CORRECTION = 1.5f;
 struct PickSample {
     float distance = NO_HIT_DISTANCE;
     SdfGraphNodeId node = 0;
+    SdfGraphNodeId branchNode = 0;
 };
 
 float parameterOr(const SdfNode& node, const std::string& key, float fallback)
@@ -43,6 +46,27 @@ int socketOrder(const std::string& socket)
         return 1;
     }
     return 100;
+}
+
+bool isTransformNode(SdfNodeType type)
+{
+    return type == SdfNodeType::Translate
+        || type == SdfNodeType::Rotate
+        || type == SdfNodeType::Scale
+        || type == SdfNodeType::Repeat
+        || type == SdfNodeType::Mirror
+        || type == SdfNodeType::Twist
+        || type == SdfNodeType::Bend;
+}
+
+bool isBooleanNode(SdfNodeType type)
+{
+    return type == SdfNodeType::Union
+        || type == SdfNodeType::SmoothUnion
+        || type == SdfNodeType::Subtract
+        || type == SdfNodeType::SmoothSubtract
+        || type == SdfNodeType::Intersect
+        || type == SdfNodeType::SmoothIntersect;
 }
 
 float sdBox(glm::vec3 point, glm::vec3 halfExtents)
@@ -100,17 +124,6 @@ glm::vec3 rotateAroundAxis(glm::vec3 point, int axis, float angle)
     return {c * point.x - s * point.y, s * point.x + c * point.y, point.z};
 }
 
-glm::mat3 rotationXYZ(glm::vec3 degrees)
-{
-    const glm::vec3 r = {radians(degrees.x), radians(degrees.y), radians(degrees.z)};
-    const glm::vec3 c = {std::cos(r.x), std::cos(r.y), std::cos(r.z)};
-    const glm::vec3 s = {std::sin(r.x), std::sin(r.y), std::sin(r.z)};
-    const glm::mat3 rx({1.0f, 0.0f, 0.0f}, {0.0f, c.x, s.x}, {0.0f, -s.x, c.x});
-    const glm::mat3 ry({c.y, 0.0f, -s.y}, {0.0f, 1.0f, 0.0f}, {s.y, 0.0f, c.y});
-    const glm::mat3 rz({c.z, s.z, 0.0f}, {-s.z, c.z, 0.0f}, {0.0f, 0.0f, 1.0f});
-    return rz * ry * rx;
-}
-
 std::vector<SdfGraphLink> effectiveInputs(const SdfGraph& graph, const SdfGraphNode& node)
 {
     std::vector<SdfGraphLink> inputs;
@@ -133,6 +146,47 @@ std::vector<SdfGraphLink> effectiveInputs(const SdfGraph& graph, const SdfGraphN
     return inputs;
 }
 
+std::optional<SdfGraphLink> linkToInput(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket)
+{
+    for (const SdfGraphLink& link : graph.links()) {
+        if (link.toNode == node && link.toSocket == socket) {
+            return link;
+        }
+    }
+
+    return std::nullopt;
+}
+
+SdfGraphNodeId nearestBranchTransform(const SdfGraph& graph, SdfGraphNodeId id)
+{
+    std::vector<SdfGraphNodeId> visited;
+    SdfGraphNodeId currentId = id;
+    while (currentId != 0 && std::find(visited.begin(), visited.end(), currentId) == visited.end()) {
+        visited.push_back(currentId);
+        const SdfGraphNode* current = graph.node(currentId);
+        if (current == nullptr) {
+            break;
+        }
+        if (isTransformNode(current->payload.type)) {
+            return currentId;
+        }
+
+        const std::optional<SdfGraphLink> child = linkToInput(graph, currentId, "child");
+        if (child) {
+            currentId = child->fromNode;
+            continue;
+        }
+        const std::optional<SdfGraphLink> sdf = linkToInput(graph, currentId, "sdf");
+        if (sdf) {
+            currentId = sdf->fromNode;
+            continue;
+        }
+        break;
+    }
+
+    return id;
+}
+
 PickSample evalNode(const SdfGraph& graph, SdfGraphNodeId id, glm::vec3 point, std::unordered_set<SdfGraphNodeId>& visiting);
 
 PickSample evalFirstInput(const SdfGraph& graph, const SdfGraphNode& node, glm::vec3 point, std::unordered_set<SdfGraphNodeId>& visiting)
@@ -142,6 +196,15 @@ PickSample evalFirstInput(const SdfGraph& graph, const SdfGraphNode& node, glm::
         return {};
     }
     return evalNode(graph, inputs.front().fromNode, point, visiting);
+}
+
+PickSample evalBooleanInput(const SdfGraph& graph, const SdfGraphLink& input, glm::vec3 point, std::unordered_set<SdfGraphNodeId>& visiting)
+{
+    PickSample sample = evalNode(graph, input.fromNode, point, visiting);
+    if (sample.node != 0) {
+        sample.branchNode = nearestBranchTransform(graph, input.fromNode);
+    }
+    return sample;
 }
 
 PickSample evalNode(const SdfGraph& graph, SdfGraphNodeId id, glm::vec3 point, std::unordered_set<SdfGraphNodeId>& visiting)
@@ -191,9 +254,9 @@ PickSample evalNode(const SdfGraph& graph, SdfGraphNodeId id, glm::vec3 point, s
         if (inputs.empty()) {
             break;
         }
-        result = evalNode(graph, inputs.front().fromNode, point, visiting);
+        result = evalBooleanInput(graph, inputs.front(), point, visiting);
         for (std::size_t i = 1; i < inputs.size(); ++i) {
-            const PickSample child = evalNode(graph, inputs[i].fromNode, point, visiting);
+            const PickSample child = evalBooleanInput(graph, inputs[i], point, visiting);
             const bool useChild = node.type == SdfNodeType::Union || node.type == SdfNodeType::SmoothUnion
                 ? child.distance < result.distance
                 : child.distance > result.distance;
@@ -219,12 +282,12 @@ PickSample evalNode(const SdfGraph& graph, SdfGraphNodeId id, glm::vec3 point, s
         if (inputs.empty()) {
             break;
         }
-        PickSample base = evalNode(graph, inputs.front().fromNode, point, visiting);
+        PickSample base = evalBooleanInput(graph, inputs.front(), point, visiting);
         if (inputs.size() == 1) {
             result = base;
             break;
         }
-        const PickSample cutter = evalNode(graph, inputs[1].fromNode, point, visiting);
+        const PickSample cutter = evalBooleanInput(graph, inputs[1], point, visiting);
         result = node.type == SdfNodeType::Subtract
             ? PickSample{std::max(-cutter.distance, base.distance), base.node}
             : PickSample{-smoothMin(-base.distance, cutter.distance, std::max(parameterOr(node, "smoothness", 0.25f), 0.0001f)), base.node};
@@ -234,8 +297,7 @@ PickSample evalNode(const SdfGraph& graph, SdfGraphNodeId id, glm::vec3 point, s
         result = evalFirstInput(graph, *graphNode, point - glm::vec3{parameterOr(node, "x", 0.0f), parameterOr(node, "y", 0.0f), parameterOr(node, "z", 0.0f)}, visiting);
         break;
     case SdfNodeType::Rotate: {
-        const glm::vec3 degrees = {parameterOr(node, "xDegrees", 0.0f), parameterOr(node, "yDegrees", 0.0f), parameterOr(node, "zDegrees", 0.0f)};
-        result = evalFirstInput(graph, *graphNode, glm::transpose(rotationXYZ(degrees)) * point, visiting);
+        result = evalFirstInput(graph, *graphNode, glm::transpose(rotationMatrixFromQuaternion(rotationQuaternionForNode(node))) * point, visiting);
         break;
     }
     case SdfNodeType::Scale: {
@@ -285,6 +347,53 @@ std::optional<SdfGraphLink> outputSurfaceLink(const SdfGraph& graph)
     return GraphSystem::effectiveLinkToInput(graph, graph.outputNode(), "surface");
 }
 
+std::optional<SdfGraphNodeId> pickBooleanInputByRay(
+    const SdfGraph& graph,
+    const SdfGraphNode& node,
+    glm::vec3 rayOrigin,
+    glm::vec3 direction);
+
+std::optional<SdfGraphNodeId> pickBranchByRay(
+    const SdfGraph& graph,
+    const SdfGraphLink& branch,
+    glm::vec3 rayOrigin,
+    glm::vec3 direction)
+{
+    const SdfGraphNode* branchNode = graph.node(branch.fromNode);
+    if (branchNode != nullptr && isBooleanNode(branchNode->payload.type)) {
+        return pickBooleanInputByRay(graph, *branchNode, rayOrigin, direction);
+    }
+
+    float traveled = 0.0f;
+    for (int step = 0; step < PICK_MAX_STEPS && traveled < PICK_MAX_DISTANCE; ++step) {
+        std::unordered_set<SdfGraphNodeId> visiting;
+        const PickSample sample = evalNode(graph, branch.fromNode, rayOrigin + direction * traveled, visiting);
+        if (sample.node != 0 && sample.distance <= PICK_SURFACE_EPSILON) {
+            return nearestBranchTransform(graph, branch.fromNode);
+        }
+        traveled += std::max(sample.distance, PICK_SURFACE_EPSILON);
+    }
+
+    return std::nullopt;
+}
+
+std::optional<SdfGraphNodeId> pickBooleanInputByRay(
+    const SdfGraph& graph,
+    const SdfGraphNode& node,
+    glm::vec3 rayOrigin,
+    glm::vec3 direction)
+{
+    const std::vector<SdfGraphLink> inputs = effectiveInputs(graph, node);
+    for (const SdfGraphLink& input : inputs) {
+        const std::optional<SdfGraphNodeId> picked = pickBranchByRay(graph, input, rayOrigin, direction);
+        if (picked) {
+            return picked;
+        }
+    }
+
+    return std::nullopt;
+}
+
 } // namespace
 
 SdfGraphNodeId GraphSystem::pickNodeByRay(const SdfGraph& graph, glm::vec3 rayOrigin, glm::vec3 rayDirection)
@@ -295,12 +404,19 @@ SdfGraphNodeId GraphSystem::pickNodeByRay(const SdfGraph& graph, glm::vec3 rayOr
     }
 
     const glm::vec3 direction = glm::normalize(rayDirection);
+    const SdfGraphNode* rootNode = graph.node(root->fromNode);
+    if (rootNode != nullptr && isBooleanNode(rootNode->payload.type)) {
+        if (const std::optional<SdfGraphNodeId> pickedBranch = pickBooleanInputByRay(graph, *rootNode, rayOrigin, direction)) {
+            return *pickedBranch;
+        }
+    }
+
     float traveled = 0.0f;
     for (int step = 0; step < PICK_MAX_STEPS && traveled < PICK_MAX_DISTANCE; ++step) {
         std::unordered_set<SdfGraphNodeId> visiting;
         const PickSample sample = evalNode(graph, root->fromNode, rayOrigin + direction * traveled, visiting);
         if (sample.node != 0 && sample.distance <= PICK_SURFACE_EPSILON) {
-            return sample.node;
+            return sample.branchNode != 0 ? sample.branchNode : sample.node;
         }
         traveled += std::max(sample.distance, PICK_SURFACE_EPSILON);
     }

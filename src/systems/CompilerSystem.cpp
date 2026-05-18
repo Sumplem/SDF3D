@@ -2,6 +2,7 @@
 
 #include "sdf3d/scene/SdfGraphCompiler.h"
 #include "sdf3d/systems/GlslEmitter.h"
+#include "sdf3d/systems/GraphSystem.h"
 
 #include <sstream>
 
@@ -12,6 +13,7 @@ SdfCompileResult CompilerSystem::compile(const SdfGraph& graph) const
     const SdfGraphLowerResult lowered = lowerSdfGraphToTree(graph);
     SdfCompileResult result = compile(lowered.root);
     result.errors.insert(result.errors.begin(), lowered.errors.begin(), lowered.errors.end());
+    result.nodeParams = GraphSystem::collectNodeParams(graph);
     return result;
 }
 
@@ -44,6 +46,26 @@ SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root) const
     const std::string materialExpression = emitter.emitSceneMaterialExpression(root, "p", result, sdfHelpers);
 
     std::ostringstream glsl;
+    glsl << "struct SdfNodeParam\n";
+    glsl << "{\n";
+    glsl << "    uvec4 id;\n";
+    glsl << "    vec4 data0;\n";
+    glsl << "};\n\n";
+    glsl << "layout(std430, binding = 1) readonly buffer NodeParamBuffer\n";
+    glsl << "{\n";
+    glsl << "    SdfNodeParam uNodeParams[];\n";
+    glsl << "};\n\n";
+    glsl << "uniform int uNodeParamCount;\n\n";
+    glsl << "vec4 sdf3d_nodeParam0(uint nodeIdLow, uint nodeIdHigh, vec4 fallback)\n";
+    glsl << "{\n";
+    glsl << "    for (int i = 0; i < uNodeParamCount; ++i) {\n";
+    glsl << "        if (uNodeParams[i].id.x == nodeIdLow && uNodeParams[i].id.y == nodeIdHigh) {\n";
+    glsl << "            return uNodeParams[i].data0;\n";
+    glsl << "        }\n";
+    glsl << "    }\n";
+    glsl << "    return fallback;\n";
+    glsl << "}\n\n";
+
     if (result.usesBox) {
         glsl << "float sdf3d_box(vec3 p, vec3 b)\n";
         glsl << "{\n";
@@ -69,15 +91,17 @@ SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root) const
     }
 
     if (result.usesRotate) {
-        glsl << "mat3 sdf3d_rotationXYZ(vec3 degrees)\n";
+        glsl << "mat3 sdf3d_rotationQuat(vec4 q)\n";
         glsl << "{\n";
-        glsl << "    vec3 r = radians(degrees);\n";
-        glsl << "    vec3 c = cos(r);\n";
-        glsl << "    vec3 s = sin(r);\n";
-        glsl << "    mat3 rx = mat3(1.0, 0.0, 0.0, 0.0, c.x, s.x, 0.0, -s.x, c.x);\n";
-        glsl << "    mat3 ry = mat3(c.y, 0.0, -s.y, 0.0, 1.0, 0.0, s.y, 0.0, c.y);\n";
-        glsl << "    mat3 rz = mat3(c.z, s.z, 0.0, -s.z, c.z, 0.0, 0.0, 0.0, 1.0);\n";
-        glsl << "    return rz * ry * rx;\n";
+        glsl << "    q = normalize(q);\n";
+        glsl << "    float x = q.x;\n";
+        glsl << "    float y = q.y;\n";
+        glsl << "    float z = q.z;\n";
+        glsl << "    float w = q.w;\n";
+        glsl << "    return mat3(\n";
+        glsl << "        1.0 - 2.0 * y * y - 2.0 * z * z, 2.0 * x * y + 2.0 * w * z, 2.0 * x * z - 2.0 * w * y,\n";
+        glsl << "        2.0 * x * y - 2.0 * w * z, 1.0 - 2.0 * x * x - 2.0 * z * z, 2.0 * y * z + 2.0 * w * x,\n";
+        glsl << "        2.0 * x * z + 2.0 * w * y, 2.0 * y * z - 2.0 * w * x, 1.0 - 2.0 * x * x - 2.0 * y * y);\n";
         glsl << "}\n\n";
     }
 
