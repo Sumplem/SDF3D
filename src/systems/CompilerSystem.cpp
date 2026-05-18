@@ -31,6 +31,10 @@ SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root) const
             "SdfMaterialSample sceneMaterial(vec3 p)\n"
             "{\n"
             "    return sampleMaterial(0);\n"
+            "}\n\n"
+            "float sceneNodeSDF(int nodeId, vec3 p)\n"
+            "{\n"
+            "    return 1e6;\n"
             "}\n";
         return result;
     }
@@ -84,6 +88,16 @@ SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root) const
     glsl << "float sceneSDF(vec3 p)\n";
     glsl << "{\n";
     glsl << "    return " << sdfHelpers.rootFunctionName << "(p);\n";
+    glsl << "}\n\n";
+
+    glsl << "float sceneNodeSDF(int nodeId, vec3 p)\n";
+    glsl << "{\n";
+    glsl << "    switch (nodeId) {\n";
+    for (const GlslSdfHelper& helper : sdfHelpers.helpers) {
+        glsl << "    case " << helper.nodeId << ": return " << helper.functionName << "(p);\n";
+    }
+    glsl << "    default: return 1e6;\n";
+    glsl << "    }\n";
     glsl << "}\n\n";
 
     glsl << "SdfMaterialSample sceneMaterial(vec3 p)\n";

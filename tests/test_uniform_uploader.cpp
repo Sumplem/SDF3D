@@ -49,6 +49,30 @@ void testPackedMaterialLayout(std::vector<TestFailure>& failures)
     }
 }
 
+void testRenderGizmoDefaults(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "render gizmo defaults";
+    const sdf3d::RenderGizmo gizmo;
+
+    expect(!gizmo.visible, testName, "Expected hidden gizmo by default.", failures);
+    expect(gizmo.activeAxis == -1, testName, "Expected no active axis by default.", failures);
+    expect(gizmo.hoverAxis == -1, testName, "Expected no hover axis by default.", failures);
+    expect(gizmo.type == 0, testName, "Expected translate gizmo type default.", failures);
+    expect(gizmo.arrowLength == 1.0f, testName, "Expected default arrow length.", failures);
+    expect(gizmo.arrowRadius > 0.0f, testName, "Expected positive arrow radius.", failures);
+    expect(gizmo.ringRadius > 0.0f, testName, "Expected positive ring radius.", failures);
+    expect(gizmo.tubeRadius > 0.0f, testName, "Expected positive tube radius.", failures);
+}
+
+void testRenderQualityValues(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "render quality values";
+
+    expect(static_cast<int>(sdf3d::RenderQuality::Low) == 0, testName, "Expected low quality uniform value.", failures);
+    expect(static_cast<int>(sdf3d::RenderQuality::Medium) == 1, testName, "Expected medium quality uniform value.", failures);
+    expect(static_cast<int>(sdf3d::RenderQuality::High) == 2, testName, "Expected high quality uniform value.", failures);
+}
+
 } // namespace
 
 int main()
@@ -57,6 +81,8 @@ int main()
 
     testMaterialCountForShader(failures);
     testPackedMaterialLayout(failures);
+    testRenderGizmoDefaults(failures);
+    testRenderQualityValues(failures);
 
     if (!failures.empty()) {
         for (const TestFailure& failure : failures) {

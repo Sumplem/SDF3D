@@ -43,7 +43,7 @@ void Renderer::render(const RenderCamera& camera)
 
     glUseProgram(program);
 
-    m_uniformUploader.upload(program, m_fboRenderer.width(), m_fboRenderer.height(), camera, m_materials);
+    m_uniformUploader.upload(program, m_fboRenderer.width(), m_fboRenderer.height(), camera, m_gizmo, m_quality, m_materials);
 
     m_fboRenderer.drawFullscreenTriangle();
 
@@ -54,6 +54,16 @@ void Renderer::render(const RenderCamera& camera)
 bool Renderer::reloadScene(const std::string& sceneGlsl)
 {
     return m_shaderManager.reloadScene(sceneGlsl);
+}
+
+void Renderer::setGizmo(const RenderGizmo& gizmo)
+{
+    m_gizmo = gizmo;
+}
+
+void Renderer::setQuality(RenderQuality quality)
+{
+    m_quality = quality;
 }
 
 void Renderer::setMaterials(std::vector<SdfCompiledMaterial> materials)

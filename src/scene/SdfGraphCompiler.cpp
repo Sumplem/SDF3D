@@ -1,5 +1,7 @@
 #include "sdf3d/scene/SdfGraphCompiler.h"
 
+#include "sdf3d/systems/GraphSystem.h"
+
 #include <algorithm>
 #include <functional>
 #include <unordered_map>
@@ -21,55 +23,6 @@ int socketOrder(const std::string& socket)
     }
 
     return 100;
-}
-
-bool hasValidSocket(const std::vector<std::string>& sockets, const std::string& socket)
-{
-    return std::find(sockets.begin(), sockets.end(), socket) != sockets.end();
-}
-
-bool isPrimitiveNode(SdfNodeType type)
-{
-    return type == SdfNodeType::Sphere
-        || type == SdfNodeType::Box
-        || type == SdfNodeType::Cylinder
-        || type == SdfNodeType::Torus
-        || type == SdfNodeType::Plane
-        || type == SdfNodeType::Capsule
-        || type == SdfNodeType::Cone
-        || type == SdfNodeType::RoundBox;
-}
-
-bool loweredNodeHasRequiredInputs(SdfNodeType type, const std::vector<std::string>& validSockets, const std::vector<SdfNodePtr>& children)
-{
-    if (isPrimitiveNode(type)) {
-        return true;
-    }
-
-    switch (type) {
-    case SdfNodeType::Translate:
-    case SdfNodeType::Rotate:
-    case SdfNodeType::Scale:
-    case SdfNodeType::Repeat:
-    case SdfNodeType::Mirror:
-    case SdfNodeType::Twist:
-    case SdfNodeType::Bend:
-        return hasValidSocket(validSockets, "child");
-    case SdfNodeType::MaterialOverride:
-        return hasValidSocket(validSockets, "sdf");
-    case SdfNodeType::Subtract:
-    case SdfNodeType::SmoothSubtract:
-        return hasValidSocket(validSockets, "base");
-    case SdfNodeType::Union:
-    case SdfNodeType::SmoothUnion:
-    case SdfNodeType::Intersect:
-    case SdfNodeType::SmoothIntersect:
-        return !children.empty();
-    case SdfNodeType::Output:
-        return hasValidSocket(validSockets, "surface");
-    default:
-        return true;
-    }
 }
 
 } // namespace
@@ -157,7 +110,7 @@ SdfGraphLowerResult lowerSdfGraphToTree(const SdfGraph& graph)
         }
 
         visiting.erase(id);
-        if (!loweredNodeHasRequiredInputs(node->type, validSockets, node->children)) {
+        if (!GraphSystem::loweredNodeHasRequiredInputs(node->type, validSockets, node->children.size())) {
             result.errors.push_back(graphNode->payload.name + " node has no valid required input.");
             return nullptr;
         }

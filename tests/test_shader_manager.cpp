@@ -49,6 +49,30 @@ void testInjectMissingMarkers(std::vector<TestFailure>& failures)
     expect(!error.empty(), testName, "Expected marker error.", failures);
 }
 
+void testEditShaderHasGizmoInjectionShape(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "edit shader gizmo injection shape";
+    const std::string shader =
+        "uniform bool uGizmoVisible;\n"
+        "uniform int uRenderQuality;\n"
+        "float sdCapsule(vec3 p, vec3 a, vec3 b, float radius) { return 0.0; }\n"
+        "float sdTorus(vec3 p, vec2 t) { return 0.0; }\n"
+        "float sdBox(vec3 p, vec3 halfSize) { return 0.0; }\n"
+        "// SDF3D_SCENE_BEGIN\n"
+        "old\n"
+        "// SDF3D_SCENE_END\n";
+    std::string error;
+    const std::string injected = sdf3d::ShaderManager::injectSceneSource(shader, "float sceneSDF(vec3 p) { return 1e6; }\n", error);
+
+    expect(error.empty(), testName, "Expected no injection error.", failures);
+    expect(contains(injected, "uGizmoVisible"), testName, "Expected gizmo uniforms preserved.", failures);
+    expect(contains(injected, "uRenderQuality"), testName, "Expected quality uniform preserved.", failures);
+    expect(contains(injected, "sdCapsule"), testName, "Expected gizmo SDF helper preserved.", failures);
+    expect(contains(injected, "sdTorus"), testName, "Expected rotate gizmo SDF helper preserved.", failures);
+    expect(contains(injected, "sdBox"), testName, "Expected scale gizmo SDF helper preserved.", failures);
+    expect(contains(injected, "float sceneSDF"), testName, "Expected scene block injected.", failures);
+}
+
 } // namespace
 
 int main()
@@ -57,6 +81,7 @@ int main()
 
     testInjectSceneSource(failures);
     testInjectMissingMarkers(failures);
+    testEditShaderHasGizmoInjectionShape(failures);
 
     if (!failures.empty()) {
         for (const TestFailure& failure : failures) {

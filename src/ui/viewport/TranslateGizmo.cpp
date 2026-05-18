@@ -6,6 +6,7 @@
 #include <cmath>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -15,10 +16,15 @@ namespace {
 
 constexpr float PI = 3.14159265358979323846f;
 constexpr float AXIS_LENGTH = 1.0f;
-constexpr float HIT_DISTANCE = 10.0f;
-constexpr float LINE_THICKNESS = 4.0f;
-constexpr float ACTIVE_LINE_THICKNESS = 6.0f;
-constexpr float HOVER_LINE_THICKNESS = 5.0f;
+constexpr float AXIS_RADIUS = 0.035f;
+constexpr float RING_RADIUS = 0.85f;
+constexpr float RING_TUBE_RADIUS = 0.025f;
+constexpr float GIZMO_HIT_EPSILON = 0.01f;
+constexpr float GIZMO_MAX_DISTANCE = 100.0f;
+constexpr int GIZMO_TYPE_TRANSLATE = 0;
+constexpr int GIZMO_TYPE_ROTATE = 1;
+constexpr int GIZMO_TYPE_SCALE = 2;
+constexpr float MIN_SCALE = 0.001f;
 
 float radians(float degrees)
 {
@@ -37,6 +43,18 @@ bool isPrimitiveNode(SdfNodeType type)
         || type == SdfNodeType::RoundBox;
 }
 
+bool isTransformPassThroughNode(SdfNodeType type)
+{
+    return type == SdfNodeType::Translate
+        || type == SdfNodeType::Rotate
+        || type == SdfNodeType::Scale
+        || type == SdfNodeType::Repeat
+        || type == SdfNodeType::Mirror
+        || type == SdfNodeType::Twist
+        || type == SdfNodeType::Bend
+        || type == SdfNodeType::MaterialOverride;
+}
+
 float parameterOr(const SdfNode& node, const std::string& key, float fallback)
 {
     const auto it = node.parameters.find(key);
@@ -52,44 +70,111 @@ glm::vec3 translatePosition(const SdfGraphNode& node)
     };
 }
 
-float distancePointToSegment(ImVec2 point, ImVec2 a, ImVec2 b)
+glm::vec3 rotateDegrees(const SdfGraphNode& node)
 {
-    const ImVec2 ab = {b.x - a.x, b.y - a.y};
-    const ImVec2 ap = {point.x - a.x, point.y - a.y};
-    const float lengthSquared = ab.x * ab.x + ab.y * ab.y;
-    if (lengthSquared <= 0.0001f) {
-        const float dx = point.x - a.x;
-        const float dy = point.y - a.y;
-        return std::sqrt(dx * dx + dy * dy);
-    }
-
-    const float t = std::clamp((ap.x * ab.x + ap.y * ab.y) / lengthSquared, 0.0f, 1.0f);
-    const ImVec2 closest = {a.x + ab.x * t, a.y + ab.y * t};
-    const float dx = point.x - closest.x;
-    const float dy = point.y - closest.y;
-    return std::sqrt(dx * dx + dy * dy);
+    return {
+        parameterOr(node.payload, "xDegrees", 0.0f),
+        parameterOr(node.payload, "yDegrees", 0.0f),
+        parameterOr(node.payload, "zDegrees", 0.0f),
+    };
 }
 
-std::optional<ImVec2> projectWorldToScreen(glm::vec3 world, const RenderCamera& camera, ImVec2 imageMin, ImVec2 imageMax)
+glm::vec3 scaleValues(const SdfGraphNode& node)
 {
-    const float width = std::max(1.0f, imageMax.x - imageMin.x);
-    const float height = std::max(1.0f, imageMax.y - imageMin.y);
-    const glm::mat4 view = glm::lookAt(camera.position, camera.target, camera.up);
-    const glm::mat4 projection = glm::perspective(radians(camera.fovDegrees), width / height, 0.01f, 100.0f);
-    const glm::vec4 clip = projection * view * glm::vec4(world, 1.0f);
-    if (clip.w <= 0.0001f) {
-        return std::nullopt;
-    }
-
-    const glm::vec3 ndc = glm::vec3(clip) / clip.w;
-    if (ndc.z < -1.0f || ndc.z > 1.0f) {
-        return std::nullopt;
-    }
-
-    return ImVec2{
-        imageMin.x + (ndc.x * 0.5f + 0.5f) * width,
-        imageMin.y + (0.5f - ndc.y * 0.5f) * height,
+    const float uniformScale = parameterOr(node.payload, "scale", 1.0f);
+    return {
+        parameterOr(node.payload, "x", uniformScale),
+        parameterOr(node.payload, "y", uniformScale),
+        parameterOr(node.payload, "z", uniformScale),
     };
+}
+
+std::optional<SdfGraphLink> linkToInput(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket)
+{
+    for (const SdfGraphLink& link : graph.links()) {
+        if (link.toNode == node && link.toSocket == socket) {
+            return link;
+        }
+    }
+    return std::nullopt;
+}
+
+SdfGraphNodeId singlePassThroughParent(const SdfGraph& graph, SdfGraphNodeId id)
+{
+    SdfGraphNodeId parentId = 0;
+    for (const SdfGraphLink& link : graph.links()) {
+        if (link.fromNode != id || link.fromSocket != "sdf" || (link.toSocket != "child" && link.toSocket != "sdf")) {
+            continue;
+        }
+
+        const SdfGraphNode* parent = graph.node(link.toNode);
+        if (parent == nullptr || !isTransformPassThroughNode(parent->payload.type)) {
+            continue;
+        }
+        if (parentId != 0) {
+            return 0;
+        }
+        parentId = link.toNode;
+    }
+    return parentId;
+}
+
+SdfGraphNodeId findPassThroughParentOfType(const SdfGraph& graph, SdfGraphNodeId id, SdfNodeType type)
+{
+    std::vector<SdfGraphNodeId> visited;
+    SdfGraphNodeId currentId = id;
+    while (currentId != 0 && std::find(visited.begin(), visited.end(), currentId) == visited.end()) {
+        visited.push_back(currentId);
+        const SdfGraphNodeId parentId = singlePassThroughParent(graph, currentId);
+        if (parentId == 0) {
+            return 0;
+        }
+        const SdfGraphNode* parent = graph.node(parentId);
+        if (parent != nullptr && parent->payload.type == type) {
+            return parentId;
+        }
+        currentId = parentId;
+    }
+    return 0;
+}
+
+SdfGraphNodeId findUpstreamTranslate(const SdfGraph& graph, SdfGraphNodeId id)
+{
+    std::vector<SdfGraphNodeId> visited;
+    SdfGraphNodeId currentId = id;
+    while (currentId != 0 && std::find(visited.begin(), visited.end(), currentId) == visited.end()) {
+        visited.push_back(currentId);
+        const SdfGraphNode* current = graph.node(currentId);
+        if (current == nullptr) {
+            break;
+        }
+        if (current->payload.type == SdfNodeType::Translate) {
+            return currentId;
+        }
+        const std::optional<SdfGraphLink> child = linkToInput(graph, currentId, "child");
+        if (child) {
+            currentId = child->fromNode;
+            continue;
+        }
+        const std::optional<SdfGraphLink> sdf = linkToInput(graph, currentId, "sdf");
+        if (sdf) {
+            currentId = sdf->fromNode;
+            continue;
+        }
+        break;
+    }
+    return 0;
+}
+
+glm::vec3 gizmoOriginForNode(const SdfGraph& graph, SdfGraphNodeId id)
+{
+    if (const SdfGraphNodeId upstreamTranslate = findUpstreamTranslate(graph, id)) {
+        return GraphSystem::accumulatedTranslatePosition(graph, upstreamTranslate);
+    }
+    if (const SdfGraphNodeId downstreamTranslate = findPassThroughParentOfType(graph, id, SdfNodeType::Translate)) {
+        return GraphSystem::accumulatedTranslatePosition(graph, downstreamTranslate);
+    }
+    return {0.0f, 0.0f, 0.0f};
 }
 
 std::optional<glm::vec3> screenRayDirection(ImVec2 screen, const RenderCamera& camera, ImVec2 imageMin, ImVec2 imageMax)
@@ -143,39 +228,54 @@ std::optional<float> axisParameterFromMouse(
     return (axisOffsetDot - axisRayDot * rayOffsetDot) / denominator;
 }
 
-} // namespace
-
-bool TranslateGizmo::active() const
+float sdCapsule(glm::vec3 point, glm::vec3 a, glm::vec3 b, float radius)
 {
-    return m_activeAxis >= 0;
+    const glm::vec3 pa = point - a;
+    const glm::vec3 ba = b - a;
+    const float h = std::clamp(glm::dot(pa, ba) / std::max(glm::dot(ba, ba), 0.0001f), 0.0f, 1.0f);
+    return glm::length(pa - ba * h) - radius;
 }
 
-EditorDirtyState TranslateGizmo::draw(SceneGraph& sceneGraph, const RenderCamera& camera, ImVec2 imageMin, ImVec2 imageMax)
+float sdTorus(glm::vec3 point, float radius, float tubeRadius)
 {
-    EditorDirtyState dirty;
-    SdfGraph& graph = sceneGraph.graph();
-    SdfGraphNodeId selectedId = graph.selectedNode();
-    SdfGraphNode* selected = graph.node(selectedId);
-    if (selected == nullptr || (selected->payload.type != SdfNodeType::Translate && !isPrimitiveNode(selected->payload.type))) {
-        m_activeAxis = -1;
-        return dirty;
-    }
+    const glm::vec2 q = {glm::length(glm::vec2{point.x, point.z}) - radius, point.y};
+    return glm::length(q) - tubeRadius;
+}
 
-    SdfGraphNodeId gizmoNodeId = selectedId;
-    SdfGraphNode* gizmoNode = selected;
-    if (selected->payload.type != SdfNodeType::Translate) {
-        if (const SdfGraphNodeId translateId = GraphSystem::findDirectTranslateParent(graph, selectedId)) {
-            if (SdfGraphNode* translate = graph.node(translateId)) {
-                gizmoNodeId = translateId;
-                gizmoNode = translate;
-            }
-        }
-    }
+float sdBox(glm::vec3 point, glm::vec3 halfSize)
+{
+    const glm::vec3 q = glm::abs(point) - halfSize;
+    return glm::length(glm::max(q, glm::vec3{0.0f})) + std::min(std::max(q.x, std::max(q.y, q.z)), 0.0f);
+}
 
-    glm::vec3 origin = gizmoNode->payload.type == SdfNodeType::Translate ? GraphSystem::accumulatedTranslatePosition(graph, gizmoNodeId) : glm::vec3{0.0f, 0.0f, 0.0f};
-    const std::optional<ImVec2> originScreen = projectWorldToScreen(origin, camera, imageMin, imageMax);
-    if (!originScreen) {
-        return dirty;
+float axisDistance(glm::vec3 point, glm::vec3 origin, glm::vec3 axis)
+{
+    return sdCapsule(point, origin, origin + axis * AXIS_LENGTH, AXIS_RADIUS);
+}
+
+float rotateAxisDistance(glm::vec3 point, glm::vec3 origin, int axis)
+{
+    const glm::vec3 local = point - origin;
+    if (axis == 0) {
+        return sdTorus({local.z, local.x, local.y}, RING_RADIUS, RING_TUBE_RADIUS);
+    }
+    if (axis == 1) {
+        return sdTorus(local, RING_RADIUS, RING_TUBE_RADIUS);
+    }
+    return sdTorus({local.x, local.z, local.y}, RING_RADIUS, RING_TUBE_RADIUS);
+}
+
+float scaleAxisDistance(glm::vec3 point, glm::vec3 origin, glm::vec3 axis)
+{
+    const glm::vec3 halfSize = glm::vec3{AXIS_RADIUS * 2.5f};
+    return sdBox(point - (origin + axis * AXIS_LENGTH), halfSize);
+}
+
+std::optional<int> hitTranslateAxis(ImVec2 mouse, glm::vec3 origin, const RenderCamera& camera, ImVec2 imageMin, ImVec2 imageMax)
+{
+    const std::optional<glm::vec3> rayDirection = screenRayDirection(mouse, camera, imageMin, imageMax);
+    if (!rayDirection) {
+        return std::nullopt;
     }
 
     const glm::vec3 axes[] = {
@@ -183,70 +283,329 @@ EditorDirtyState TranslateGizmo::draw(SceneGraph& sceneGraph, const RenderCamera
         {0.0f, 1.0f, 0.0f},
         {0.0f, 0.0f, 1.0f},
     };
-    const ImU32 colors[] = {
-        IM_COL32(235, 70, 70, 255),
-        IM_COL32(80, 210, 100, 255),
-        IM_COL32(80, 130, 240, 255),
-    };
 
-    ImDrawList* drawList = ImGui::GetWindowDrawList();
-    std::optional<ImVec2> axisEnds[3];
-    int hoveredAxis = -1;
-    const bool hovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
-    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    float bestHitDistance = GIZMO_MAX_DISTANCE;
+    int bestAxis = -1;
     for (int axis = 0; axis < 3; ++axis) {
-        axisEnds[axis] = projectWorldToScreen(origin + axes[axis] * AXIS_LENGTH, camera, imageMin, imageMax);
-        if (axisEnds[axis] && hovered && distancePointToSegment(mouse, *originScreen, *axisEnds[axis]) <= HIT_DISTANCE) {
-            hoveredAxis = axis;
+        float distanceTraveled = 0.0f;
+        for (int step = 0; step < 128 && distanceTraveled < GIZMO_MAX_DISTANCE; ++step) {
+            const glm::vec3 samplePoint = camera.position + *rayDirection * distanceTraveled;
+            const float distanceToAxis = axisDistance(samplePoint, origin, axes[axis]);
+            if (distanceToAxis <= GIZMO_HIT_EPSILON) {
+                if (distanceTraveled < bestHitDistance) {
+                    bestHitDistance = distanceTraveled;
+                    bestAxis = axis;
+                }
+                break;
+            }
+            distanceTraveled += std::max(distanceToAxis, GIZMO_HIT_EPSILON);
         }
     }
 
+    if (bestAxis >= 0) {
+        return bestAxis;
+    }
+    return std::nullopt;
+}
+
+std::optional<int> hitRotateAxis(ImVec2 mouse, glm::vec3 origin, const RenderCamera& camera, ImVec2 imageMin, ImVec2 imageMax)
+{
+    const std::optional<glm::vec3> rayDirection = screenRayDirection(mouse, camera, imageMin, imageMax);
+    if (!rayDirection) {
+        return std::nullopt;
+    }
+
+    float bestHitDistance = GIZMO_MAX_DISTANCE;
+    int bestAxis = -1;
     for (int axis = 0; axis < 3; ++axis) {
-        if (!axisEnds[axis]) {
-            continue;
+        float distanceTraveled = 0.0f;
+        for (int step = 0; step < 128 && distanceTraveled < GIZMO_MAX_DISTANCE; ++step) {
+            const glm::vec3 samplePoint = camera.position + *rayDirection * distanceTraveled;
+            const float distanceToAxis = rotateAxisDistance(samplePoint, origin, axis);
+            if (distanceToAxis <= GIZMO_HIT_EPSILON) {
+                if (distanceTraveled < bestHitDistance) {
+                    bestHitDistance = distanceTraveled;
+                    bestAxis = axis;
+                }
+                break;
+            }
+            distanceTraveled += std::max(distanceToAxis, GIZMO_HIT_EPSILON);
         }
-        const bool activeAxis = m_activeAxis == axis;
-        const bool hot = hoveredAxis == axis;
-        const float thickness = activeAxis ? ACTIVE_LINE_THICKNESS : (hot ? HOVER_LINE_THICKNESS : LINE_THICKNESS);
-        drawList->AddLine(*originScreen, *axisEnds[axis], colors[axis], thickness);
-        drawList->AddCircleFilled(*axisEnds[axis], activeAxis || hot ? 7.0f : 5.0f, colors[axis]);
+    }
+
+    if (bestAxis >= 0) {
+        return bestAxis;
+    }
+    return std::nullopt;
+}
+
+std::optional<int> hitScaleAxis(ImVec2 mouse, glm::vec3 origin, const RenderCamera& camera, ImVec2 imageMin, ImVec2 imageMax)
+{
+    const std::optional<glm::vec3> rayDirection = screenRayDirection(mouse, camera, imageMin, imageMax);
+    if (!rayDirection) {
+        return std::nullopt;
+    }
+
+    const glm::vec3 axes[] = {
+        {1.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f},
+    };
+
+    float bestHitDistance = GIZMO_MAX_DISTANCE;
+    int bestAxis = -1;
+    for (int axis = 0; axis < 3; ++axis) {
+        float distanceTraveled = 0.0f;
+        for (int step = 0; step < 128 && distanceTraveled < GIZMO_MAX_DISTANCE; ++step) {
+            const glm::vec3 samplePoint = camera.position + *rayDirection * distanceTraveled;
+            const float distanceToAxis = scaleAxisDistance(samplePoint, origin, axes[axis]);
+            if (distanceToAxis <= GIZMO_HIT_EPSILON) {
+                if (distanceTraveled < bestHitDistance) {
+                    bestHitDistance = distanceTraveled;
+                    bestAxis = axis;
+                }
+                break;
+            }
+            distanceTraveled += std::max(distanceToAxis, GIZMO_HIT_EPSILON);
+        }
+    }
+
+    if (bestAxis >= 0) {
+        return bestAxis;
+    }
+    return std::nullopt;
+}
+
+std::optional<float> angleFromMouse(
+    ImVec2 mouse,
+    glm::vec3 origin,
+    int axis,
+    const RenderCamera& camera,
+    ImVec2 imageMin,
+    ImVec2 imageMax)
+{
+    const std::optional<glm::vec3> rayDirection = screenRayDirection(mouse, camera, imageMin, imageMax);
+    if (!rayDirection) {
+        return std::nullopt;
+    }
+
+    const glm::vec3 normals[] = {
+        {1.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f},
+    };
+    const glm::vec3 normal = normals[axis];
+    const float denominator = glm::dot(*rayDirection, normal);
+    if (std::abs(denominator) <= 0.0001f) {
+        return std::nullopt;
+    }
+
+    const float t = glm::dot(origin - camera.position, normal) / denominator;
+    if (t <= 0.0f) {
+        return std::nullopt;
+    }
+
+    const glm::vec3 local = camera.position + *rayDirection * t - origin;
+    if (glm::length(local) <= 0.0001f) {
+        return std::nullopt;
+    }
+
+    if (axis == 0) {
+        return std::atan2(local.z, local.y);
+    }
+    if (axis == 1) {
+        return std::atan2(local.x, local.z);
+    }
+    return std::atan2(local.y, local.x);
+}
+
+} // namespace
+
+bool TranslateGizmo::active() const
+{
+    return m_activeAxis >= 0;
+}
+
+void TranslateGizmo::drawSettings()
+{
+    if (ImGui::IsKeyPressed(ImGuiKey_W)) {
+        m_mode = Mode::Translate;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_E)) {
+        m_mode = Mode::Rotate;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_R)) {
+        m_mode = Mode::Scale;
+    }
+
+    ImGui::SetNextItemWidth(96.0f);
+    int mode = m_mode == Mode::Translate ? 0 : (m_mode == Mode::Rotate ? 1 : 2);
+    const char* modeLabels[] = {"Move", "Rotate", "Scale"};
+    if (ImGui::Combo("##gizmo_mode", &mode, modeLabels, 3)) {
+        m_mode = mode == 0 ? Mode::Translate : (mode == 1 ? Mode::Rotate : Mode::Scale);
+    }
+
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(96.0f);
+    int style = m_rotateStyle == RotateStyle::Rings ? 0 : 1;
+    const char* styleLabels[] = {"Rings", "Axis Arcs"};
+    if (m_mode != Mode::Rotate) {
+        ImGui::BeginDisabled();
+    }
+    if (ImGui::Combo("##rotate_style", &style, styleLabels, 2)) {
+        m_rotateStyle = style == 0 ? RotateStyle::Rings : RotateStyle::AxisArcs;
+    }
+    if (m_mode != Mode::Rotate) {
+        ImGui::EndDisabled();
+    }
+    if (m_rotateStyle == RotateStyle::AxisArcs) {
+        m_rotateStyle = RotateStyle::Rings;
+    }
+}
+
+EditorDirtyState TranslateGizmo::update(SceneGraph& sceneGraph, const RenderCamera& camera, ImVec2 imageMin, ImVec2 imageMax, RenderGizmo& gizmo)
+{
+    EditorDirtyState dirty;
+    gizmo = {};
+    SdfGraph& graph = sceneGraph.graph();
+    SdfGraphNodeId selectedId = graph.selectedNode();
+    SdfGraphNode* selected = graph.node(selectedId);
+    SdfNodeType activeType = SdfNodeType::Translate;
+    if (m_mode == Mode::Rotate) {
+        activeType = SdfNodeType::Rotate;
+    } else if (m_mode == Mode::Scale) {
+        activeType = SdfNodeType::Scale;
+    }
+    if (selected == nullptr || (selected->payload.type != activeType && !isPrimitiveNode(selected->payload.type) && !isTransformPassThroughNode(selected->payload.type))) {
+        m_activeAxis = -1;
+        return dirty;
+    }
+
+    SdfGraphNodeId gizmoNodeId = selectedId;
+    SdfGraphNode* gizmoNode = selected;
+    if (selected->payload.type != activeType) {
+        SdfGraphNodeId parentId = findPassThroughParentOfType(graph, selectedId, activeType);
+        if (parentId != 0) {
+            if (SdfGraphNode* parent = graph.node(parentId)) {
+                gizmoNodeId = parentId;
+                gizmoNode = parent;
+            }
+        }
+    }
+
+    glm::vec3 origin = gizmoOriginForNode(graph, gizmoNodeId);
+    const glm::vec3 axes[] = {
+        {1.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f},
+    };
+
+    const bool hovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    int hoveredAxis = -1;
+    if (hovered) {
+        if (m_mode == Mode::Translate) {
+            hoveredAxis = hitTranslateAxis(mouse, origin, camera, imageMin, imageMax).value_or(-1);
+        } else if (m_mode == Mode::Rotate) {
+            hoveredAxis = hitRotateAxis(mouse, origin, camera, imageMin, imageMax).value_or(-1);
+        } else {
+            hoveredAxis = hitScaleAxis(mouse, origin, camera, imageMin, imageMax).value_or(-1);
+        }
+    }
+
+    gizmo.visible = true;
+    gizmo.center = origin;
+    gizmo.arrowLength = AXIS_LENGTH;
+    gizmo.arrowRadius = AXIS_RADIUS;
+    gizmo.ringRadius = RING_RADIUS;
+    gizmo.tubeRadius = RING_TUBE_RADIUS;
+    gizmo.activeAxis = m_activeAxis;
+    gizmo.hoverAxis = hoveredAxis;
+    gizmo.type = GIZMO_TYPE_TRANSLATE;
+    if (m_mode == Mode::Rotate) {
+        gizmo.type = GIZMO_TYPE_ROTATE;
+    } else if (m_mode == Mode::Scale) {
+        gizmo.type = GIZMO_TYPE_SCALE;
     }
 
     if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && hoveredAxis >= 0) {
-        if (gizmoNode->payload.type == SdfNodeType::Translate) {
+        if (gizmoNode->payload.type == activeType) {
             selectedId = gizmoNodeId;
             selected = gizmoNode;
             graph.setSelectedNode(selectedId);
         } else {
-            selectedId = GraphSystem::ensureTranslateWrapperForNode(graph, selectedId);
+            if (m_mode == Mode::Translate) {
+                selectedId = GraphSystem::ensureTranslateWrapperForNode(graph, selectedId);
+            } else if (m_mode == Mode::Rotate) {
+                selectedId = GraphSystem::ensureRotateWrapperForNode(graph, selectedId);
+            } else {
+                selectedId = GraphSystem::ensureScaleWrapperForNode(graph, selectedId);
+            }
             selected = graph.node(selectedId);
             dirty.scene = true;
             if (selected == nullptr) {
                 return dirty;
             }
         }
-        origin = GraphSystem::accumulatedTranslatePosition(graph, selectedId);
+        if (m_mode == Mode::Translate) {
+            origin = GraphSystem::accumulatedTranslatePosition(graph, selectedId);
+        } else {
+            origin = gizmoOriginForNode(graph, selectedId);
+        }
         m_activeAxis = hoveredAxis;
         m_dragWorldOrigin = origin;
         m_dragStartLocalPosition = translatePosition(*selected);
+        m_dragStartEulerDegrees = rotateDegrees(*selected);
+        m_dragStartScale = scaleValues(*selected)[m_activeAxis];
         m_dragStartAxisT = axisParameterFromMouse(mouse, m_dragWorldOrigin, axes[m_activeAxis], camera, imageMin, imageMax).value_or(0.0f);
+        m_dragStartAngle = angleFromMouse(mouse, m_dragWorldOrigin, m_activeAxis, camera, imageMin, imageMax).value_or(0.0f);
     }
 
     if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
         m_activeAxis = -1;
     }
 
+    glm::vec3 activeGizmoCenter = m_dragWorldOrigin;
     if (m_activeAxis >= 0 && selected != nullptr && selected->payload.type == SdfNodeType::Translate) {
         const std::optional<float> currentAxisT = axisParameterFromMouse(mouse, m_dragWorldOrigin, axes[m_activeAxis], camera, imageMin, imageMax);
         if (currentAxisT) {
-            const glm::vec3 moved = m_dragStartLocalPosition + axes[m_activeAxis] * (*currentAxisT - m_dragStartAxisT);
+            const glm::vec3 delta = axes[m_activeAxis] * (*currentAxisT - m_dragStartAxisT);
+            const glm::vec3 moved = m_dragStartLocalPosition + delta;
             selected->payload.parameters["x"] = moved.x;
             selected->payload.parameters["y"] = moved.y;
             selected->payload.parameters["z"] = moved.z;
+            activeGizmoCenter = m_dragWorldOrigin + delta;
+            dirty.scene = true;
+        }
+    }
+    if (m_activeAxis >= 0 && selected != nullptr && selected->payload.type == SdfNodeType::Rotate) {
+        const std::optional<float> currentAngle = angleFromMouse(mouse, m_dragWorldOrigin, m_activeAxis, camera, imageMin, imageMax);
+        if (currentAngle) {
+            glm::vec3 moved = m_dragStartEulerDegrees;
+            moved[m_activeAxis] += (*currentAngle - m_dragStartAngle) * 180.0f / PI;
+            selected->payload.parameters["xDegrees"] = moved.x;
+            selected->payload.parameters["yDegrees"] = moved.y;
+            selected->payload.parameters["zDegrees"] = moved.z;
+            dirty.scene = true;
+        }
+    }
+    if (m_activeAxis >= 0 && selected != nullptr && selected->payload.type == SdfNodeType::Scale) {
+        const std::optional<float> currentAxisT = axisParameterFromMouse(mouse, m_dragWorldOrigin, axes[m_activeAxis], camera, imageMin, imageMax);
+        if (currentAxisT) {
+            const float moved = std::max(MIN_SCALE, m_dragStartScale + (*currentAxisT - m_dragStartAxisT));
+            if (m_activeAxis == 0) {
+                selected->payload.parameters["x"] = moved;
+            } else if (m_activeAxis == 1) {
+                selected->payload.parameters["y"] = moved;
+            } else {
+                selected->payload.parameters["z"] = moved;
+            }
             dirty.scene = true;
         }
     }
 
+    gizmo.center = m_activeAxis >= 0 ? activeGizmoCenter : origin;
+    gizmo.activeAxis = m_activeAxis;
     return dirty;
 }
 

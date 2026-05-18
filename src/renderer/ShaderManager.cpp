@@ -57,34 +57,73 @@ ShaderManager::~ShaderManager()
 bool ShaderManager::init(const std::filesystem::path& shaderRoot)
 {
     m_vertexShaderPath = shaderRoot / "raymarch.vert";
-    m_fragmentShaderPath = shaderRoot / "raymarch.frag";
-    return loadProgram(m_vertexShaderPath, m_fragmentShaderPath);
+    m_editFragmentShaderPath = shaderRoot / "raymarch_edit.frag";
+    m_sceneFragmentShaderPath = shaderRoot / "raymarch.frag";
+    return loadProgram(m_vertexShaderPath, m_editFragmentShaderPath, m_editProgram);
 }
 
 void ShaderManager::shutdown()
 {
-    if (m_program != 0) {
-        glDeleteProgram(m_program);
-        m_program = 0;
+    if (m_editProgram != 0) {
+        glDeleteProgram(m_editProgram);
+        m_editProgram = 0;
+    }
+    if (m_sceneProgram != 0) {
+        glDeleteProgram(m_sceneProgram);
+        m_sceneProgram = 0;
     }
 }
 
 bool ShaderManager::reloadScene(const std::string& sceneGlsl)
 {
     const std::string vertexSource = readTextFile(m_vertexShaderPath);
-    const std::string fragmentSource = fragmentSourceWithScene(sceneGlsl);
+    const std::string fragmentSource = fragmentSourceWithScene(m_editFragmentShaderPath, sceneGlsl);
     if (vertexSource.empty() || fragmentSource.empty()) {
         m_lastError = "Failed to reload scene shader sources.";
         std::cerr << "[SDF3D][ShaderManager] " << m_lastError << '\n';
         return false;
     }
 
-    return loadProgramFromSources(vertexSource, fragmentSource);
+    if (!loadProgramFromSources(vertexSource, fragmentSource, m_editProgram)) {
+        return false;
+    }
+
+    m_lastSceneGlsl = sceneGlsl;
+    if (m_sceneProgram != 0) {
+        const std::string sceneFragmentSource = fragmentSourceWithScene(m_sceneFragmentShaderPath, sceneGlsl);
+        if (sceneFragmentSource.empty()) {
+            m_lastError = "Failed to reload scene-only shader source.";
+            std::cerr << "[SDF3D][ShaderManager] " << m_lastError << '\n';
+            return false;
+        }
+        return loadProgramFromSources(vertexSource, sceneFragmentSource, m_sceneProgram);
+    }
+
+    return true;
 }
 
 unsigned int ShaderManager::program() const
 {
-    return m_program;
+    return m_editProgram;
+}
+
+unsigned int ShaderManager::sceneProgram()
+{
+    if (m_sceneProgram != 0) {
+        return m_sceneProgram;
+    }
+
+    const std::string vertexSource = readTextFile(m_vertexShaderPath);
+    const std::string fragmentSource = m_lastSceneGlsl.empty()
+        ? readTextFile(m_sceneFragmentShaderPath)
+        : fragmentSourceWithScene(m_sceneFragmentShaderPath, m_lastSceneGlsl);
+    if (vertexSource.empty() || fragmentSource.empty()) {
+        m_lastError = "Failed to load scene-only shader sources.";
+        std::cerr << "[SDF3D][ShaderManager] " << m_lastError << '\n';
+        return 0;
+    }
+
+    return loadProgramFromSources(vertexSource, fragmentSource, m_sceneProgram) ? m_sceneProgram : 0;
 }
 
 const std::string& ShaderManager::lastError() const
@@ -118,7 +157,7 @@ std::string ShaderManager::injectSceneSource(const std::string& fragmentSource, 
     return injected;
 }
 
-bool ShaderManager::loadProgram(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath)
+bool ShaderManager::loadProgram(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, unsigned int& program)
 {
     const std::string vertexSource = readTextFile(vertexPath);
     const std::string fragmentSource = readTextFile(fragmentPath);
@@ -128,10 +167,10 @@ bool ShaderManager::loadProgram(const std::filesystem::path& vertexPath, const s
         return false;
     }
 
-    return loadProgramFromSources(vertexSource, fragmentSource);
+    return loadProgramFromSources(vertexSource, fragmentSource, program);
 }
 
-bool ShaderManager::loadProgramFromSources(const std::string& vertexSource, const std::string& fragmentSource)
+bool ShaderManager::loadProgramFromSources(const std::string& vertexSource, const std::string& fragmentSource, unsigned int& program)
 {
     std::string errorLog;
     const GLuint vertexShader = compileShader(GL_VERTEX_SHADER, vertexSource, "vertex", errorLog);
@@ -147,42 +186,42 @@ bool ShaderManager::loadProgramFromSources(const std::string& vertexSource, cons
         return false;
     }
 
-    const GLuint program = glCreateProgram();
-    glAttachShader(program, vertexShader);
-    glAttachShader(program, fragmentShader);
-    glLinkProgram(program);
+    const GLuint linkedProgram = glCreateProgram();
+    glAttachShader(linkedProgram, vertexShader);
+    glAttachShader(linkedProgram, fragmentShader);
+    glLinkProgram(linkedProgram);
 
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
     GLint success = GL_FALSE;
-    glGetProgramiv(program, GL_LINK_STATUS, &success);
+    glGetProgramiv(linkedProgram, GL_LINK_STATUS, &success);
     if (success != GL_TRUE) {
         GLint length = 0;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &length);
+        glGetProgramiv(linkedProgram, GL_INFO_LOG_LENGTH, &length);
         std::string log(static_cast<size_t>(length), '\0');
         if (length > 0) {
-            glGetProgramInfoLog(program, length, nullptr, log.data());
+            glGetProgramInfoLog(linkedProgram, length, nullptr, log.data());
         }
 
         m_lastError = "Failed to link shader program:\n" + log;
         std::cerr << "[SDF3D][ShaderManager] " << m_lastError << '\n';
-        glDeleteProgram(program);
+        glDeleteProgram(linkedProgram);
         return false;
     }
 
-    if (m_program != 0) {
-        glDeleteProgram(m_program);
+    if (program != 0) {
+        glDeleteProgram(program);
     }
 
-    m_program = program;
+    program = linkedProgram;
     m_lastError.clear();
     return true;
 }
 
-std::string ShaderManager::fragmentSourceWithScene(const std::string& sceneGlsl)
+std::string ShaderManager::fragmentSourceWithScene(const std::filesystem::path& fragmentPath, const std::string& sceneGlsl)
 {
-    const std::string fragmentSource = readTextFile(m_fragmentShaderPath);
+    const std::string fragmentSource = readTextFile(fragmentPath);
     if (fragmentSource.empty()) {
         return {};
     }

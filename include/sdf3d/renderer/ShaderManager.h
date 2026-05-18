@@ -26,6 +26,9 @@ public:
     /// Returns the active linked OpenGL program.
     unsigned int program() const;
 
+    /// Returns the scene-only linked OpenGL program, loading it on demand.
+    unsigned int sceneProgram();
+
     /// Returns the latest shader compile/link/reload error, or empty on success.
     const std::string& lastError() const;
 
@@ -33,13 +36,16 @@ public:
     static std::string injectSceneSource(const std::string& fragmentSource, const std::string& sceneGlsl, std::string& errorLog);
 
 private:
-    bool loadProgram(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath);
-    bool loadProgramFromSources(const std::string& vertexSource, const std::string& fragmentSource);
-    std::string fragmentSourceWithScene(const std::string& sceneGlsl);
+    bool loadProgram(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, unsigned int& program);
+    bool loadProgramFromSources(const std::string& vertexSource, const std::string& fragmentSource, unsigned int& program);
+    std::string fragmentSourceWithScene(const std::filesystem::path& fragmentPath, const std::string& sceneGlsl);
 
     std::filesystem::path m_vertexShaderPath;
-    std::filesystem::path m_fragmentShaderPath;
-    unsigned int m_program = 0;
+    std::filesystem::path m_editFragmentShaderPath;
+    std::filesystem::path m_sceneFragmentShaderPath;
+    unsigned int m_editProgram = 0;
+    unsigned int m_sceneProgram = 0;
+    std::string m_lastSceneGlsl;
     std::string m_lastError;
 };
 

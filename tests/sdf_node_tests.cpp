@@ -89,7 +89,7 @@ void testScale(std::vector<TestFailure>& failures)
     );
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
-    expect(contains(result.glsl, "p / 2.000000"), testName, "Expected scaled point expression.", failures);
+    expect(contains(result.glsl, "p / vec3(2.000000, 2.000000, 2.000000)"), testName, "Expected scaled point expression.", failures);
     expect(contains(result.glsl, "* 2.000000"), testName, "Expected distance rescale expression.", failures);
 }
 

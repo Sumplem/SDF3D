@@ -96,7 +96,6 @@ bool socketsCompatible(const SdfGraph& graph, SdfGraphNodeId fromNode, const std
 bool activeOutputNodeExists(const SdfGraph& graph);
 float distanceSquared(ImVec2 a, ImVec2 b);
 std::optional<SdfGraphLink> linkToInput(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket);
-std::optional<SdfGraphLink> effectiveLinkToInput(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket);
 bool mouseNearBezier(ImVec2 mouse, ImVec2 from, ImVec2 to);
 ImVec2 canvasMouseGraphPosition(const CanvasFrame& frame);
 
@@ -112,7 +111,6 @@ EditorDirtyState handleNodeEditorShortcuts(
     std::vector<SdfGraphNodeId>& pendingDelete);
 bool flushPendingDeletes(SdfGraph& graph, std::vector<SdfGraphNodeId>& pendingDelete);
 std::optional<SdfGraphLink> firstLinkFromOutput(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket);
-bool nodeHasMissingRequiredInput(const SdfGraph& graph, const SdfGraphNode& node);
 float scaleValue(const CanvasFrame& frame, float value);
 ImVec2 graphToScreen(const CanvasFrame& frame, ImVec2 graphPosition);
 ImVec2 screenToGraph(const CanvasFrame& frame, ImVec2 screenPosition);

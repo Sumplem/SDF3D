@@ -50,7 +50,7 @@ void emitSdfHelperPostorder(
     glsl << "    return " << expression << ";\n";
     glsl << "}\n";
 
-    block.helpers.push_back({functionName, glsl.str()});
+    block.helpers.push_back({id, functionName, glsl.str()});
     block.functionNameByNode.emplace(node.get(), functionName);
     emittedIds.insert(id);
 }

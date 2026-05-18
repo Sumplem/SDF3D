@@ -253,6 +253,102 @@ void testGraphSystemReusesTranslateWrapper(std::vector<TestFailure>& failures)
     expect(graph.nodes().size() == 3, testName, "Expected no extra node beyond Output, Sphere, Translate.", failures);
 }
 
+void testGraphSystemCreatesRotateWrapper(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph system creates rotate wrapper";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Material");
+    graph.link(sphere, "sdf", material, "sdf");
+    graph.link(material, "sdf", graph.outputNode(), "surface");
+
+    const sdf3d::SdfGraphNodeId rotate = sdf3d::GraphSystem::ensureRotateWrapperForNode(graph, sphere);
+
+    expect(rotate != 0, testName, "Expected Rotate wrapper.", failures);
+    expect(graph.selectedNode() == rotate, testName, "Expected Rotate wrapper selected.", failures);
+    const sdf3d::SdfGraphNode* rotateNode = graph.node(rotate);
+    expect(rotateNode != nullptr && rotateNode->payload.type == sdf3d::SdfNodeType::Rotate, testName, "Expected Rotate node type.", failures);
+
+    bool hasChildLink = false;
+    bool hasOutgoingLink = false;
+    bool oldOutgoingRemoved = true;
+    for (const sdf3d::SdfGraphLink& link : graph.links()) {
+        hasChildLink = hasChildLink || (link.fromNode == sphere && link.fromSocket == "sdf" && link.toNode == rotate && link.toSocket == "child");
+        hasOutgoingLink = hasOutgoingLink || (link.fromNode == rotate && link.fromSocket == "sdf" && link.toNode == material && link.toSocket == "sdf");
+        if (link.fromNode == sphere && link.toNode == material) {
+            oldOutgoingRemoved = false;
+        }
+    }
+    expect(hasChildLink, testName, "Expected primitive linked into Rotate child.", failures);
+    expect(hasOutgoingLink, testName, "Expected Rotate to feed old consumer.", failures);
+    expect(oldOutgoingRemoved, testName, "Expected old primitive consumer link removed.", failures);
+}
+
+void testGraphSystemReusesRotateWrapper(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph system reuses rotate wrapper";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId rotate = graph.createNode(sdf3d::SdfNodeType::Rotate, "Rotate");
+    graph.link(sphere, "sdf", rotate, "child");
+
+    const sdf3d::SdfGraphNodeId reused = sdf3d::GraphSystem::ensureRotateWrapperForNode(graph, sphere);
+
+    expect(reused == rotate, testName, "Expected existing Rotate wrapper reused.", failures);
+    expect(graph.selectedNode() == rotate, testName, "Expected existing Rotate selected.", failures);
+    expect(graph.nodes().size() == 3, testName, "Expected no extra node beyond Output, Sphere, Rotate.", failures);
+}
+
+void testGraphSystemCreatesScaleWrapper(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph system creates scale wrapper";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Material");
+    graph.link(sphere, "sdf", material, "sdf");
+    graph.link(material, "sdf", graph.outputNode(), "surface");
+
+    const sdf3d::SdfGraphNodeId scale = sdf3d::GraphSystem::ensureScaleWrapperForNode(graph, sphere);
+
+    expect(scale != 0, testName, "Expected Scale wrapper.", failures);
+    expect(graph.selectedNode() == scale, testName, "Expected Scale wrapper selected.", failures);
+    const sdf3d::SdfGraphNode* scaleNode = graph.node(scale);
+    expect(scaleNode != nullptr && scaleNode->payload.type == sdf3d::SdfNodeType::Scale, testName, "Expected Scale node type.", failures);
+
+    bool hasChildLink = false;
+    bool hasOutgoingLink = false;
+    bool oldOutgoingRemoved = true;
+    for (const sdf3d::SdfGraphLink& link : graph.links()) {
+        hasChildLink = hasChildLink || (link.fromNode == sphere && link.fromSocket == "sdf" && link.toNode == scale && link.toSocket == "child");
+        hasOutgoingLink = hasOutgoingLink || (link.fromNode == scale && link.fromSocket == "sdf" && link.toNode == material && link.toSocket == "sdf");
+        if (link.fromNode == sphere && link.toNode == material) {
+            oldOutgoingRemoved = false;
+        }
+    }
+    expect(hasChildLink, testName, "Expected primitive linked into Scale child.", failures);
+    expect(hasOutgoingLink, testName, "Expected Scale to feed old consumer.", failures);
+    expect(oldOutgoingRemoved, testName, "Expected old primitive consumer link removed.", failures);
+}
+
+void testGraphSystemReusesScaleWrapper(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph system reuses scale wrapper";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId scale = graph.createNode(sdf3d::SdfNodeType::Scale, "Scale");
+    graph.link(sphere, "sdf", scale, "child");
+
+    const sdf3d::SdfGraphNodeId reused = sdf3d::GraphSystem::ensureScaleWrapperForNode(graph, sphere);
+
+    expect(reused == scale, testName, "Expected existing Scale wrapper reused.", failures);
+    expect(graph.selectedNode() == scale, testName, "Expected existing Scale selected.", failures);
+    expect(graph.nodes().size() == 3, testName, "Expected no extra node beyond Output, Sphere, Scale.", failures);
+}
+
 void testGraphSystemAccumulatedTranslateDirectChain(std::vector<TestFailure>& failures)
 {
     const std::string testName = "graph system accumulated translate direct chain";
@@ -584,6 +680,10 @@ int main()
     testGraphOutputAndSelectionValidation(failures);
     testGraphSystemCreatesTranslateWrapper(failures);
     testGraphSystemReusesTranslateWrapper(failures);
+    testGraphSystemCreatesRotateWrapper(failures);
+    testGraphSystemReusesRotateWrapper(failures);
+    testGraphSystemCreatesScaleWrapper(failures);
+    testGraphSystemReusesScaleWrapper(failures);
     testGraphSystemAccumulatedTranslateDirectChain(failures);
     testGraphSystemAccumulatedTranslateUnaryPassThrough(failures);
     testGraphSystemAccumulatedTranslateStopsAtBranch(failures);

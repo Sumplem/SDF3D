@@ -10,12 +10,32 @@
 
 namespace sdf3d {
 
+enum class RenderQuality {
+    Low = 0,
+    Medium = 1,
+    High = 2,
+};
+
 /// Camera values needed by the raymarch shader.
 struct RenderCamera {
     glm::vec3 position = {0.0f, 0.0f, 4.0f};
     glm::vec3 target = {0.0f, 0.0f, 0.0f};
     glm::vec3 up = {0.0f, 1.0f, 0.0f};
     float fovDegrees = 45.0f;
+};
+
+/// Gizmo uniforms consumed by edit raymarch shaders.
+struct RenderGizmo {
+    bool visible = false;
+    glm::vec3 center = {0.0f, 0.0f, 0.0f};
+    float arrowLength = 1.0f;
+    float arrowRadius = 0.035f;
+    float ringRadius = 0.85f;
+    float tubeRadius = 0.025f;
+    int activeAxis = -1;
+    int hoverAxis = -1;
+    int type = 0;
+    int highlightNodeId = 0;
 };
 
 /// Uploads camera, viewport, and material uniforms to the active shader.
@@ -39,7 +59,14 @@ public:
     void shutdown();
 
     /// Uploads all raymarch uniforms for one frame.
-    void upload(unsigned int program, int width, int height, const RenderCamera& camera, const std::vector<SdfCompiledMaterial>& materials);
+    void upload(
+        unsigned int program,
+        int width,
+        int height,
+        const RenderCamera& camera,
+        const RenderGizmo& gizmo,
+        RenderQuality quality,
+        const std::vector<SdfCompiledMaterial>& materials);
 
     /// Returns material count visible to shader storage buffer.
     static size_t materialCountForShader(size_t materialCount);

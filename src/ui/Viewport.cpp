@@ -1,5 +1,6 @@
 #include "sdf3d/ui/Viewport.h"
 
+#include "sdf3d/systems/GraphSystem.h"
 #include "sdf3d/ui/node_editor/NodeEditorCanvas.h"
 
 #include <algorithm>
@@ -74,17 +75,48 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SceneGraph& sceneGraph)
 
     handleInput(hovered, {available.x, available.y});
 
+    const ImVec2 imageMin = ImGui::GetCursorScreenPos();
+    const ImVec2 imageMax = {imageMin.x + available.x, imageMin.y + available.y};
+    const RenderCamera renderCamera = camera();
+    RenderGizmo gizmo;
+    const EditorDirtyState gizmoDirty = m_translateGizmo.update(sceneGraph, renderCamera, imageMin, imageMax, gizmo);
+    gizmo.highlightNodeId = static_cast<int>(GraphSystem::highlightNodeForSelection(sceneGraph.graph()));
+    renderer.setGizmo(gizmo);
+    renderer.setQuality(m_quality);
+
     renderer.resize(width, height);
-    renderer.render(camera());
+    renderer.render(renderCamera);
 
     // AGENT: Rendering to a texture keeps the raymarched viewport inside the
     // dockable ImGui panel instead of fighting the main framebuffer clear.
     const ImTextureID textureId = static_cast<ImTextureID>(static_cast<intptr_t>(renderer.outputTexture()));
     ImGui::Image(textureId, available, ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.0f));
-    const ImVec2 imageMin = ImGui::GetItemRectMin();
-    const ImVec2 imageMax = ImGui::GetItemRectMax();
-    const RenderCamera renderCamera = camera();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem)
+    const bool imageHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+    ImGui::SetCursorScreenPos({imageMin.x + 8.0f, imageMin.y + 8.0f});
+    m_translateGizmo.drawSettings();
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(92.0f);
+    int quality = static_cast<int>(m_quality);
+    const char* qualityLabels[] = {"Low", "Medium", "High"};
+    if (ImGui::Combo("Quality", &quality, qualityLabels, 3)) {
+        m_quality = static_cast<RenderQuality>(quality);
+    }
+
+    if (imageHovered
+        && !m_translateGizmo.active()
+        && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        const std::optional<glm::vec3> rayDirection = screenRayDirection(ImGui::GetIO().MousePos, renderCamera, imageMin, imageMax);
+        if (rayDirection) {
+            const SdfGraphNodeId pickedNode = GraphSystem::pickNodeByRay(sceneGraph.graph(), renderCamera.position, *rayDirection);
+            if (pickedNode != 0) {
+                sceneGraph.graph().setSelectedNode(pickedNode);
+            } else {
+                sceneGraph.graph().clearSelection();
+            }
+        }
+    }
+
+    if (imageHovered
         && ImGui::IsMouseReleased(ImGuiMouseButton_Right)
         && !m_rightMouseMoved) {
         m_pendingAddWorldPosition = viewportSpawnPosition(ImGui::GetIO().MousePos, renderCamera, imageMin, imageMax);
@@ -94,7 +126,6 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SceneGraph& sceneGraph)
         dirty.scene = true;
     }
 
-    const EditorDirtyState gizmoDirty = m_translateGizmo.draw(sceneGraph, renderCamera, imageMin, imageMax);
     dirty.scene = dirty.scene || gizmoDirty.scene;
     ImGui::End();
     return dirty;

@@ -11,14 +11,31 @@ namespace sdf3d {
 
 class TranslateGizmo {
 public:
-    EditorDirtyState draw(SceneGraph& sceneGraph, const RenderCamera& camera, ImVec2 imageMin, ImVec2 imageMax);
+    EditorDirtyState update(SceneGraph& sceneGraph, const RenderCamera& camera, ImVec2 imageMin, ImVec2 imageMax, RenderGizmo& gizmo);
+    void drawSettings();
     bool active() const;
 
 private:
+    enum class Mode {
+        Translate,
+        Rotate,
+        Scale,
+    };
+
+    enum class RotateStyle {
+        Rings,
+        AxisArcs,
+    };
+
     glm::vec3 m_dragWorldOrigin = {0.0f, 0.0f, 0.0f};
     glm::vec3 m_dragStartLocalPosition = {0.0f, 0.0f, 0.0f};
+    glm::vec3 m_dragStartEulerDegrees = {0.0f, 0.0f, 0.0f};
+    float m_dragStartScale = 1.0f;
     float m_dragStartAxisT = 0.0f;
+    float m_dragStartAngle = 0.0f;
     int m_activeAxis = -1;
+    Mode m_mode = Mode::Translate;
+    RotateStyle m_rotateStyle = RotateStyle::Rings;
 };
 
 } // namespace sdf3d

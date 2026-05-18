@@ -4,6 +4,8 @@
 
 #include <glm/glm.hpp>
 
+#include <cstddef>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -61,11 +63,41 @@ public:
     /// Returns true when any link starts from or ends at the node.
     static bool hasLinks(const SdfGraph& graph, SdfGraphNodeId id);
 
+    /// Returns true when the graph node can emit an effective SDF output.
+    static bool producesValidSdf(const SdfGraph& graph, SdfGraphNodeId id);
+
+    /// Returns an input link only if its upstream node emits an effective SDF.
+    static std::optional<SdfGraphLink> effectiveLinkToInput(const SdfGraph& graph, SdfGraphNodeId id, const std::string& socket);
+
+    /// Returns true when a node is missing an effective required SDF input.
+    static bool nodeHasMissingRequiredInput(const SdfGraph& graph, const SdfGraphNode& node);
+
+    /// Returns true when lowered children satisfy graph validity rules.
+    static bool loweredNodeHasRequiredInputs(SdfNodeType type, const std::vector<std::string>& validSockets, std::size_t childCount);
+
+    /// CPU-raymarches the effective graph SDF and returns the hit graph node ID, or 0.
+    static SdfGraphNodeId pickNodeByRay(const SdfGraph& graph, glm::vec3 rayOrigin, glm::vec3 rayDirection);
+
+    /// Returns the SDF helper node ID that should be highlighted for current selection.
+    static SdfGraphNodeId highlightNodeForSelection(const SdfGraph& graph);
+
     /// Returns direct Translate parent connected to node's `sdf` output, or 0.
     static SdfGraphNodeId findDirectTranslateParent(const SdfGraph& graph, SdfGraphNodeId id);
 
+    /// Returns direct Rotate parent connected to node's `sdf` output, or 0.
+    static SdfGraphNodeId findDirectRotateParent(const SdfGraph& graph, SdfGraphNodeId id);
+
+    /// Returns direct Scale parent connected to node's `sdf` output, or 0.
+    static SdfGraphNodeId findDirectScaleParent(const SdfGraph& graph, SdfGraphNodeId id);
+
     /// Reuses or creates a Translate wrapper for a primitive node and selects it.
     static SdfGraphNodeId ensureTranslateWrapperForNode(SdfGraph& graph, SdfGraphNodeId id);
+
+    /// Reuses or creates a Rotate wrapper for a primitive node and selects it.
+    static SdfGraphNodeId ensureRotateWrapperForNode(SdfGraph& graph, SdfGraphNodeId id);
+
+    /// Reuses or creates a Scale wrapper for a primitive node and selects it.
+    static SdfGraphNodeId ensureScaleWrapperForNode(SdfGraph& graph, SdfGraphNodeId id);
 
     /// Computes effective Translate offset upstream of a Translate node through unary SDF pass-through nodes.
     static glm::vec3 accumulatedTranslatePosition(const SdfGraph& graph, SdfGraphNodeId translateId);

@@ -33,7 +33,7 @@ const std::vector<SdfNodeDefinition>& definitions()
 
         {SdfNodeType::Translate, SdfNodeCategory::Transform, "Translate", {{"x", 0.0f, -100.0f, 100.0f, 0.01f}, {"y", 0.0f, -100.0f, 100.0f, 0.01f}, {"z", 0.0f, -100.0f, 100.0f, 0.01f}}, {inputSocket("child")}, {outputSocket("sdf")}},
         {SdfNodeType::Rotate, SdfNodeCategory::Transform, "Rotate", {{"xDegrees", 0.0f, -360.0f, 360.0f, 1.0f}, {"yDegrees", 0.0f, -360.0f, 360.0f, 1.0f}, {"zDegrees", 0.0f, -360.0f, 360.0f, 1.0f}}, {inputSocket("child")}, {outputSocket("sdf")}},
-        {SdfNodeType::Scale, SdfNodeCategory::Transform, "Scale", {{"scale", 1.0f, 0.001f, 100.0f, 0.01f}}, {inputSocket("child")}, {outputSocket("sdf")}},
+        {SdfNodeType::Scale, SdfNodeCategory::Transform, "Scale", {{"x", 1.0f, 0.001f, 100.0f, 0.01f}, {"y", 1.0f, 0.001f, 100.0f, 0.01f}, {"z", 1.0f, 0.001f, 100.0f, 0.01f}}, {inputSocket("child")}, {outputSocket("sdf")}},
         {SdfNodeType::Repeat, SdfNodeCategory::Transform, "Repeat", {{"x", 2.0f, 0.001f, 100.0f, 0.01f}, {"y", 2.0f, 0.001f, 100.0f, 0.01f}, {"z", 2.0f, 0.001f, 100.0f, 0.01f}, {"repeatX", 1.0f, 0.0f, 1.0f, 1.0f}, {"repeatY", 1.0f, 0.0f, 1.0f, 1.0f}, {"repeatZ", 1.0f, 0.0f, 1.0f, 1.0f}}, {inputSocket("child")}, {outputSocket("sdf")}},
         {SdfNodeType::Mirror, SdfNodeCategory::Transform, "Mirror", {{"x", 1.0f, 0.0f, 1.0f, 1.0f}, {"y", 0.0f, 0.0f, 1.0f, 1.0f}, {"z", 0.0f, 0.0f, 1.0f, 1.0f}}, {inputSocket("child")}, {outputSocket("sdf")}},
         {SdfNodeType::Twist, SdfNodeCategory::Transform, "Twist", {{"strength", 1.0f, -20.0f, 20.0f, 0.01f}, {"axis", 1.0f, 0.0f, 2.0f, 1.0f}}, {inputSocket("child")}, {outputSocket("sdf")}},

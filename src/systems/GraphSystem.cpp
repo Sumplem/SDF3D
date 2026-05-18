@@ -54,6 +54,23 @@ bool isPrimitiveNode(SdfNodeType type)
         || type == SdfNodeType::RoundBox;
 }
 
+bool isTransformPassThroughNode(SdfNodeType type)
+{
+    return type == SdfNodeType::Translate
+        || type == SdfNodeType::Rotate
+        || type == SdfNodeType::Scale
+        || type == SdfNodeType::Repeat
+        || type == SdfNodeType::Mirror
+        || type == SdfNodeType::Twist
+        || type == SdfNodeType::Bend
+        || type == SdfNodeType::MaterialOverride;
+}
+
+bool canWrapWithTransform(SdfNodeType type)
+{
+    return isPrimitiveNode(type) || isTransformPassThroughNode(type);
+}
+
 float parameterOr(const SdfNode& node, const std::string& key, float fallback)
 {
     const auto it = node.parameters.find(key);
@@ -112,6 +129,45 @@ std::optional<SdfGraphLink> singleIncomingSdfLink(const SdfGraph& graph, SdfGrap
     }
 
     return result;
+}
+
+SdfGraphNodeId singlePassThroughParent(const SdfGraph& graph, SdfGraphNodeId id)
+{
+    SdfGraphNodeId parentId = 0;
+    for (const SdfGraphLink& link : graph.links()) {
+        if (link.fromNode != id || link.fromSocket != "sdf" || (link.toSocket != "child" && link.toSocket != "sdf")) {
+            continue;
+        }
+
+        const SdfGraphNode* parent = graph.node(link.toNode);
+        if (parent == nullptr || !isTransformPassThroughNode(parent->payload.type)) {
+            continue;
+        }
+        if (parentId != 0) {
+            return 0;
+        }
+        parentId = link.toNode;
+    }
+    return parentId;
+}
+
+SdfGraphNodeId findPassThroughParentOfType(const SdfGraph& graph, SdfGraphNodeId id, SdfNodeType type)
+{
+    std::vector<SdfGraphNodeId> visited;
+    SdfGraphNodeId currentId = id;
+    while (currentId != 0 && std::find(visited.begin(), visited.end(), currentId) == visited.end()) {
+        visited.push_back(currentId);
+        const SdfGraphNodeId parentId = singlePassThroughParent(graph, currentId);
+        if (parentId == 0) {
+            return 0;
+        }
+        const SdfGraphNode* parent = graph.node(parentId);
+        if (parent != nullptr && parent->payload.type == type) {
+            return parentId;
+        }
+        currentId = parentId;
+    }
+    return 0;
 }
 
 } // namespace
@@ -351,6 +407,36 @@ SdfGraphNodeId GraphSystem::findDirectTranslateParent(const SdfGraph& graph, Sdf
     return 0;
 }
 
+SdfGraphNodeId GraphSystem::findDirectRotateParent(const SdfGraph& graph, SdfGraphNodeId id)
+{
+    for (const SdfGraphLink& link : graph.m_links) {
+        if (link.fromNode != id || link.fromSocket != "sdf" || link.toSocket != "child") {
+            continue;
+        }
+        const auto targetIt = graph.m_nodes.find(link.toNode);
+        if (targetIt != graph.m_nodes.end() && targetIt->second.payload.type == SdfNodeType::Rotate) {
+            return link.toNode;
+        }
+    }
+
+    return 0;
+}
+
+SdfGraphNodeId GraphSystem::findDirectScaleParent(const SdfGraph& graph, SdfGraphNodeId id)
+{
+    for (const SdfGraphLink& link : graph.m_links) {
+        if (link.fromNode != id || link.fromSocket != "sdf" || link.toSocket != "child") {
+            continue;
+        }
+        const auto targetIt = graph.m_nodes.find(link.toNode);
+        if (targetIt != graph.m_nodes.end() && targetIt->second.payload.type == SdfNodeType::Scale) {
+            return link.toNode;
+        }
+    }
+
+    return 0;
+}
+
 SdfGraphNodeId GraphSystem::ensureTranslateWrapperForNode(SdfGraph& graph, SdfGraphNodeId id)
 {
     const auto nodeIt = graph.m_nodes.find(id);
@@ -361,11 +447,11 @@ SdfGraphNodeId GraphSystem::ensureTranslateWrapperForNode(SdfGraph& graph, SdfGr
         SelectionSystem::setSelectedNode(graph, id);
         return id;
     }
-    if (!isPrimitiveNode(nodeIt->second.payload.type)) {
+    if (!canWrapWithTransform(nodeIt->second.payload.type)) {
         return 0;
     }
 
-    if (const SdfGraphNodeId translateParent = findDirectTranslateParent(graph, id)) {
+    if (const SdfGraphNodeId translateParent = findPassThroughParentOfType(graph, id, SdfNodeType::Translate)) {
         SelectionSystem::setSelectedNode(graph, translateParent);
         return translateParent;
     }
@@ -393,6 +479,94 @@ SdfGraphNodeId GraphSystem::ensureTranslateWrapperForNode(SdfGraph& graph, SdfGr
 
     SelectionSystem::setSelectedNode(graph, translateId);
     return translateId;
+}
+
+SdfGraphNodeId GraphSystem::ensureRotateWrapperForNode(SdfGraph& graph, SdfGraphNodeId id)
+{
+    const auto nodeIt = graph.m_nodes.find(id);
+    if (nodeIt == graph.m_nodes.end()) {
+        return 0;
+    }
+    if (nodeIt->second.payload.type == SdfNodeType::Rotate) {
+        SelectionSystem::setSelectedNode(graph, id);
+        return id;
+    }
+    if (!canWrapWithTransform(nodeIt->second.payload.type)) {
+        return 0;
+    }
+
+    if (const SdfGraphNodeId rotateParent = findPassThroughParentOfType(graph, id, SdfNodeType::Rotate)) {
+        SelectionSystem::setSelectedNode(graph, rotateParent);
+        return rotateParent;
+    }
+
+    const std::vector<SdfGraphLink> links = graph.m_links;
+    const float editorX = nodeIt->second.editorX;
+    const float editorY = nodeIt->second.editorY;
+    const SdfGraphNodeId rotateId = createNode(graph, SdfNodeType::Rotate, "Rotate");
+    auto rotateIt = graph.m_nodes.find(rotateId);
+    if (rotateIt == graph.m_nodes.end()) {
+        return 0;
+    }
+
+    rotateIt->second.editorX = editorX + 260.0f;
+    rotateIt->second.editorY = editorY;
+    link(graph, id, "sdf", rotateId, "child");
+
+    for (const SdfGraphLink& existing : links) {
+        if (existing.fromNode != id || existing.fromSocket != "sdf") {
+            continue;
+        }
+        unlink(graph, existing.fromNode, existing.fromSocket, existing.toNode, existing.toSocket);
+        link(graph, rotateId, "sdf", existing.toNode, existing.toSocket);
+    }
+
+    SelectionSystem::setSelectedNode(graph, rotateId);
+    return rotateId;
+}
+
+SdfGraphNodeId GraphSystem::ensureScaleWrapperForNode(SdfGraph& graph, SdfGraphNodeId id)
+{
+    const auto nodeIt = graph.m_nodes.find(id);
+    if (nodeIt == graph.m_nodes.end()) {
+        return 0;
+    }
+    if (nodeIt->second.payload.type == SdfNodeType::Scale) {
+        SelectionSystem::setSelectedNode(graph, id);
+        return id;
+    }
+    if (!canWrapWithTransform(nodeIt->second.payload.type)) {
+        return 0;
+    }
+
+    if (const SdfGraphNodeId scaleParent = findPassThroughParentOfType(graph, id, SdfNodeType::Scale)) {
+        SelectionSystem::setSelectedNode(graph, scaleParent);
+        return scaleParent;
+    }
+
+    const std::vector<SdfGraphLink> links = graph.m_links;
+    const float editorX = nodeIt->second.editorX;
+    const float editorY = nodeIt->second.editorY;
+    const SdfGraphNodeId scaleId = createNode(graph, SdfNodeType::Scale, "Scale");
+    auto scaleIt = graph.m_nodes.find(scaleId);
+    if (scaleIt == graph.m_nodes.end()) {
+        return 0;
+    }
+
+    scaleIt->second.editorX = editorX + 260.0f;
+    scaleIt->second.editorY = editorY;
+    link(graph, id, "sdf", scaleId, "child");
+
+    for (const SdfGraphLink& existing : links) {
+        if (existing.fromNode != id || existing.fromSocket != "sdf") {
+            continue;
+        }
+        unlink(graph, existing.fromNode, existing.fromSocket, existing.toNode, existing.toSocket);
+        link(graph, scaleId, "sdf", existing.toNode, existing.toSocket);
+    }
+
+    SelectionSystem::setSelectedNode(graph, scaleId);
+    return scaleId;
 }
 
 glm::vec3 GraphSystem::accumulatedTranslatePosition(const SdfGraph& graph, SdfGraphNodeId translateId)

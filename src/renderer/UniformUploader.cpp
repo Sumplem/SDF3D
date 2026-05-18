@@ -30,13 +30,31 @@ void UniformUploader::shutdown()
     }
 }
 
-void UniformUploader::upload(unsigned int program, int width, int height, const RenderCamera& camera, const std::vector<SdfCompiledMaterial>& materials)
+void UniformUploader::upload(
+    unsigned int program,
+    int width,
+    int height,
+    const RenderCamera& camera,
+    const RenderGizmo& gizmo,
+    RenderQuality quality,
+    const std::vector<SdfCompiledMaterial>& materials)
 {
     glUniform2f(glGetUniformLocation(program, "uResolution"), static_cast<float>(width), static_cast<float>(height));
     glUniform3fv(glGetUniformLocation(program, "uCameraPosition"), 1, &camera.position.x);
     glUniform3fv(glGetUniformLocation(program, "uCameraTarget"), 1, &camera.target.x);
     glUniform3fv(glGetUniformLocation(program, "uCameraUp"), 1, &camera.up.x);
     glUniform1f(glGetUniformLocation(program, "uFovDegrees"), camera.fovDegrees);
+    glUniform1i(glGetUniformLocation(program, "uGizmoVisible"), gizmo.visible ? 1 : 0);
+    glUniform3fv(glGetUniformLocation(program, "uGizmoCenter"), 1, &gizmo.center.x);
+    glUniform1f(glGetUniformLocation(program, "uGizmoArrowLength"), gizmo.arrowLength);
+    glUniform1f(glGetUniformLocation(program, "uGizmoArrowRadius"), gizmo.arrowRadius);
+    glUniform1f(glGetUniformLocation(program, "uGizmoR"), gizmo.ringRadius);
+    glUniform1f(glGetUniformLocation(program, "uGizmoTube"), gizmo.tubeRadius);
+    glUniform1i(glGetUniformLocation(program, "uGizmoActiveAxis"), gizmo.activeAxis);
+    glUniform1i(glGetUniformLocation(program, "uGizmoHoverAxis"), gizmo.hoverAxis);
+    glUniform1i(glGetUniformLocation(program, "uGizmoType"), gizmo.type);
+    glUniform1i(glGetUniformLocation(program, "uHighlightNodeId"), static_cast<GLint>(gizmo.highlightNodeId));
+    glUniform1i(glGetUniformLocation(program, "uRenderQuality"), static_cast<GLint>(quality));
 
     const size_t materialCount = materialCountForShader(materials.size());
     glUniform1i(glGetUniformLocation(program, "uMaterialCount"), static_cast<GLint>(materialCount));

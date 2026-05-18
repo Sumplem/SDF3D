@@ -35,6 +35,7 @@ private:
     float m_fovDegrees = 45.0f;
     glm::vec2 m_lastMouse = {0.0f, 0.0f};
     glm::vec3 m_position = {0.0f, 0.0f, 4.0f};
+    RenderQuality m_quality = RenderQuality::High;
     TranslateGizmo m_translateGizmo;
     AddMenu m_viewportAddMenu;
     glm::vec3 m_pendingAddWorldPosition = {0.0f, 0.0f, 0.0f};

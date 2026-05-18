@@ -158,8 +158,12 @@ std::string emitMaterialFor(
             result.errors.push_back("Scale node ignores extra children.");
         }
 
-        const float scale = std::max(parameterOr(*node, "scale", 1.0f), 0.0001f);
-        const std::string scaledPoint = "(" + pointExpr + " / " + glslFloat(scale) + ")";
+        const float uniformScale = parameterOr(*node, "scale", 1.0f);
+        const float x = std::max(parameterOr(*node, "x", uniformScale), 0.0001f);
+        const float y = std::max(parameterOr(*node, "y", uniformScale), 0.0001f);
+        const float z = std::max(parameterOr(*node, "z", uniformScale), 0.0001f);
+        const std::string scale = glslVec3(x, y, z);
+        const std::string scaledPoint = "(" + pointExpr + " / " + scale + ")";
         return emitMaterialFor(node->children.front(), scaledPoint, result, sdfHelpers);
     }
 

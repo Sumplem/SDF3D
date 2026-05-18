@@ -219,6 +219,9 @@ inline SdfNodePtr makeScaleNode(SdfNodePtr child, float scale, std::string name 
 {
     SdfNodePtr node = makeSdfNode(SdfNodeType::Scale, std::move(name));
     node->parameters["scale"] = scale;
+    node->parameters["x"] = scale;
+    node->parameters["y"] = scale;
+    node->parameters["z"] = scale;
     node->children.push_back(std::move(child));
     return node;
 }

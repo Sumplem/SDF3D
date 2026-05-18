@@ -32,6 +32,12 @@ public:
     /// Draws the hardcoded M2 raymarched scene.
     void render(const RenderCamera& camera);
 
+    /// Stores edit gizmo uniforms for the next render.
+    void setGizmo(const RenderGizmo& gizmo);
+
+    /// Stores editor quality for the next render.
+    void setQuality(RenderQuality quality);
+
     /// Rebuilds the fragment shader after replacing the sceneSDF injection block.
     bool reloadScene(const std::string& sceneGlsl);
 
@@ -48,6 +54,8 @@ private:
     FboRenderer m_fboRenderer;
     ShaderManager m_shaderManager;
     UniformUploader m_uniformUploader;
+    RenderGizmo m_gizmo;
+    RenderQuality m_quality = RenderQuality::High;
     // AGENT: Renderer stores compiler-owned material order so every render can
     // re-upload uniforms after program relink without scene graph traversal.
     std::vector<SdfCompiledMaterial> m_materials;

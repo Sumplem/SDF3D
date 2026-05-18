@@ -7,7 +7,6 @@
 - Do not advance beyond approved file.
 - Do not modify unapproved files.
 - Future multi-file UI modules should be physically grouped in subfolders, e.g. NodeEditor internals live under `src/ui/node_editor/` with internal headers under `include/sdf3d/ui/node_editor/`.
-- File size rule: 400-600 lines → note it; 600-800 → flag + consider split; 800+ → hard stop and propose split before continuing.
 
 ## Current State
 
@@ -38,6 +37,16 @@
 - `UniformUploader` uploads packed materials through an OpenGL SSBO (`std430`, binding 0), no old 64 uniform-array cap.
 - Material parameter edits mark material-dirty only and update renderer uniforms without shader reload.
 - `GraphMigrator` was removed after JSON save/load landed; do not reference or re-add it.
+
+## Current Gizmo / Viewport Selection Model
+
+- Edit shader is `raymarch_edit.frag`; it renders scene + gizmo SDF in one raymarch path.
+- Viewport left-click CPU-raymarches graph SDF through `GraphSystem::pickNodeByRay(...)` and selects the hit primitive node.
+- Yellow selection highlight uses `uHighlightNodeId` and generated `sceneNodeSDF(int nodeId, vec3 p)`.
+- For chained transforms, `GraphSystem::highlightNodeForSelection(...)` resolves primitive/inner-transform selection to the final pass-through transform in that chain so highlight evaluates in visible world space.
+- Highlight shader uses a smooth distance band, not exact zero, so chained transform raymarch step error does not hide selected primitive tint.
+- Transform wrappers may chain: selecting an existing Translate can add/reuse Rotate/Scale wrappers without breaking the chain.
+- `GraphSystem.cpp`, `TranslateGizmo.cpp`, and `raymarch_edit.frag` are over 600/500-line pressure; split before adding more large gizmo or graph logic.
 
 ## Recent Approved Edits
 

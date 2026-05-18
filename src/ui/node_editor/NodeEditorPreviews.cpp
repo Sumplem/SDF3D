@@ -1,5 +1,7 @@
 #include "sdf3d/ui/node_editor/NodeEditorCanvas.h"
 
+#include "sdf3d/systems/GraphSystem.h"
+
 #include <optional>
 #include <string>
 
@@ -24,7 +26,7 @@ bool isBypassInput(SdfNodeType type, const std::string& socket)
 
 std::optional<SdfGraphLink> bypassSourceLink(const SdfGraph& graph, const SdfGraphNode& node)
 {
-    if (!nodeHasMissingRequiredInput(graph, node)) {
+    if (!GraphSystem::nodeHasMissingRequiredInput(graph, node)) {
         return std::nullopt;
     }
 
@@ -33,7 +35,7 @@ std::optional<SdfGraphLink> bypassSourceLink(const SdfGraph& graph, const SdfGra
             continue;
         }
 
-        if (const std::optional<SdfGraphLink> link = effectiveLinkToInput(graph, node.id, input.name)) {
+        if (const std::optional<SdfGraphLink> link = GraphSystem::effectiveLinkToInput(graph, node.id, input.name)) {
             return link;
         }
     }
@@ -50,7 +52,7 @@ void drawInactiveNodePreview(
     const std::vector<GraphSocketAnchor>& anchors)
 {
     const SdfGraphNode& node = *layout.node;
-    if (!nodeHasMissingRequiredInput(graph, node)) {
+    if (!GraphSystem::nodeHasMissingRequiredInput(graph, node)) {
         return;
     }
 
@@ -59,7 +61,7 @@ void drawInactiveNodePreview(
     frame.drawList->AddRect(layout.position, nodeEnd, inactiveColor, scaleValue(frame, 6.0f), 0, scaleValue(frame, 2.0f));
 
     for (const SdfGraphSocket& input : node.inputs) {
-        if (input.type != SdfSocketType::Sdf || effectiveLinkToInput(graph, layout.id, input.name)) {
+        if (input.type != SdfSocketType::Sdf || GraphSystem::effectiveLinkToInput(graph, layout.id, input.name)) {
             continue;
         }
 

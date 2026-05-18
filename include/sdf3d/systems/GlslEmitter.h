@@ -2,6 +2,7 @@
 
 #include "sdf3d/scene/SdfCompiler.h"
 
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -9,6 +10,7 @@
 namespace sdf3d {
 
 struct GlslSdfHelper {
+    uint64_t nodeId = 0;
     std::string functionName;
     std::string glsl;
 };
