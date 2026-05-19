@@ -32,12 +32,14 @@ add_executable(sdf3d
     src/systems/glsl_emitter/GlslEmitterBooleanExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterFormatting.cpp
     src/systems/glsl_emitter/GlslEmitterMaterialExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterPrimitiveExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterSdfGeometry.cpp
     src/systems/glsl_emitter/GlslEmitterSdfHelpers.cpp
     src/systems/glsl_emitter/GlslEmitterSceneMaterial.cpp
     src/systems/GlslNodeNames.cpp
     src/systems/GraphSerializer.cpp
     src/systems/GraphSystem.cpp
+    src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
     src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
@@ -96,11 +98,13 @@ add_executable(sdf3d_tests
     src/systems/glsl_emitter/GlslEmitterBooleanExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterFormatting.cpp
     src/systems/glsl_emitter/GlslEmitterMaterialExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterPrimitiveExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterSdfGeometry.cpp
     src/systems/glsl_emitter/GlslEmitterSdfHelpers.cpp
     src/systems/glsl_emitter/GlslEmitterSceneMaterial.cpp
     src/systems/GlslNodeNames.cpp
     src/systems/GraphSystem.cpp
+    src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
     src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
@@ -129,6 +133,7 @@ add_executable(sdf3d_graph_tests
     src/scene/SdfGraph.cpp
     src/scene/SdfNodeDefinition.cpp
     src/systems/GraphSystem.cpp
+    src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
     src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
@@ -164,11 +169,13 @@ add_executable(sdf3d_graph_compiler_tests
     src/systems/glsl_emitter/GlslEmitterBooleanExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterFormatting.cpp
     src/systems/glsl_emitter/GlslEmitterMaterialExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterPrimitiveExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterSdfGeometry.cpp
     src/systems/glsl_emitter/GlslEmitterSdfHelpers.cpp
     src/systems/glsl_emitter/GlslEmitterSceneMaterial.cpp
     src/systems/GlslNodeNames.cpp
     src/systems/GraphSystem.cpp
+    src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
     src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
@@ -296,6 +303,7 @@ add_executable(sdf3d_selection_tests
     src/scene/SdfNodeDefinition.cpp
     src/scene/SceneGraph.cpp
     src/systems/GraphSystem.cpp
+    src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
     src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
@@ -324,6 +332,7 @@ add_executable(sdf3d_graph_system_tests
     src/scene/SdfGraph.cpp
     src/scene/SdfNodeDefinition.cpp
     src/systems/GraphSystem.cpp
+    src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
     src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
@@ -350,6 +359,7 @@ add_executable(sdf3d_graph_serializer_tests
     tests/test_graph_serializer.cpp
     src/systems/GraphSerializer.cpp
     src/systems/GraphSystem.cpp
+    src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
     src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
@@ -387,11 +397,13 @@ add_executable(sdf3d_glsl_emitter_tests
     src/systems/glsl_emitter/GlslEmitterBooleanExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterFormatting.cpp
     src/systems/glsl_emitter/GlslEmitterMaterialExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterPrimitiveExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterSdfGeometry.cpp
     src/systems/glsl_emitter/GlslEmitterSdfHelpers.cpp
     src/systems/glsl_emitter/GlslEmitterSceneMaterial.cpp
     src/systems/GlslNodeNames.cpp
     src/systems/GraphSystem.cpp
+    src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
     src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
@@ -425,11 +437,13 @@ add_executable(sdf3d_compiler_system_tests
     src/systems/glsl_emitter/GlslEmitterBooleanExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterFormatting.cpp
     src/systems/glsl_emitter/GlslEmitterMaterialExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterPrimitiveExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterSdfGeometry.cpp
     src/systems/glsl_emitter/GlslEmitterSdfHelpers.cpp
     src/systems/glsl_emitter/GlslEmitterSceneMaterial.cpp
     src/systems/GlslNodeNames.cpp
     src/systems/GraphSystem.cpp
+    src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
     src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
@@ -460,6 +474,7 @@ add_executable(sdf3d_material_system_tests
     src/scene/SdfNodeDefinition.cpp
     src/systems/GlslNodeNames.cpp
     src/systems/GraphSystem.cpp
+    src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
     src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp

@@ -7,6 +7,7 @@
 - Do not advance beyond approved file.
 - Do not modify unapproved files.
 - Future multi-file UI modules should be physically grouped in subfolders, e.g. NodeEditor internals live under `src/ui/node_editor/` with internal headers under `include/sdf3d/ui/node_editor/`.
+- When splitting files, move code by real ownership/responsibility. Do not place unrelated functions in a nearby bucket file just because it compiles; e.g. primitive GLSL emission belongs in `GlslEmitterPrimitiveExpressions.cpp`, not material-expression files.
 
 ## Current State
 
@@ -51,7 +52,7 @@
 - Rotate graph nodes use hidden quaternion params `qx/qy/qz/qw` as runtime source of truth when present. `xDegrees/yDegrees/zDegrees` remain the visible UI adapter and compatibility fallback; UI Euler edits refresh the hidden quaternion.
 - Gizmo drags write graph params and set `EditorDirtyState::params`, causing `Viewport` to refresh `Renderer::setNodeParams(GraphSystem::collectNodeParams(...))` without `SceneDirtyEvent` or shader reload. Topology changes still recompile.
 - Scale and Rotate gizmos are oriented by the branch Rotate transform: `RenderGizmo::orientation` uploads to `uGizmoOrientation`; CPU scale hit-test/drag projection, CPU rotate ring hit-test/drag plane, and `raymarch_edit.frag` render path use the same rotated local axes. Translate gizmo remains world-axis.
-- `GraphSystem.cpp`, `TranslateGizmo.cpp`, and `raymarch_edit.frag` are over 600/500-line pressure; split before adding more large gizmo or graph logic.
+- `raymarch_edit.frag` is over 500-line pressure; split shader/edit helper logic before adding more large gizmo or render logic.
 
 ## Recent Approved Edits
 
