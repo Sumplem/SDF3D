@@ -30,10 +30,17 @@ add_executable(sdf3d
     src/systems/DiagnosticsSystem.cpp
     src/systems/GlslEmitter.cpp
     src/systems/glsl_emitter/GlslEmitterBooleanExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterDomainExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterDomainTransforms.cpp
+    src/systems/glsl_emitter/GlslEmitterDispatch.cpp
     src/systems/glsl_emitter/GlslEmitterFormatting.cpp
     src/systems/glsl_emitter/GlslEmitterMaterialExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterPrimitiveExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterSdfGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfPrimitiveGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfBooleanGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfDomainGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfMaterialGeometry.cpp
     src/systems/glsl_emitter/GlslEmitterSdfHelpers.cpp
     src/systems/glsl_emitter/GlslEmitterSceneMaterial.cpp
     src/systems/GlslNodeNames.cpp
@@ -96,10 +103,17 @@ add_executable(sdf3d_tests
     src/systems/CompilerSystem.cpp
     src/systems/GlslEmitter.cpp
     src/systems/glsl_emitter/GlslEmitterBooleanExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterDomainExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterDomainTransforms.cpp
+    src/systems/glsl_emitter/GlslEmitterDispatch.cpp
     src/systems/glsl_emitter/GlslEmitterFormatting.cpp
     src/systems/glsl_emitter/GlslEmitterMaterialExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterPrimitiveExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterSdfGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfPrimitiveGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfBooleanGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfDomainGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfMaterialGeometry.cpp
     src/systems/glsl_emitter/GlslEmitterSdfHelpers.cpp
     src/systems/glsl_emitter/GlslEmitterSceneMaterial.cpp
     src/systems/GlslNodeNames.cpp
@@ -167,10 +181,17 @@ add_executable(sdf3d_graph_compiler_tests
     src/systems/CompilerSystem.cpp
     src/systems/GlslEmitter.cpp
     src/systems/glsl_emitter/GlslEmitterBooleanExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterDomainExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterDomainTransforms.cpp
+    src/systems/glsl_emitter/GlslEmitterDispatch.cpp
     src/systems/glsl_emitter/GlslEmitterFormatting.cpp
     src/systems/glsl_emitter/GlslEmitterMaterialExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterPrimitiveExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterSdfGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfPrimitiveGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfBooleanGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfDomainGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfMaterialGeometry.cpp
     src/systems/glsl_emitter/GlslEmitterSdfHelpers.cpp
     src/systems/glsl_emitter/GlslEmitterSceneMaterial.cpp
     src/systems/GlslNodeNames.cpp
@@ -395,10 +416,17 @@ add_executable(sdf3d_glsl_emitter_tests
     src/scene/SdfNodeDefinition.cpp
     src/systems/GlslEmitter.cpp
     src/systems/glsl_emitter/GlslEmitterBooleanExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterDomainExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterDomainTransforms.cpp
+    src/systems/glsl_emitter/GlslEmitterDispatch.cpp
     src/systems/glsl_emitter/GlslEmitterFormatting.cpp
     src/systems/glsl_emitter/GlslEmitterMaterialExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterPrimitiveExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterSdfGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfPrimitiveGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfBooleanGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfDomainGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfMaterialGeometry.cpp
     src/systems/glsl_emitter/GlslEmitterSdfHelpers.cpp
     src/systems/glsl_emitter/GlslEmitterSceneMaterial.cpp
     src/systems/GlslNodeNames.cpp
@@ -435,10 +463,17 @@ add_executable(sdf3d_compiler_system_tests
     src/systems/CompilerSystem.cpp
     src/systems/GlslEmitter.cpp
     src/systems/glsl_emitter/GlslEmitterBooleanExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterDomainExpressions.cpp
+    src/systems/glsl_emitter/GlslEmitterDomainTransforms.cpp
+    src/systems/glsl_emitter/GlslEmitterDispatch.cpp
     src/systems/glsl_emitter/GlslEmitterFormatting.cpp
     src/systems/glsl_emitter/GlslEmitterMaterialExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterPrimitiveExpressions.cpp
     src/systems/glsl_emitter/GlslEmitterSdfGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfPrimitiveGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfBooleanGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfDomainGeometry.cpp
+    src/systems/glsl_emitter/GlslEmitterSdfMaterialGeometry.cpp
     src/systems/glsl_emitter/GlslEmitterSdfHelpers.cpp
     src/systems/glsl_emitter/GlslEmitterSceneMaterial.cpp
     src/systems/GlslNodeNames.cpp
