@@ -71,4 +71,4 @@ GlslEmitter consolidation — priority 1. Reorganizing 9 current files into 8 fi
 
 ## Next
 
-Begin GlslEmitter consolidation: read all 9 current glsl_emitter files, map every function to its target file in the 8-file structure, show full mapping table, wait for approval before touching any file.
+Begin GlslEmitter consolidation: read all current glsl_emitter files, map every function to its target file in the 8-file structure, show full mapping table, wait for approval before touching any file.
