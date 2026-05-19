@@ -18,6 +18,7 @@ add_executable(sdf3d
     src/core/ResourceManager.cpp
     src/math/Math.cpp
     src/renderer/FboRenderer.cpp
+    src/renderer/PathTraceAccumulation.cpp
     src/renderer/Renderer.cpp
     src/renderer/ShaderManager.cpp
     src/renderer/UniformUploader.cpp
@@ -240,6 +241,29 @@ if(MSVC)
     target_compile_options(sdf3d_fbo_renderer_tests PRIVATE /W4)
 else()
     target_compile_options(sdf3d_fbo_renderer_tests PRIVATE -Wall -Wextra)
+endif()
+
+add_executable(sdf3d_path_trace_accumulation_tests
+    tests/test_path_trace_accumulation.cpp
+    src/renderer/FboRenderer.cpp
+    src/renderer/PathTraceAccumulation.cpp
+)
+
+target_compile_features(sdf3d_path_trace_accumulation_tests PRIVATE cxx_std_17)
+
+target_include_directories(sdf3d_path_trace_accumulation_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(sdf3d_path_trace_accumulation_tests PRIVATE
+    glad_gl_core_46
+    glm::glm
+)
+
+if(MSVC)
+    target_compile_options(sdf3d_path_trace_accumulation_tests PRIVATE /W4)
+else()
+    target_compile_options(sdf3d_path_trace_accumulation_tests PRIVATE -Wall -Wextra)
 endif()
 
 add_executable(sdf3d_shader_manager_tests

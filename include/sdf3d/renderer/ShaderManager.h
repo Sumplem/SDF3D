@@ -29,6 +29,9 @@ public:
     /// Returns the scene-only linked OpenGL program, loading it on demand.
     unsigned int sceneProgram();
 
+    /// Returns the path-tracing linked OpenGL program, loading it on demand.
+    unsigned int pathTraceProgram();
+
     /// Returns the latest shader compile/link/reload error, or empty on success.
     const std::string& lastError() const;
 
@@ -43,8 +46,10 @@ private:
     std::filesystem::path m_vertexShaderPath;
     std::filesystem::path m_editFragmentShaderPath;
     std::filesystem::path m_sceneFragmentShaderPath;
+    std::filesystem::path m_pathTraceFragmentShaderPath;
     unsigned int m_editProgram = 0;
     unsigned int m_sceneProgram = 0;
+    unsigned int m_pathTraceProgram = 0;
     std::string m_lastSceneGlsl;
     std::string m_lastError;
 };

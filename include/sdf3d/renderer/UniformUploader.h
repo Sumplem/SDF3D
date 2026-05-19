@@ -16,6 +16,11 @@ enum class RenderQuality {
     High = 2,
 };
 
+enum class RenderMode {
+    DirectPreview = 0,
+    ProgressivePathTrace = 1,
+};
+
 enum class GizmoRotateStyle {
     Rings = 0,
     AxisArcs = 1,

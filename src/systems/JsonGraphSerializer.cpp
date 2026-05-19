@@ -1,5 +1,6 @@
 #include "sdf3d/systems/JsonGraphSerializer.h"
 
+#include "sdf3d/scene/SdfNodeTraits.h"
 #include "sdf3d/systems/GraphSystem.h"
 
 #include "json_graph_serializer/JsonGraphSerializerConversions.h"
@@ -112,6 +113,14 @@ bool JsonGraphSerializer::load(SdfGraph& graph, const std::filesystem::path& pat
         std::unordered_map<SdfGraphNodeId, SdfGraphNode> nodes;
         for (const json& nodeValue : root.at("nodes")) {
             SdfGraphNode node = json_graph_serializer::nodeFromJson(nodeValue);
+            if (isSdfMaterialNode(node.payload.type)) {
+                node.payload.material.type = node.payload.type == SdfNodeType::CheckerMaterial ? SdfMaterialType::Checker : SdfMaterialType::Solid;
+                if (node.payload.materialId == 0 || materials.material(node.payload.materialId) == nullptr) {
+                    node.payload.materialId = materials.createMaterial(node.payload.name.empty() ? "Material" : node.payload.name, node.payload.material);
+                } else if (const MaterialDefinition* material = materials.material(node.payload.materialId)) {
+                    node.payload.material = material->material;
+                }
+            }
             if (node.payload.type == SdfNodeType::MaterialOverride) {
                 if (node.payload.materialId == 0 || materials.material(node.payload.materialId) == nullptr) {
                     node.payload.materialId = materials.createMaterial(node.payload.name.empty() ? "Material" : node.payload.name, node.payload.material);

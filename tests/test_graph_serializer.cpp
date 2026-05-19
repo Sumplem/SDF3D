@@ -157,6 +157,48 @@ void testJsonGraphMigratesInlineMaterial(std::vector<TestFailure>& failures)
     std::filesystem::remove(path);
 }
 
+void testJsonGraphMigratesSourceMaterialNode(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "json graph migrates source material node";
+    const std::filesystem::path path = testPath("sdf3d_graph_source_material_no_registry.json");
+    {
+        std::ofstream output(path);
+        output
+            << "{\n"
+            << "  \"schema\": \"sdf3d.graph\",\n"
+            << "  \"version\": 1,\n"
+            << "  \"nextId\": 3,\n"
+            << "  \"outputNode\": 1,\n"
+            << "  \"selection\": {\"primary\": 2, \"nodes\": [2]},\n"
+            << "  \"nodes\": [\n"
+            << "    {\"id\": 1, \"type\": \"Output\", \"stableId\": 0, \"name\": \"Output\", \"editor\": {\"x\": 0, \"y\": 0, \"propertiesCollapsed\": false}, \"parameters\": {}, \"material\": {\"albedo\": [0.8, 0.8, 0.8], \"roughness\": 0.5, \"metallic\": 0.0, \"emission\": 0.0}, \"inputs\": [{\"name\": \"surface\", \"type\": \"Sdf\", \"direction\": \"Input\", \"multiInput\": false}], \"outputs\": []},\n"
+            << "    {\"id\": 2, \"type\": \"CheckerMaterial\", \"stableId\": 0, \"name\": \"Loose Paint\", \"materialId\": 0, \"editor\": {\"x\": 10, \"y\": 20, \"propertiesCollapsed\": false}, \"parameters\": {}, \"material\": {\"type\": 1, \"albedo\": [0.1, 0.2, 0.3], \"secondaryAlbedo\": [0.7, 0.8, 0.9], \"roughness\": 0.4, \"metallic\": 0.5, \"emission\": 0.6, \"patternScale\": 12.0}, \"inputs\": [], \"outputs\": [{\"name\": \"material\", \"type\": \"Material\", \"direction\": \"Output\", \"multiInput\": false}]}\n"
+            << "  ],\n"
+            << "  \"links\": []\n"
+            << "}\n";
+    }
+
+    sdf3d::SdfGraph graph;
+    sdf3d::JsonGraphSerializer serializer;
+    expect(serializer.load(graph, path), testName, "Expected source material load success: " + serializer.lastError(), failures);
+
+    const sdf3d::SdfGraphNode* materialNode = graph.node(2);
+    expect(materialNode != nullptr, testName, "Expected migrated source material node.", failures);
+    expect(materialNode != nullptr && materialNode->payload.materialId != 0, testName, "Expected migrated source material id.", failures);
+    if (materialNode != nullptr) {
+        const sdf3d::MaterialDefinition* definition = graph.materials().material(materialNode->payload.materialId);
+        expect(definition != nullptr, testName, "Expected migrated source registry material.", failures);
+        if (definition != nullptr) {
+            expect(definition->name == "Loose Paint", testName, "Expected source material name.", failures);
+            expect(definition->material.type == sdf3d::SdfMaterialType::Checker, testName, "Expected checker material type.", failures);
+            expect(definition->material.secondaryAlbedo.y == 0.8f, testName, "Expected checker secondary color.", failures);
+            expect(definition->material.patternScale == 12.0f, testName, "Expected checker pattern scale.", failures);
+        }
+    }
+
+    std::filesystem::remove(path);
+}
+
 void testJsonGraphLoadFailureKeepsGraph(std::vector<TestFailure>& failures)
 {
     const std::string testName = "json graph load failure keeps graph";
@@ -186,6 +228,7 @@ int main()
 
     testJsonGraphRoundTrip(failures);
     testJsonGraphMigratesInlineMaterial(failures);
+    testJsonGraphMigratesSourceMaterialNode(failures);
     testJsonGraphLoadFailureKeepsGraph(failures);
 
     if (!failures.empty()) {

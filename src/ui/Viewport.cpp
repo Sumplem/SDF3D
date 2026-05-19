@@ -83,6 +83,7 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SceneGraph& sceneGraph)
     gizmo.highlightNodeId = static_cast<int>(GraphSystem::highlightNodeForSelection(sceneGraph.graph()));
     renderer.setGizmo(gizmo);
     renderer.setQuality(m_quality);
+    renderer.setRenderMode(m_renderMode);
 
     renderer.resize(width, height);
     renderer.render(renderCamera);
@@ -100,6 +101,13 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SceneGraph& sceneGraph)
     const char* qualityLabels[] = {"Low", "Medium", "High"};
     if (ImGui::Combo("Quality", &quality, qualityLabels, 3)) {
         m_quality = static_cast<RenderQuality>(quality);
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(136.0f);
+    int renderMode = static_cast<int>(m_renderMode);
+    const char* modeLabels[] = {"Direct", "Path Trace"};
+    if (ImGui::Combo("Mode", &renderMode, modeLabels, 2)) {
+        m_renderMode = static_cast<RenderMode>(renderMode);
     }
 
     if (imageHovered

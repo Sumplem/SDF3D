@@ -17,13 +17,17 @@
 - MaterialRegistry owns reusable graph materials; SolidMaterial/CheckerMaterial nodes hold stable `materialId`
 - MaterialOverride consumes `sdf` + `material`; it applies material nodes to geometry and keeps inline fallback only for legacy files
 - Procedural materials support SolidMaterial and CheckerMaterial; material SSBO packs type, secondary color, and pattern scale
+- JSON load repairs legacy or partial source material nodes by creating missing MaterialRegistry entries
 - Material SSBO binding=0; node param SSBO binding=1; no material cap
+- M6 path-tracing infrastructure exists: `RenderMode`, lazy `raymarch_pathtrace.frag`, HDR `PathTraceAccumulation`, sample reset keys
+- Path trace mode is an explicit viewport toggle; edit gizmo/highlight forces direct preview so editing handles stay visible
+- Current path-trace shader is direct-light accumulation stub only; real stochastic bounces/BRDF sampling not landed yet
 - Cook-Torrance GGX; soft shadows; AO; `NORMAL_EPSILON = 0.00035`
 - Save/load JSON; `GraphSerializer` interface; `JsonGraphSerializer`; nlohmann/json pinned
 - Phase 2 ops complete: Repeat axis toggles, Twist/Bend axis combo, warp correction, material-space transform mirror
 - Node inline property widgets scale font/style with canvas zoom
 - Parameter visibility lives in `SdfNodeDefinition` metadata; UI must not hardcode hidden rotate params
-- Build/tests: material split focused suite and app build pass; GUI smoke last known pass
+- Build/tests: full Debug build pass; all test executables pass; GUI smoke pass
 
 ## Active
 
@@ -48,6 +52,7 @@ Material split complete: SolidMaterial and CheckerMaterial are separate material
 - 2026-05 - MaterialRegistry is graph-owned; MaterialOverride stores stable `materialId`; renderer still receives packed compile-time material slots
 - 2026-05 - Procedural material data stays in `SdfMaterial`; shader samples checker from world-space `p` through `sampleMaterial(materialId, p)`
 - 2026-05 - Material source nodes are separate from MaterialOverride; SolidMaterial/CheckerMaterial output `material`, MaterialOverride consumes `sdf` + `material`
+- 2026-05 - Progressive path tracing starts as renderer-only infrastructure: no compiler/material-system ownership, reset accumulation on camera/scene/material/node-param/quality/mode changes
 
 ## Constraints
 
@@ -57,6 +62,8 @@ Material split complete: SolidMaterial and CheckerMaterial are separate material
 - Never swap to raymarch_scene.frag on deselect because swap only for explicit render/export
 - Always preserve canonical branch order Scale -> Rotate -> Translate in ensure-wrapper logic
 - Never normalize quaternion in shader because CPU normalizes before SSBO upload
+- Keep path-tracing work renderer/shader-owned; do not add GI behavior to compiler or MaterialSystem
+- Do not hide edit gizmos/highlight for path tracing; direct preview wins while editing overlays are active
 - Never split files unilaterally because user approval is required
 - Never add new GlslEmitter features until consolidation to 8-file structure is complete
 - Do not split tests/test_sdf_graph.cpp because user declined

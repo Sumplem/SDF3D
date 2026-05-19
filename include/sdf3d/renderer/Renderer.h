@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sdf3d/renderer/FboRenderer.h"
+#include "sdf3d/renderer/PathTraceAccumulation.h"
 #include "sdf3d/renderer/ShaderManager.h"
 #include "sdf3d/renderer/UniformUploader.h"
 #include "sdf3d/scene/SdfCompiler.h"
@@ -38,6 +39,9 @@ public:
     /// Stores editor quality for the next render.
     void setQuality(RenderQuality quality);
 
+    /// Stores render mode for the next render.
+    void setRenderMode(RenderMode mode);
+
     /// Rebuilds the fragment shader after replacing the sceneSDF injection block.
     bool reloadScene(const std::string& sceneGlsl);
 
@@ -55,10 +59,15 @@ public:
 
 private:
     FboRenderer m_fboRenderer;
+    PathTraceAccumulation m_pathTraceAccumulation;
     ShaderManager m_shaderManager;
     UniformUploader m_uniformUploader;
     RenderGizmo m_gizmo;
     RenderQuality m_quality = RenderQuality::High;
+    RenderMode m_renderMode = RenderMode::DirectPreview;
+    uint64_t m_sceneRevision = 0;
+    uint64_t m_materialRevision = 0;
+    uint64_t m_nodeParamRevision = 0;
     // AGENT: Renderer stores compiler-owned material order so every render can
     // re-upload uniforms after program relink without scene graph traversal.
     std::vector<SdfCompiledMaterial> m_materials;

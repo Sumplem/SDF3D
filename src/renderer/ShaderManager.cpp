@@ -59,6 +59,7 @@ bool ShaderManager::init(const std::filesystem::path& shaderRoot)
     m_vertexShaderPath = shaderRoot / "raymarch.vert";
     m_editFragmentShaderPath = shaderRoot / "raymarch_edit.frag";
     m_sceneFragmentShaderPath = shaderRoot / "raymarch.frag";
+    m_pathTraceFragmentShaderPath = shaderRoot / "raymarch_pathtrace.frag";
     return loadProgram(m_vertexShaderPath, m_editFragmentShaderPath, m_editProgram);
 }
 
@@ -71,6 +72,10 @@ void ShaderManager::shutdown()
     if (m_sceneProgram != 0) {
         glDeleteProgram(m_sceneProgram);
         m_sceneProgram = 0;
+    }
+    if (m_pathTraceProgram != 0) {
+        glDeleteProgram(m_pathTraceProgram);
+        m_pathTraceProgram = 0;
     }
 }
 
@@ -96,7 +101,19 @@ bool ShaderManager::reloadScene(const std::string& sceneGlsl)
             std::cerr << "[SDF3D][ShaderManager] " << m_lastError << '\n';
             return false;
         }
-        return loadProgramFromSources(vertexSource, sceneFragmentSource, m_sceneProgram);
+        if (!loadProgramFromSources(vertexSource, sceneFragmentSource, m_sceneProgram)) {
+            return false;
+        }
+    }
+
+    if (m_pathTraceProgram != 0) {
+        const std::string pathTraceFragmentSource = fragmentSourceWithScene(m_pathTraceFragmentShaderPath, sceneGlsl);
+        if (pathTraceFragmentSource.empty()) {
+            m_lastError = "Failed to reload path-tracing shader source.";
+            std::cerr << "[SDF3D][ShaderManager] " << m_lastError << '\n';
+            return false;
+        }
+        return loadProgramFromSources(vertexSource, pathTraceFragmentSource, m_pathTraceProgram);
     }
 
     return true;
@@ -124,6 +141,25 @@ unsigned int ShaderManager::sceneProgram()
     }
 
     return loadProgramFromSources(vertexSource, fragmentSource, m_sceneProgram) ? m_sceneProgram : 0;
+}
+
+unsigned int ShaderManager::pathTraceProgram()
+{
+    if (m_pathTraceProgram != 0) {
+        return m_pathTraceProgram;
+    }
+
+    const std::string vertexSource = readTextFile(m_vertexShaderPath);
+    const std::string fragmentSource = m_lastSceneGlsl.empty()
+        ? readTextFile(m_pathTraceFragmentShaderPath)
+        : fragmentSourceWithScene(m_pathTraceFragmentShaderPath, m_lastSceneGlsl);
+    if (vertexSource.empty() || fragmentSource.empty()) {
+        m_lastError = "Failed to load path-tracing shader sources.";
+        std::cerr << "[SDF3D][ShaderManager] " << m_lastError << '\n';
+        return 0;
+    }
+
+    return loadProgramFromSources(vertexSource, fragmentSource, m_pathTraceProgram) ? m_pathTraceProgram : 0;
 }
 
 const std::string& ShaderManager::lastError() const

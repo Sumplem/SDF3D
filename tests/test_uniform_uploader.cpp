@@ -99,6 +99,14 @@ void testRenderQualityValues(std::vector<TestFailure>& failures)
     expect(static_cast<int>(sdf3d::RenderQuality::High) == 2, testName, "Expected high quality uniform value.", failures);
 }
 
+void testRenderModeValues(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "render mode values";
+
+    expect(static_cast<int>(sdf3d::RenderMode::DirectPreview) == 0, testName, "Expected direct preview uniform value.", failures);
+    expect(static_cast<int>(sdf3d::RenderMode::ProgressivePathTrace) == 1, testName, "Expected path trace uniform value.", failures);
+}
+
 } // namespace
 
 int main()
@@ -110,6 +118,7 @@ int main()
     testPackedNodeParamLayout(failures);
     testRenderGizmoDefaults(failures);
     testRenderQualityValues(failures);
+    testRenderModeValues(failures);
 
     if (!failures.empty()) {
         for (const TestFailure& failure : failures) {

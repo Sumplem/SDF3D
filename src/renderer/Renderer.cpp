@@ -15,6 +15,7 @@ Renderer::~Renderer()
 bool Renderer::init(const std::filesystem::path& shaderRoot)
 {
     m_fboRenderer.init();
+    m_pathTraceAccumulation.init();
     m_uniformUploader.init();
 
     // AGENT: Shader files stay in assets so runtime asset loading and later
@@ -25,6 +26,7 @@ bool Renderer::init(const std::filesystem::path& shaderRoot)
 void Renderer::shutdown()
 {
     m_uniformUploader.shutdown();
+    m_pathTraceAccumulation.shutdown();
     m_fboRenderer.shutdown();
     m_shaderManager.shutdown();
 }
@@ -36,7 +38,10 @@ void Renderer::resize(int width, int height)
 
 void Renderer::render(const RenderCamera& camera)
 {
-    const GLuint program = m_shaderManager.program();
+    const bool progressive = m_renderMode == RenderMode::ProgressivePathTrace
+        && !m_gizmo.visible
+        && m_gizmo.highlightNodeId == 0;
+    const GLuint program = progressive ? m_shaderManager.pathTraceProgram() : m_shaderManager.program();
     if (program == 0 || !m_fboRenderer.begin()) {
         return;
     }
@@ -44,8 +49,34 @@ void Renderer::render(const RenderCamera& camera)
     glUseProgram(program);
 
     m_uniformUploader.upload(program, m_fboRenderer.width(), m_fboRenderer.height(), camera, m_gizmo, m_quality, m_materials, m_nodeParams);
+    bool pathTraceFrameReady = false;
+    if (progressive) {
+        const PathTraceFrameKey key{
+            m_fboRenderer.width(),
+            m_fboRenderer.height(),
+            camera,
+            m_quality,
+            m_renderMode,
+            m_sceneRevision,
+            m_materialRevision,
+            m_nodeParamRevision,
+        };
+        if (m_pathTraceAccumulation.prepareFrame(key)) {
+            pathTraceFrameReady = true;
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, m_pathTraceAccumulation.accumulationTexture());
+            glUniform1i(glGetUniformLocation(program, "uPathTraceAccumulation"), 0);
+            glUniform1ui(glGetUniformLocation(program, "uPathTraceSampleIndex"), m_pathTraceAccumulation.sampleCount());
+        }
+    }
 
     m_fboRenderer.drawFullscreenTriangle();
+    if (pathTraceFrameReady) {
+        glBindTexture(GL_TEXTURE_2D, m_pathTraceAccumulation.accumulationTexture());
+        glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, m_fboRenderer.width(), m_fboRenderer.height());
+        m_pathTraceAccumulation.markSampleRendered();
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
 
     glUseProgram(0);
     m_fboRenderer.end();
@@ -53,7 +84,12 @@ void Renderer::render(const RenderCamera& camera)
 
 bool Renderer::reloadScene(const std::string& sceneGlsl)
 {
-    return m_shaderManager.reloadScene(sceneGlsl);
+    const bool reloaded = m_shaderManager.reloadScene(sceneGlsl);
+    if (reloaded) {
+        ++m_sceneRevision;
+        m_pathTraceAccumulation.reset();
+    }
+    return reloaded;
 }
 
 void Renderer::setGizmo(const RenderGizmo& gizmo)
@@ -63,17 +99,32 @@ void Renderer::setGizmo(const RenderGizmo& gizmo)
 
 void Renderer::setQuality(RenderQuality quality)
 {
+    if (m_quality != quality) {
+        m_pathTraceAccumulation.reset();
+    }
     m_quality = quality;
+}
+
+void Renderer::setRenderMode(RenderMode mode)
+{
+    if (m_renderMode != mode) {
+        m_pathTraceAccumulation.reset();
+    }
+    m_renderMode = mode;
 }
 
 void Renderer::setMaterials(std::vector<SdfCompiledMaterial> materials)
 {
     m_materials = std::move(materials);
+    ++m_materialRevision;
+    m_pathTraceAccumulation.reset();
 }
 
 void Renderer::setNodeParams(std::vector<SdfCompiledNodeParam> nodeParams)
 {
     m_nodeParams = std::move(nodeParams);
+    ++m_nodeParamRevision;
+    m_pathTraceAccumulation.reset();
 }
 
 const std::string& Renderer::lastError() const
