@@ -47,6 +47,10 @@ std::string glslNodeTypeName(SdfNodeType type)
         return "Twist";
     case SdfNodeType::Bend:
         return "Bend";
+    case SdfNodeType::SolidMaterial:
+        return "SolidMaterial";
+    case SdfNodeType::CheckerMaterial:
+        return "CheckerMaterial";
     case SdfNodeType::MaterialOverride:
         return "MaterialOverride";
     case SdfNodeType::Output:

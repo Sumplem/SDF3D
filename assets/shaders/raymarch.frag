@@ -11,7 +11,8 @@ uniform int uMaterialCount;
 
 struct GpuMaterial {
     vec4 albedoRoughness;
-    vec4 metallicEmission;
+    vec4 metallicEmissionType;
+    vec4 secondaryAlbedoScale;
 };
 
 layout(std430, binding = 0) readonly buffer MaterialBuffer {
@@ -37,7 +38,7 @@ struct SdfMaterialSample {
     float emission;
 };
 
-SdfMaterialSample sampleMaterial(int materialId)
+SdfMaterialSample sampleMaterial(int materialId, vec3 p)
 {
     SdfMaterialSample material;
     if (materialId < 0 || materialId >= uMaterialCount) {
@@ -50,9 +51,15 @@ SdfMaterialSample sampleMaterial(int materialId)
 
     GpuMaterial gpuMaterial = uMaterials[materialId];
     material.albedo = gpuMaterial.albedoRoughness.rgb;
+    if (int(gpuMaterial.metallicEmissionType.z + 0.5) == 1) {
+        float scale = max(gpuMaterial.secondaryAlbedoScale.w, 0.0001);
+        vec3 cell = floor(p * scale);
+        float checker = mod(cell.x + cell.y + cell.z, 2.0);
+        material.albedo = mix(gpuMaterial.albedoRoughness.rgb, gpuMaterial.secondaryAlbedoScale.rgb, checker);
+    }
     material.roughness = clamp(gpuMaterial.albedoRoughness.a, 0.02, 1.0);
-    material.metallic = clamp(gpuMaterial.metallicEmission.x, 0.0, 1.0);
-    material.emission = gpuMaterial.metallicEmission.y;
+    material.metallic = clamp(gpuMaterial.metallicEmissionType.x, 0.0, 1.0);
+    material.emission = gpuMaterial.metallicEmissionType.y;
     return material;
 }
 
@@ -85,7 +92,7 @@ float sceneSDF(vec3 p)
 
 SdfMaterialSample sceneMaterial(vec3 p)
 {
-    return sampleMaterial(0);
+    return sampleMaterial(0, p);
 }
 // SDF3D_SCENE_END
 

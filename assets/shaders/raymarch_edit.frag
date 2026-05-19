@@ -19,12 +19,14 @@ uniform float uGizmoTube;
 uniform int uGizmoActiveAxis;
 uniform int uGizmoHoverAxis;
 uniform int uGizmoType;
+uniform int uGizmoRotateStyle;
 uniform int uHighlightNodeId;
 uniform int uRenderQuality;
 
 struct GpuMaterial {
     vec4 albedoRoughness;
-    vec4 metallicEmission;
+    vec4 metallicEmissionType;
+    vec4 secondaryAlbedoScale;
 };
 
 layout(std430, binding = 0) readonly buffer MaterialBuffer {
@@ -46,6 +48,8 @@ const int GIZMO_AXIS_NONE = -1;
 const int GIZMO_TYPE_TRANSLATE = 0;
 const int GIZMO_TYPE_ROTATE = 1;
 const int GIZMO_TYPE_SCALE = 2;
+const int GIZMO_ROTATE_STYLE_RINGS = 0;
+const int GIZMO_ROTATE_STYLE_AXIS_ARCS = 1;
 const int QUALITY_LOW = 0;
 const int QUALITY_MEDIUM = 1;
 const int QUALITY_HIGH = 2;
@@ -57,7 +61,7 @@ struct SdfMaterialSample {
     float emission;
 };
 
-SdfMaterialSample sampleMaterial(int materialId)
+SdfMaterialSample sampleMaterial(int materialId, vec3 p)
 {
     SdfMaterialSample material;
     if (materialId < 0 || materialId >= uMaterialCount) {
@@ -70,9 +74,15 @@ SdfMaterialSample sampleMaterial(int materialId)
 
     GpuMaterial gpuMaterial = uMaterials[materialId];
     material.albedo = gpuMaterial.albedoRoughness.rgb;
+    if (int(gpuMaterial.metallicEmissionType.z + 0.5) == 1) {
+        float scale = max(gpuMaterial.secondaryAlbedoScale.w, 0.0001);
+        vec3 cell = floor(p * scale);
+        float checker = mod(cell.x + cell.y + cell.z, 2.0);
+        material.albedo = mix(gpuMaterial.albedoRoughness.rgb, gpuMaterial.secondaryAlbedoScale.rgb, checker);
+    }
     material.roughness = clamp(gpuMaterial.albedoRoughness.a, 0.02, 1.0);
-    material.metallic = clamp(gpuMaterial.metallicEmission.x, 0.0, 1.0);
-    material.emission = gpuMaterial.metallicEmission.y;
+    material.metallic = clamp(gpuMaterial.metallicEmissionType.x, 0.0, 1.0);
+    material.emission = gpuMaterial.metallicEmissionType.y;
     return material;
 }
 
@@ -138,7 +148,7 @@ float sceneSDF(vec3 p)
 
 SdfMaterialSample sceneMaterial(vec3 p)
 {
-    return sampleMaterial(0);
+    return sampleMaterial(0, p);
 }
 
 float sceneNodeSDF(int nodeId, vec3 p)
@@ -203,6 +213,10 @@ float rotateGizmoSDF(vec3 p, out int axis)
     float xDistance = sdTorus(local.yxz, torus);
     float yDistance = sdTorus(local, torus);
     float zDistance = sdTorus(local.xzy, torus);
+    if (uGizmoRotateStyle == GIZMO_ROTATE_STYLE_AXIS_ARCS) {
+        // STUB: AxisArcs currently uses ring SDF until arc sector clipping is implemented.
+        return nearestAxisDistance(xDistance, yDistance, zDistance, axis);
+    }
     return nearestAxisDistance(xDistance, yDistance, zDistance, axis);
 }
 

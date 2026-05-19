@@ -16,27 +16,32 @@ float layoutZoom(const GraphNodeLayout& layout)
 
 bool wrapInMaterialOverride(SdfGraph& graph, const GraphNodeLayout& layout)
 {
-    const SdfGraphNodeId materialNode = graph.createNode(SdfNodeType::MaterialOverride);
-    SdfGraphNode* material = graph.node(materialNode);
-    if (material == nullptr) {
+    const SdfGraphNodeId materialValueNode = graph.createNode(SdfNodeType::SolidMaterial);
+    const SdfGraphNodeId overrideNode = graph.createNode(SdfNodeType::MaterialOverride);
+    SdfGraphNode* material = graph.node(materialValueNode);
+    SdfGraphNode* override = graph.node(overrideNode);
+    if (material == nullptr || override == nullptr) {
         return false;
     }
 
     material->editorX = layout.node->editorX + NODE_WIDTH + 40.0f;
     material->editorY = layout.node->editorY;
+    override->editorX = material->editorX + NODE_WIDTH + 40.0f;
+    override->editorY = layout.node->editorY;
 
     const std::vector<SdfGraphLink> oldLinks = graph.links();
     for (const SdfGraphLink& link : oldLinks) {
         if (link.fromNode == layout.id && link.fromSocket == "sdf") {
             graph.unlink(link.fromNode, link.fromSocket, link.toNode, link.toSocket);
-            graph.link(materialNode, "sdf", link.toNode, link.toSocket);
+            graph.link(overrideNode, "sdf", link.toNode, link.toSocket);
         }
     }
 
     // AGENT: Wrap keeps existing downstream links, then inserts material tag
     // between primitive geometry and all consumers.
-    graph.link(layout.id, "sdf", materialNode, "sdf");
-    graph.setSelectedNode(materialNode);
+    graph.link(layout.id, "sdf", overrideNode, "sdf");
+    graph.link(materialValueNode, "material", overrideNode, "material");
+    graph.setSelectedNode(overrideNode);
     return true;
 }
 

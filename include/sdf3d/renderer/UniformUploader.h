@@ -16,6 +16,11 @@ enum class RenderQuality {
     High = 2,
 };
 
+enum class GizmoRotateStyle {
+    Rings = 0,
+    AxisArcs = 1,
+};
+
 /// Camera values needed by the raymarch shader.
 struct RenderCamera {
     glm::vec3 position = {0.0f, 0.0f, 4.0f};
@@ -36,6 +41,7 @@ struct RenderGizmo {
     int activeAxis = -1;
     int hoverAxis = -1;
     int type = 0;
+    GizmoRotateStyle rotateStyle = GizmoRotateStyle::Rings;
     int highlightNodeId = 0;
 };
 
@@ -44,7 +50,8 @@ class UniformUploader {
 public:
     struct GpuMaterial {
         glm::vec4 albedoRoughness = {0.8f, 0.8f, 0.8f, 0.5f};
-        glm::vec4 metallicEmission = {0.0f, 0.0f, 0.0f, 0.0f};
+        glm::vec4 metallicEmissionType = {0.0f, 0.0f, 0.0f, 0.0f};
+        glm::vec4 secondaryAlbedoScale = {0.08f, 0.08f, 0.08f, 4.0f};
     };
 
     struct GpuNodeParam {

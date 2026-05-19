@@ -161,15 +161,24 @@ void testCollectNodeParamsPacksTransformValues(std::vector<TestFailure>& failure
     if (sdf3d::SdfGraphNode* node = graph.node(rotate)) {
         sdf3d::storeRotationQuaternion(node->payload, {0.0f, 0.0f, 0.70710677f, 0.70710677f});
     }
+    const sdf3d::SdfGraphNodeId scale = graph.createNode(sdf3d::SdfNodeType::Scale, "Scale");
+    if (sdf3d::SdfGraphNode* node = graph.node(scale)) {
+        node->payload.parameters["x"] = 2.0f;
+        node->payload.parameters["y"] = 3.0f;
+        node->payload.parameters["z"] = 4.0f;
+    }
 
     const std::vector<sdf3d::SdfCompiledNodeParam> params = sdf3d::GraphSystem::collectNodeParams(graph);
 
-    expect(params.size() == 2, testName, "Expected two transform param entries.", failures);
+    expect(params.size() == 3, testName, "Expected three transform param entries.", failures);
     const auto translateIt = std::find_if(params.begin(), params.end(), [translate](const sdf3d::SdfCompiledNodeParam& param) {
         return param.nodeId == translate;
     });
     const auto rotateIt = std::find_if(params.begin(), params.end(), [rotate](const sdf3d::SdfCompiledNodeParam& param) {
         return param.nodeId == rotate;
+    });
+    const auto scaleIt = std::find_if(params.begin(), params.end(), [scale](const sdf3d::SdfCompiledNodeParam& param) {
+        return param.nodeId == scale;
     });
     if (translateIt != params.end()) {
         expect(translateIt->data0[0] == 1.0f, testName, "Expected x packed.", failures);
@@ -185,6 +194,14 @@ void testCollectNodeParamsPacksTransformValues(std::vector<TestFailure>& failure
         expect(rotateIt->data0[3] > 0.7f && rotateIt->data0[3] < 0.71f, testName, "Expected qw packed.", failures);
     } else {
         expect(false, testName, "Expected rotate node id packed.", failures);
+    }
+    if (scaleIt != params.end()) {
+        expect(scaleIt->data0[0] == 2.0f, testName, "Expected scale x packed.", failures);
+        expect(scaleIt->data0[1] == 3.0f, testName, "Expected scale y packed.", failures);
+        expect(scaleIt->data0[2] == 4.0f, testName, "Expected scale z packed.", failures);
+        expect(scaleIt->data0[3] == 2.0f, testName, "Expected scale min axis packed.", failures);
+    } else {
+        expect(false, testName, "Expected scale node id packed.", failures);
     }
 }
 

@@ -2,77 +2,75 @@
 
 ## State
 
-- Edit shader `raymarch_edit.frag` active always during editing · `raymarch_scene.frag` for export only
-- Viewport picking: `GraphSystem::pickNodeByRay()` per boolean branch · returns nearest branch transform
-- Selection highlight: `uHighlightNodeId` + `sceneNodeSDF(int nodeId, vec3 p)` · smooth distance band
-- Translate/Rotate/Scale gizmos live · oriented by branch Rotate · runtime param SSBO binding=1 · drag = no recompile
-- Rotate: hidden `qx/qy/qz/qw` quaternion · Euler degrees = UI adapter only
-- Quaternion rotate helper assumes normalized CPU input · shader has no `normalize(q)` · products precomputed in GLSL
-- Canonical branch order: Scale → Rotate → Translate · ensure-wrapper reuses existing nodes in chain
-- `SdfNodeTraits.h` centralizes node taxonomy · replaces all duplicated predicates
-- `GraphSystemTransforms.cpp` owns transform wrapper logic · `GraphSystem.cpp` owns CRUD + param collection
-- `GlslEmitter` consolidated to 8 files by engineering concern: dispatch · primitives · booleans · domain · materials · scene assembly · math · formatting
-- Material SSBO binding=0 · node param SSBO binding=1 · no material cap
-- Cook-Torrance GGX · soft shadows · AO · `NORMAL_EPSILON = 0.00035`
-- Save/load JSON · `GraphSerializer` interface · `JsonGraphSerializer` · nlohmann/json pinned
-- Phase 2 ops: Repeat · Mirror · Twist · Bend (artifacts + axis config pending)
-- Auto layout: graph-traversal · parent-row-ordered · centered columns · empty slot preservation
+- Edit shader `raymarch_edit.frag` active always during editing; `raymarch_scene.frag` for export only
+- Viewport picking: `GraphSystem::pickNodeByRay()` per boolean branch; returns nearest branch transform
+- Selection highlight: `uHighlightNodeId` + `sceneNodeSDF(int nodeId, vec3 p)`; smooth distance band
+- Translate/Rotate/Scale gizmos live; Rotate has `GizmoRotateStyle` with AxisArcs selectable stub falling back to rings
+- Scale gizmo uses edit-shader box SDF, CPU SDF hit-test, canonical Scale wrapper insertion, and runtime SSBO scale params
+- Translate gizmo uses edit-shader SDF capsules + CPU SDF raymarch hit-test; no GL lines/draw calls
+- Rotate: hidden `qx/qy/qz/qw` quaternion; Euler degrees = UI adapter only
+- Quaternion rotate helper assumes normalized CPU input; shader has no `normalize(q)`; products precomputed in GLSL
+- Canonical branch order: Scale -> Rotate -> Translate; ensure-wrapper reuses existing nodes in chain
+- `SdfNodeTraits.h` centralizes node taxonomy; replaces all duplicated predicates
+- `GraphSystemTransforms.cpp` owns transform wrapper logic; `GraphSystem.cpp` owns CRUD + param collection
+- `GlslEmitter` consolidated to 8 files by engineering concern: dispatch, primitives, booleans, domain, materials, scene assembly, math, formatting
+- MaterialRegistry owns reusable graph materials; SolidMaterial/CheckerMaterial nodes hold stable `materialId`
+- MaterialOverride consumes `sdf` + `material`; it applies material nodes to geometry and keeps inline fallback only for legacy files
+- Procedural materials support SolidMaterial and CheckerMaterial; material SSBO packs type, secondary color, and pattern scale
+- Material SSBO binding=0; node param SSBO binding=1; no material cap
+- Cook-Torrance GGX; soft shadows; AO; `NORMAL_EPSILON = 0.00035`
+- Save/load JSON; `GraphSerializer` interface; `JsonGraphSerializer`; nlohmann/json pinned
+- Phase 2 ops complete: Repeat axis toggles, Twist/Bend axis combo, warp correction, material-space transform mirror
 - Node inline property widgets scale font/style with canvas zoom
-- Rotate node layout ignores hidden quaternion params so node height matches visible fields
 - Parameter visibility lives in `SdfNodeDefinition` metadata; UI must not hardcode hidden rotate params
-- Build: `cmake --build build --config Debug` ✅
-- Tests: all focused test executables pass ✅ · GUI smoke ✅
-
----
+- Build/tests: material split focused suite and app build pass; GUI smoke last known pass
 
 ## Active
 
-Parameter visibility metadata fix complete. Review gate open.
-
----
+Material split complete: SolidMaterial and CheckerMaterial are separate material source nodes; MaterialOverride applies a material input to SDF input. Review gate open.
 
 ## Decisions
 
-- 2026 — ECS architecture: components=data · systems=logic · renderer=GL · app=wiring
-- 2026 — SDF node tree is AST, compiled to GLSL per graph change
-- 2026 — Material is explicit MaterialOverride node, not embedded in primitive
-- 2026 — Deferred material eval: sceneSDF for march loop · sceneMaterial once at hit
-- 2026 — Smooth op material blending: recompute smin weight in sceneMaterial · sdf_node helpers stay float
-- 2026 — Runtime node params via SSBO binding=1 · gizmo drags write params without shader recompile
-- 2026 — Rotate stores quaternion internally · Euler degrees are UI-only adapter
-- 2026 — Gizmo hit-test: CPU-side SDF raymarch · same formula as shader · nearest hit wins
-- 2026 — Two shaders: raymarch_edit.frag (always during edit) · raymarch_scene.frag (export only)
-- 2026 — GlslEmitter split rule: one file per engineering concern (reason to change) not per code path
-- 2026 — Agent memory: 6 sections only · no Recent Approved Edits · no absolute paths
-
----
+- 2026 - ECS architecture: components=data; systems=logic; renderer=GL; app=wiring
+- 2026 - SDF node tree is AST, compiled to GLSL per graph change
+- 2026 - Material is explicit MaterialOverride node, not embedded in primitive
+- 2026 - Deferred material eval: sceneSDF for march loop; sceneMaterial once at hit
+- 2026 - Smooth op material blending: recompute smin weight in sceneMaterial; sdf_node helpers stay float
+- 2026 - Runtime node params via SSBO binding=1; gizmo drags write params without shader recompile
+- 2026 - Rotate stores quaternion internally; Euler degrees are UI-only adapter
+- 2026 - Gizmo hit-test: CPU-side SDF raymarch; same formula as shader; nearest hit wins
+- 2026 - Two shaders: raymarch_edit.frag (always during edit); raymarch_scene.frag (export only)
+- 2026 - GlslEmitter split rule: one file per engineering concern (reason to change) not per code path
+- 2026 - Agent memory: 6 sections only; no Recent Approved Edits; no absolute paths
+- 2026-05 - Rotate gizmo style is renderer state via `GizmoRotateStyle`; AxisArcs starts as explicit stub falling back to rings
+- 2026-05 - Scale gizmo uses box SDF render/pick and packs x/y/z/min-axis into runtime node params
+- 2026-05 - Phase 2 ops use metadata bool/axis UI; Repeat disables axes by skipping `mod`, Twist/Bend choose axis and apply warp correction in geometry
+- 2026-05 - MaterialRegistry is graph-owned; MaterialOverride stores stable `materialId`; renderer still receives packed compile-time material slots
+- 2026-05 - Procedural material data stays in `SdfMaterial`; shader samples checker from world-space `p` through `sampleMaterial(materialId, p)`
+- 2026-05 - Material source nodes are separate from MaterialOverride; SolidMaterial/CheckerMaterial output `material`, MaterialOverride consumes `sdf` + `material`
 
 ## Constraints
 
-- Never disable single-valid-input boolean bypasses — intentional compiler + UI behavior
-- Never re-enable primitive material editing/emission — `SdfNode::material` is MaterialOverride payload only
-- Renderer never includes SdfGraph.h or any scene/component header — ECS Law 3
-- Never swap to raymarch_scene.frag on deselect — only swap for explicit render/export
-- Always preserve canonical branch order Scale → Rotate → Translate in ensure-wrapper logic
-- Never normalize quaternion in shader — normalize on CPU before SSBO upload
-- Never split files unilaterally — propose + state two concerns + wait for approval
+- Never disable single-valid-input boolean bypasses because intentional compiler + UI behavior
+- Never re-enable primitive material editing/emission because `SdfNode::material` is MaterialOverride fallback cache only
+- Renderer never includes SdfGraph.h or any scene/component header because ECS Law 3
+- Never swap to raymarch_scene.frag on deselect because swap only for explicit render/export
+- Always preserve canonical branch order Scale -> Rotate -> Translate in ensure-wrapper logic
+- Never normalize quaternion in shader because CPU normalizes before SSBO upload
+- Never split files unilaterally because user approval is required
 - Never add new GlslEmitter features until consolidation to 8-file structure is complete
-- Do not split tests/test_sdf_graph.cpp — user declined, do not reopen
-
----
+- Do not split tests/test_sdf_graph.cpp because user declined
 
 ## Environment
 
 - Build: `cmake --build build --config Debug`
-- Test executables: `build\Debug\<target>.exe` (Windows) · `build/<target>` (Linux/Mac)
+- Test executables: `build\Debug\<target>.exe` (Windows); `build/<target>` (Linux/Mac)
 - CMake 4.3+: must set `JSON_BuildTests OFF` and `JSON_Install OFF` before `FetchContent_MakeAvailable`
-- GLAD regen requires real Python interpreter · needs `jinja2` and `MarkupSafe` installed
-- Python path is machine-specific — pass via `-DPython_EXECUTABLE=<path>` at configure time · never hardcode
-- Always use repo root as working directory · never assume absolute paths
-- `LNK1168` = sdf3d.exe still running · stop process before rebuild
-
----
+- GLAD regen requires real Python interpreter; needs `jinja2` and `MarkupSafe` installed
+- Python path is machine-specific; pass via `-DPython_EXECUTABLE=<path>` at configure time; never hardcode
+- Always use repo root as working directory; never assume absolute paths
+- `LNK1168` = sdf3d.exe still running; stop process before rebuild
 
 ## Next
 
-Review parameter visibility metadata fix, then continue backlog item 3 only after approval.
+Review material split, then next backlog item is full GI/path tracing design before code.

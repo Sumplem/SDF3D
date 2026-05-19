@@ -21,6 +21,35 @@ void expect(bool condition, const std::string& testName, const std::string& mess
     }
 }
 
+void testMaterialRegistryCreatesStableMaterials(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "material registry creates stable materials";
+    sdf3d::SdfGraph graph;
+    sdf3d::SdfMaterial red;
+    red.albedo = {1.0f, 0.0f, 0.0f};
+    red.type = sdf3d::SdfMaterialType::Checker;
+    red.secondaryAlbedo = {0.0f, 1.0f, 0.0f};
+    red.patternScale = 5.0f;
+
+    const sdf3d::MaterialId redId = graph.materials().createMaterial("Red", red);
+    const sdf3d::MaterialId blueId = graph.materials().createMaterial("Blue");
+
+    expect(redId != 0, testName, "Expected nonzero material id.", failures);
+    expect(blueId == redId + 1, testName, "Expected stable incrementing material ids.", failures);
+    expect(graph.materials().materials().size() == 2, testName, "Expected two registry materials.", failures);
+    const sdf3d::MaterialDefinition* redDefinition = graph.materials().material(redId);
+    expect(redDefinition != nullptr, testName, "Expected material lookup.", failures);
+    if (redDefinition != nullptr) {
+        expect(redDefinition->name == "Red", testName, "Expected material name preserved.", failures);
+        expect(redDefinition->material.albedo.x == 1.0f, testName, "Expected material payload preserved.", failures);
+        expect(redDefinition->material.type == sdf3d::SdfMaterialType::Checker, testName, "Expected procedural type preserved.", failures);
+        expect(redDefinition->material.secondaryAlbedo.y == 1.0f, testName, "Expected procedural color preserved.", failures);
+        expect(redDefinition->material.patternScale == 5.0f, testName, "Expected procedural scale preserved.", failures);
+    }
+    expect(graph.materials().removeMaterial(redId), testName, "Expected material removal.", failures);
+    expect(graph.materials().material(redId) == nullptr, testName, "Expected removed material missing.", failures);
+}
+
 void testAppendOrder(std::vector<TestFailure>& failures)
 {
     const std::string testName = "append order";
@@ -71,12 +100,17 @@ void testCollectGraphMaterials(std::vector<TestFailure>& failures)
     const std::string testName = "collect graph materials";
     sdf3d::SdfGraph graph;
     const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
-    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Material");
+    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::SolidMaterial, "Material");
+    const sdf3d::SdfGraphNodeId materialOverride = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Override");
     if (sdf3d::SdfGraphNode* node = graph.node(material)) {
-        node->payload.material.emission = 2.0f;
+        expect(node->payload.materialId != 0, testName, "Expected material node to get registry material id.", failures);
+        if (sdf3d::MaterialDefinition* definition = graph.materials().material(node->payload.materialId)) {
+            definition->material.emission = 2.0f;
+        }
     }
-    graph.link(sphere, "sdf", material, "sdf");
-    graph.link(material, "sdf", graph.outputNode(), "surface");
+    graph.link(sphere, "sdf", materialOverride, "sdf");
+    graph.link(material, "material", materialOverride, "material");
+    graph.link(materialOverride, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompileResult result = sdf3d::MaterialSystem{}.collectMaterials(graph);
 
@@ -117,6 +151,7 @@ int main()
 {
     std::vector<TestFailure> failures;
 
+    testMaterialRegistryCreatesStableMaterials(failures);
     testAppendOrder(failures);
     testCollectTreeMaterials(failures);
     testCollectGraphMaterials(failures);

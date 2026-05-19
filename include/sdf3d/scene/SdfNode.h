@@ -9,7 +9,7 @@
 
 #include <glm/glm.hpp>
 
-#include "sdf3d/components/SdfMaterial.h"
+#include "sdf3d/scene/MaterialRegistry.h"
 
 namespace sdf3d {
 
@@ -36,6 +36,8 @@ enum class SdfNodeType {
     Mirror,
     Twist,
     Bend,
+    SolidMaterial,
+    CheckerMaterial,
     MaterialOverride,
     Output,
 };
@@ -53,6 +55,7 @@ struct SdfNode {
     std::string name;
     std::unordered_map<std::string, float> parameters;
     std::vector<std::shared_ptr<SdfNode>> children;
+    MaterialId materialId = 0;
     SdfMaterial material;
 };
 
@@ -74,6 +77,7 @@ inline SdfNodePtr cloneSdfNodeTree(const SdfNodePtr& node)
     SdfNodePtr clone = makeSdfNode(node->type, node->name);
     clone->stableId = node->stableId;
     clone->parameters = node->parameters;
+    clone->materialId = node->materialId;
     clone->material = node->material;
     clone->children.reserve(node->children.size());
 

@@ -34,19 +34,25 @@ void testPackedMaterialLayout(std::vector<TestFailure>& failures)
     const std::string testName = "packed material layout";
     std::vector<sdf3d::SdfCompiledMaterial> materials(2);
     materials[1].material.albedo = {0.25f, 0.5f, 0.75f};
+    materials[1].material.secondaryAlbedo = {0.1f, 0.2f, 0.3f};
     materials[1].material.roughness = 0.35f;
     materials[1].material.metallic = 0.6f;
     materials[1].material.emission = 1.25f;
+    materials[1].material.type = sdf3d::SdfMaterialType::Checker;
+    materials[1].material.patternScale = 7.0f;
 
     const std::vector<sdf3d::UniformUploader::GpuMaterial> packed = sdf3d::UniformUploader::packMaterials(materials);
 
-    expect(sizeof(sdf3d::UniformUploader::GpuMaterial) == sizeof(float) * 8, testName, "Expected two vec4 material layout.", failures);
+    expect(sizeof(sdf3d::UniformUploader::GpuMaterial) == sizeof(float) * 12, testName, "Expected three vec4 material layout.", failures);
     expect(packed.size() == 2, testName, "Expected all materials packed.", failures);
     if (packed.size() == 2) {
         expect(packed[1].albedoRoughness.x == 0.25f, testName, "Expected albedo x packed.", failures);
         expect(packed[1].albedoRoughness.w == 0.35f, testName, "Expected roughness packed.", failures);
-        expect(packed[1].metallicEmission.x == 0.6f, testName, "Expected metallic packed.", failures);
-        expect(packed[1].metallicEmission.y == 1.25f, testName, "Expected emission packed.", failures);
+        expect(packed[1].metallicEmissionType.x == 0.6f, testName, "Expected metallic packed.", failures);
+        expect(packed[1].metallicEmissionType.y == 1.25f, testName, "Expected emission packed.", failures);
+        expect(packed[1].metallicEmissionType.z == 1.0f, testName, "Expected material type packed.", failures);
+        expect(packed[1].secondaryAlbedoScale.z == 0.3f, testName, "Expected secondary albedo packed.", failures);
+        expect(packed[1].secondaryAlbedoScale.w == 7.0f, testName, "Expected pattern scale packed.", failures);
     }
 }
 
@@ -77,6 +83,7 @@ void testRenderGizmoDefaults(std::vector<TestFailure>& failures)
     expect(gizmo.activeAxis == -1, testName, "Expected no active axis by default.", failures);
     expect(gizmo.hoverAxis == -1, testName, "Expected no hover axis by default.", failures);
     expect(gizmo.type == 0, testName, "Expected translate gizmo type default.", failures);
+    expect(gizmo.rotateStyle == sdf3d::GizmoRotateStyle::Rings, testName, "Expected rotate rings style default.", failures);
     expect(gizmo.arrowLength == 1.0f, testName, "Expected default arrow length.", failures);
     expect(gizmo.arrowRadius > 0.0f, testName, "Expected positive arrow radius.", failures);
     expect(gizmo.ringRadius > 0.0f, testName, "Expected positive ring radius.", failures);

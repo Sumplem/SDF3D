@@ -321,6 +321,24 @@ void testRotateQuaternionParamsAreHiddenMetadata(std::vector<TestFailure>& failu
     expect(sdf3d::node_editor::visibleInlinePropertyParameterCount(*rotate) == 3, testName, "Expected only Euler params visible.", failures);
 }
 
+void testMaterialOverrideGetsRegistryMaterial(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "material node gets registry material";
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::SolidMaterial, "Paint");
+    const sdf3d::SdfGraphNode* node = graph.node(material);
+
+    expect(node != nullptr, testName, "Expected material node.", failures);
+    expect(node != nullptr && node->payload.materialId != 0, testName, "Expected material id assigned.", failures);
+    if (node != nullptr) {
+        const sdf3d::MaterialDefinition* definition = graph.materials().material(node->payload.materialId);
+        expect(definition != nullptr, testName, "Expected registry material.", failures);
+        if (definition != nullptr) {
+            expect(definition->name == "Paint", testName, "Expected registry material name.", failures);
+        }
+    }
+}
+
 void testGraphSystemCreatesScaleWrapper(std::vector<TestFailure>& failures)
 {
     const std::string testName = "graph system creates scale wrapper";
@@ -562,9 +580,9 @@ void testNodeEditorAutoLayoutAllNodes(std::vector<TestFailure>& failures)
     expect(sphereNode != nullptr && sphereNode->editorX == 116.0f, testName, "Expected leaf in first column.", failures);
     expect(materialNode != nullptr && materialNode->editorX == 476.0f, testName, "Expected material in second column.", failures);
     expect(outputNode != nullptr && outputNode->editorX == 836.0f, testName, "Expected output in third column.", failures);
-    expect(sphereNode != nullptr && sphereNode->editorY == 262.0f, testName, "Expected sphere top aligned to shared first row.", failures);
-    expect(materialNode != nullptr && materialNode->editorY == 262.0f, testName, "Expected material top aligned to shared first row.", failures);
-    expect(outputNode != nullptr && outputNode->editorY == 262.0f, testName, "Expected output top aligned to shared first row.", failures);
+    expect(sphereNode != nullptr && sphereNode->editorY == 298.0f, testName, "Expected sphere top aligned to shared first row.", failures);
+    expect(materialNode != nullptr && materialNode->editorY == 298.0f, testName, "Expected material top aligned to shared first row.", failures);
+    expect(outputNode != nullptr && outputNode->editorY == 298.0f, testName, "Expected output top aligned to shared first row.", failures);
 }
 
 void testNodeEditorAutoLayoutSelectedOnly(std::vector<TestFailure>& failures)
@@ -605,8 +623,8 @@ void testNodeEditorAutoLayoutSelectedOnly(std::vector<TestFailure>& failures)
     const sdf3d::SdfGraphNode* boxNode = graph.node(box);
     expect(sphereNode != nullptr && sphereNode->editorX == 296.0f, testName, "Expected selected leaf in first column.", failures);
     expect(materialNode != nullptr && materialNode->editorX == 656.0f, testName, "Expected selected consumer in second column.", failures);
-    expect(sphereNode != nullptr && sphereNode->editorY == 262.0f, testName, "Expected selected leaf top aligned to shared first row.", failures);
-    expect(materialNode != nullptr && materialNode->editorY == 262.0f, testName, "Expected selected consumer top aligned to shared first row.", failures);
+    expect(sphereNode != nullptr && sphereNode->editorY == 298.0f, testName, "Expected selected leaf top aligned to shared first row.", failures);
+    expect(materialNode != nullptr && materialNode->editorY == 298.0f, testName, "Expected selected consumer top aligned to shared first row.", failures);
     expect(boxNode != nullptr && boxNode->editorX == 900.0f && boxNode->editorY == 900.0f, testName, "Expected unselected node unchanged.", failures);
 }
 
@@ -703,6 +721,7 @@ int main()
     testGraphSystemCreatesRotateWrapper(failures);
     testGraphSystemReusesRotateWrapper(failures);
     testRotateQuaternionParamsAreHiddenMetadata(failures);
+    testMaterialOverrideGetsRegistryMaterial(failures);
     testGraphSystemCreatesScaleWrapper(failures);
     testGraphSystemReusesScaleWrapper(failures);
     testGraphSystemAccumulatedTranslateDirectChain(failures);

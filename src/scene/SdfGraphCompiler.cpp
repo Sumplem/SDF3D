@@ -15,6 +15,12 @@ int socketOrder(const std::string& socket)
     if (socket == "child") {
         return 0;
     }
+    if (socket == "sdf") {
+        return 0;
+    }
+    if (socket == "material") {
+        return 1;
+    }
     if (socket == "left" || socket == "base") {
         return 0;
     }
@@ -77,7 +83,13 @@ SdfGraphLowerResult lowerSdfGraphToTree(const SdfGraph& graph)
         SdfNodePtr node = makeSdfNode(graphNode->payload.type, graphNode->payload.name);
         node->stableId = graphNode->id;
         node->parameters = graphNode->payload.parameters;
+        node->materialId = graphNode->payload.materialId;
         node->material = graphNode->payload.material;
+        if ((node->type == SdfNodeType::SolidMaterial || node->type == SdfNodeType::CheckerMaterial || node->type == SdfNodeType::MaterialOverride) && node->materialId != 0) {
+            if (const MaterialDefinition* material = graph.materials().material(node->materialId)) {
+                node->material = material->material;
+            }
+        }
 
         std::vector<SdfGraphLink> inputs;
         for (const SdfGraphLink& link : graph.links()) {

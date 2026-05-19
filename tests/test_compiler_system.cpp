@@ -49,7 +49,7 @@ void testCompileMaterialOverride(std::vector<TestFailure>& failures)
 
     expect(result.errors.empty(), testName, "Expected no compile errors.", failures);
     expect(contains(result.glsl, "SdfMaterialSample sceneMaterial(vec3 p)"), testName, "Expected deferred material entry point.", failures);
-    expect(contains(result.glsl, "return sampleMaterial(1);"), testName, "Expected sceneMaterial to return override sample.", failures);
+    expect(contains(result.glsl, "return sampleMaterial(1, p);"), testName, "Expected sceneMaterial to return override sample.", failures);
     expect(result.materials.size() == 2, testName, "Expected default plus override material.", failures);
     if (result.materials.size() == 2) {
         expect(result.materials[1].material.albedo.x == 1.0f, testName, "Expected override material preserved.", failures);

@@ -463,19 +463,16 @@ void TranslateGizmo::drawSettings()
 
     ImGui::SameLine();
     ImGui::SetNextItemWidth(96.0f);
-    int style = m_rotateStyle == RotateStyle::Rings ? 0 : 1;
+    int style = m_rotateStyle == GizmoRotateStyle::Rings ? 0 : 1;
     const char* styleLabels[] = {"Rings", "Axis Arcs"};
     if (m_mode != Mode::Rotate) {
         ImGui::BeginDisabled();
     }
     if (ImGui::Combo("##rotate_style", &style, styleLabels, 2)) {
-        m_rotateStyle = style == 0 ? RotateStyle::Rings : RotateStyle::AxisArcs;
+        m_rotateStyle = style == 0 ? GizmoRotateStyle::Rings : GizmoRotateStyle::AxisArcs;
     }
     if (m_mode != Mode::Rotate) {
         ImGui::EndDisabled();
-    }
-    if (m_rotateStyle == RotateStyle::AxisArcs) {
-        m_rotateStyle = RotateStyle::Rings;
     }
 }
 
@@ -542,8 +539,10 @@ EditorDirtyState TranslateGizmo::update(SceneGraph& sceneGraph, const RenderCame
     gizmo.activeAxis = m_activeAxis;
     gizmo.hoverAxis = hoveredAxis;
     gizmo.type = GIZMO_TYPE_TRANSLATE;
+    gizmo.rotateStyle = GizmoRotateStyle::Rings;
     if (m_mode == Mode::Rotate) {
         gizmo.type = GIZMO_TYPE_ROTATE;
+        gizmo.rotateStyle = m_rotateStyle;
     } else if (m_mode == Mode::Scale) {
         gizmo.type = GIZMO_TYPE_SCALE;
     }

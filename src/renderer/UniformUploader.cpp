@@ -64,6 +64,7 @@ void UniformUploader::upload(
     glUniform1i(glGetUniformLocation(program, "uGizmoActiveAxis"), gizmo.activeAxis);
     glUniform1i(glGetUniformLocation(program, "uGizmoHoverAxis"), gizmo.hoverAxis);
     glUniform1i(glGetUniformLocation(program, "uGizmoType"), gizmo.type);
+    glUniform1i(glGetUniformLocation(program, "uGizmoRotateStyle"), static_cast<GLint>(gizmo.rotateStyle));
     glUniform1i(glGetUniformLocation(program, "uHighlightNodeId"), static_cast<GLint>(gizmo.highlightNodeId));
     glUniform1i(glGetUniformLocation(program, "uRenderQuality"), static_cast<GLint>(quality));
 
@@ -109,7 +110,8 @@ std::vector<UniformUploader::GpuMaterial> UniformUploader::packMaterials(const s
         const SdfMaterial& material = compiledMaterial.material;
         packed.push_back({
             {material.albedo.x, material.albedo.y, material.albedo.z, material.roughness},
-            {material.metallic, material.emission, 0.0f, 0.0f},
+            {material.metallic, material.emission, static_cast<float>(material.type), 0.0f},
+            {material.secondaryAlbedo.x, material.secondaryAlbedo.y, material.secondaryAlbedo.z, material.patternScale},
         });
     }
     return packed;

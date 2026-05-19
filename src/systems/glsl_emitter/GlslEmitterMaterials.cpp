@@ -4,6 +4,7 @@
 #include "GlslEmitterInternal.h"
 #include "GlslEmitterMath.h"
 #include "sdf3d/scene/SdfRotationParams.h"
+#include "sdf3d/scene/SdfNodeTraits.h"
 #include "sdf3d/systems/GlslNodeNames.h"
 #include "sdf3d/systems/MaterialSystem.h"
 
@@ -19,12 +20,13 @@ std::string GlslEmitter::emitMaterialNode(const SdfNodePtr& node, const std::str
         result.errors.push_back("MaterialOverride node has no SDF input.");
         return glslNoHit();
     }
-    if (node->children.size() > 1) {
+    if (node->children.size() > 2 || (node->children.size() > 1 && !isSdfMaterialNode(node->children[1]->type))) {
         result.errors.push_back("MaterialOverride node ignores extra children.");
     }
 
     const MaterialSystem materialSystem;
-    const int materialId = materialSystem.appendMaterial(result, node->material);
+    const SdfNodePtr materialNode = node->children.size() > 1 && node->children[1] && isSdfMaterialNode(node->children[1]->type) ? node->children[1] : nullptr;
+    const int materialId = materialSystem.appendMaterial(result, materialNode ? materialNode->material : node->material);
     const std::string child = emitNode(node->children.front(), pointExpr, result);
     return "vec2(" + hitDistance(child) + ", " + glslFloat(static_cast<float>(materialId)) + ")";
 }
@@ -36,14 +38,14 @@ namespace {
 
 constexpr int kDefaultMaterialId = 0;
 
-std::string sampleMaterialCall(int materialId)
+std::string sampleMaterialCall(int materialId, const std::string& pointExpr)
 {
-    return "sampleMaterial(" + std::to_string(materialId) + ")";
+    return "sampleMaterial(" + std::to_string(materialId) + ", " + pointExpr + ")";
 }
 
-std::string defaultMaterial()
+std::string defaultMaterial(const std::string& pointExpr)
 {
-    return sampleMaterialCall(kDefaultMaterialId);
+    return sampleMaterialCall(kDefaultMaterialId, pointExpr);
 }
 
 std::string helperDistanceFor(
@@ -69,10 +71,17 @@ std::string emitMaterialGeometryExpression(const SdfNodePtr& node, const std::st
         result.errors.push_back("MaterialOverride node has no SDF input.");
         return "1e6";
     }
-    if (node->children.size() > 1) {
+    if (node->children.size() > 2 || (node->children.size() > 1 && !isSdfMaterialNode(node->children[1]->type))) {
         result.errors.push_back("MaterialOverride node ignores extra children.");
     }
     return helperCallFor(node->children.front(), pointExpr, context);
+}
+
+std::string emitMaterialNodeSample(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result)
+{
+    const MaterialSystem materialSystem;
+    const int materialId = materialSystem.appendMaterial(result, node->material);
+    return sampleMaterialCall(materialId, pointExpr);
 }
 
 std::string emitMaterialFor(
@@ -83,34 +92,41 @@ std::string emitMaterialFor(
 {
     if (!node) {
         result.errors.push_back("Encountered a null SDF node while emitting material evaluation.");
-        return defaultMaterial();
+        return defaultMaterial(pointExpr);
     }
 
     switch (node->type) {
+    case SdfNodeType::SolidMaterial:
+    case SdfNodeType::CheckerMaterial:
+        return emitMaterialNodeSample(node, pointExpr, result);
+
     case SdfNodeType::Sphere:
     case SdfNodeType::Box:
     case SdfNodeType::Cylinder:
     case SdfNodeType::Torus:
     case SdfNodeType::Plane:
-        return defaultMaterial();
+        return defaultMaterial(pointExpr);
 
     case SdfNodeType::MaterialOverride: {
         if (node->children.empty()) {
             result.errors.push_back("MaterialOverride node has no SDF input.");
-            return defaultMaterial();
+            return defaultMaterial(pointExpr);
         }
-        if (node->children.size() > 1) {
+        if (node->children.size() > 2 || (node->children.size() > 1 && !isSdfMaterialNode(node->children[1]->type))) {
             result.errors.push_back("MaterialOverride node ignores extra children.");
         }
 
         const MaterialSystem materialSystem;
+        if (node->children.size() > 1 && isSdfMaterialNode(node->children[1]->type)) {
+            return emitMaterialFor(node->children[1], pointExpr, result, sdfHelpers);
+        }
         const int materialId = materialSystem.appendMaterial(result, node->material);
-        return sampleMaterialCall(materialId);
+        return sampleMaterialCall(materialId, pointExpr);
     }
     case SdfNodeType::Translate: {
         if (node->children.empty()) {
             result.errors.push_back("Translate node has no child.");
-            return defaultMaterial();
+            return defaultMaterial(pointExpr);
         }
         if (node->children.size() > 1) {
             result.errors.push_back("Translate node ignores extra children.");
@@ -128,7 +144,7 @@ std::string emitMaterialFor(
     case SdfNodeType::Rotate: {
         if (node->children.empty()) {
             result.errors.push_back("Rotate node has no child.");
-            return defaultMaterial();
+            return defaultMaterial(pointExpr);
         }
         if (node->children.size() > 1) {
             result.errors.push_back("Rotate node ignores extra children.");
@@ -144,7 +160,7 @@ std::string emitMaterialFor(
     case SdfNodeType::Scale: {
         if (node->children.empty()) {
             result.errors.push_back("Scale node has no child.");
-            return defaultMaterial();
+            return defaultMaterial(pointExpr);
         }
         if (node->children.size() > 1) {
             result.errors.push_back("Scale node ignores extra children.");
@@ -165,7 +181,7 @@ std::string emitMaterialFor(
     case SdfNodeType::Repeat: {
         if (node->children.empty()) {
             result.errors.push_back("Repeat node has no child.");
-            return defaultMaterial();
+            return defaultMaterial(pointExpr);
         }
         if (node->children.size() > 1) {
             result.errors.push_back("Repeat node ignores extra children.");
@@ -177,7 +193,7 @@ std::string emitMaterialFor(
     case SdfNodeType::Mirror: {
         if (node->children.empty()) {
             result.errors.push_back("Mirror node has no child.");
-            return defaultMaterial();
+            return defaultMaterial(pointExpr);
         }
         if (node->children.size() > 1) {
             result.errors.push_back("Mirror node ignores extra children.");
@@ -189,7 +205,7 @@ std::string emitMaterialFor(
     case SdfNodeType::Twist: {
         if (node->children.empty()) {
             result.errors.push_back("Twist node has no child.");
-            return defaultMaterial();
+            return defaultMaterial(pointExpr);
         }
         if (node->children.size() > 1) {
             result.errors.push_back("Twist node ignores extra children.");
@@ -207,7 +223,7 @@ std::string emitMaterialFor(
     case SdfNodeType::Bend: {
         if (node->children.empty()) {
             result.errors.push_back("Bend node has no child.");
-            return defaultMaterial();
+            return defaultMaterial(pointExpr);
         }
         if (node->children.size() > 1) {
             result.errors.push_back("Bend node ignores extra children.");
@@ -226,7 +242,7 @@ std::string emitMaterialFor(
     case SdfNodeType::SmoothUnion: {
         if (node->children.empty()) {
             result.errors.push_back(glslNodeTypeName(node->type) + " node has no children.");
-            return defaultMaterial();
+            return defaultMaterial(pointExpr);
         }
 
         const bool smooth = node->type == SdfNodeType::SmoothUnion;
@@ -250,7 +266,7 @@ std::string emitMaterialFor(
     case SdfNodeType::Subtract: {
         if (node->children.empty()) {
             result.errors.push_back("Subtract node requires a base child.");
-            return defaultMaterial();
+            return defaultMaterial(pointExpr);
         }
         if (node->children.size() == 1) {
             result.errors.push_back("Subtract node is missing a cutter child; bypassing to base.");
@@ -263,7 +279,7 @@ std::string emitMaterialFor(
     case SdfNodeType::SmoothSubtract: {
         if (node->children.empty()) {
             result.errors.push_back("SmoothSubtract node requires a base child.");
-            return defaultMaterial();
+            return defaultMaterial(pointExpr);
         }
         if (node->children.size() == 1) {
             result.errors.push_back("SmoothSubtract node is missing a cutter child; bypassing to base.");
@@ -285,7 +301,7 @@ std::string emitMaterialFor(
     case SdfNodeType::SmoothIntersect: {
         if (node->children.empty()) {
             result.errors.push_back(glslNodeTypeName(node->type) + " node has no children.");
-            return defaultMaterial();
+            return defaultMaterial(pointExpr);
         }
 
         const bool smooth = node->type == SdfNodeType::SmoothIntersect;
@@ -308,7 +324,7 @@ std::string emitMaterialFor(
     }
     default:
         result.errors.push_back("Unsupported SDF node type in material evaluation: " + glslNodeTypeName(node->type));
-        return defaultMaterial();
+        return defaultMaterial(pointExpr);
     }
 }
 

@@ -10,6 +10,8 @@ nlohmann::json socketToJson(const SdfGraphSocket& socket);
 SdfGraphSocket socketFromJson(const nlohmann::json& value);
 nlohmann::json materialToJson(const SdfMaterial& material);
 SdfMaterial materialFromJson(const nlohmann::json& value);
+nlohmann::json materialDefinitionToJson(const MaterialDefinition& material);
+MaterialDefinition materialDefinitionFromJson(const nlohmann::json& value);
 nlohmann::json nodeToJson(const SdfGraphNode& node);
 SdfGraphNode nodeFromJson(const nlohmann::json& value);
 nlohmann::json linkToJson(const SdfGraphLink& link);

@@ -34,7 +34,7 @@ SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root) const
             "}\n\n"
             "SdfMaterialSample sceneMaterial(vec3 p)\n"
             "{\n"
-            "    return sampleMaterial(0);\n"
+            "    return sampleMaterial(0, p);\n"
             "}\n\n"
             "float sceneNodeSDF(int nodeId, vec3 p)\n"
             "{\n"

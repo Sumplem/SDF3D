@@ -92,12 +92,16 @@ void testGraphCompilerMaterialOverride(std::vector<TestFailure>& failures)
     const std::string testName = "graph compiler material override";
     sdf3d::SdfGraph graph;
     const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
-    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Material");
+    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::SolidMaterial, "Material");
+    const sdf3d::SdfGraphNodeId materialOverride = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Override");
     if (sdf3d::SdfGraphNode* node = graph.node(material)) {
-        node->payload.material.albedo = {0.25f, 0.5f, 0.75f};
+        if (sdf3d::MaterialDefinition* definition = graph.materials().material(node->payload.materialId)) {
+            definition->material.albedo = {0.25f, 0.5f, 0.75f};
+        }
     }
-    graph.link(sphere, "sdf", material, "sdf");
-    graph.link(material, "sdf", graph.outputNode(), "surface");
+    graph.link(sphere, "sdf", materialOverride, "sdf");
+    graph.link(material, "material", materialOverride, "material");
+    graph.link(materialOverride, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
@@ -118,7 +122,7 @@ void testGraphNodeDefinitionMaterialOverride(std::vector<TestFailure>& failures)
 
     expect(node != nullptr, testName, "Expected material override node.", failures);
     if (node != nullptr) {
-        expect(node->inputs.size() == 1 && node->inputs[0].name == "sdf", testName, "Expected SDF input.", failures);
+        expect(node->inputs.size() == 2 && node->inputs[0].name == "sdf" && node->inputs[1].name == "material", testName, "Expected SDF and material inputs.", failures);
         expect(node->outputs.size() == 1 && node->outputs[0].name == "sdf", testName, "Expected SDF output.", failures);
     }
 }
@@ -236,7 +240,7 @@ void testGraphCompilerIncompleteUnion(std::vector<TestFailure>& failures)
 
     expect(!result.errors.empty(), testName, "Expected incomplete union compiler error.", failures);
     expect(contains(result.glsl, "return 1e6;"), testName, "Expected geometry no-hit return.", failures);
-    expect(contains(result.glsl, "return sampleMaterial(0);"), testName, "Expected default material return.", failures);
+    expect(contains(result.glsl, "return sampleMaterial(0, p);"), testName, "Expected default material return.", failures);
     expect(!contains(result.glsl, "sceneSDFWithMaterial"), testName, "Expected legacy material-aware sceneSDF removed.", failures);
 }
 

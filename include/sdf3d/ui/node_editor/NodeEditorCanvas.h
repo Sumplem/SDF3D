@@ -173,7 +173,7 @@ bool drawInputPins(
     std::string& detachedInputSocket);
 void drawOutputPins(SdfGraph& graph, const GraphNodeLayout& layout, const CanvasFrame& frame, bool& draggingLink, SdfGraphNodeId& dragOutputNode, std::string& dragOutputSocket, bool& dragOutputFromInputDetach);
 bool drawNodeActions(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNodeId& pendingDelete);
-EditorDirtyState drawNodeInlineProperties(const GraphNodeLayout& layout, const CanvasFrame& frame);
+EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, const GraphNodeLayout& layout, const CanvasFrame& frame);
 bool updateActiveLinkDrag(SdfGraph& graph, const CanvasFrame& frame, const std::vector<GraphSocketAnchor>& anchors, bool& draggingLink, SdfGraphNodeId& dragOutputNode, std::string& dragOutputSocket, bool& releasedOnEmpty);
 bool updateActiveInputLinkDrag(SdfGraph& graph, const CanvasFrame& frame, const std::vector<GraphSocketAnchor>& anchors, bool& draggingInputLink, SdfGraphNodeId& dragInputNode, std::string& dragInputSocket, bool& releasedOnEmpty);
 EditorDirtyState updateNodeEditorLinkDrags(

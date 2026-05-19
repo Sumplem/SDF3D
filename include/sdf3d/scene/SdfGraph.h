@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sdf3d/scene/MaterialRegistry.h"
 #include "sdf3d/scene/SdfNode.h"
 
 #include <cstdint>
@@ -63,7 +64,7 @@ struct SdfGraphLink {
     std::string toSocket;
 };
 
-/// Editable graph node carrying SDF parameters and MaterialOverride payload data.
+/// Editable graph node carrying SDF parameters, material data, and editor state.
 struct SdfGraphNode {
     SdfGraphNode(SdfGraphNodeId nodeId, SdfNode nodePayload, float x = 0.0f, float y = 0.0f)
         : id(nodeId)
@@ -153,6 +154,12 @@ public:
     /// Returns all directed graph links.
     const std::vector<SdfGraphLink>& links() const;
 
+    /// Returns reusable graph materials.
+    MaterialRegistry& materials();
+
+    /// Returns reusable graph materials.
+    const MaterialRegistry& materials() const;
+
     /// Returns next stable graph node ID for serialization.
     SdfGraphNodeId nextNodeIdForSerialization() const;
 
@@ -168,6 +175,7 @@ private:
     std::vector<SdfGraphNodeId> m_selectedNodes;
     std::unordered_map<SdfGraphNodeId, SdfGraphNode> m_nodes;
     std::vector<SdfGraphLink> m_links;
+    MaterialRegistry m_materials;
 };
 
 } // namespace sdf3d

@@ -46,6 +46,13 @@ inline bool isSdfPassThroughNode(SdfNodeType type)
     return isSdfTransformNode(type) || type == SdfNodeType::MaterialOverride;
 }
 
+/// Returns true when a node type emits reusable material data.
+inline bool isSdfMaterialNode(SdfNodeType type)
+{
+    return type == SdfNodeType::SolidMaterial
+        || type == SdfNodeType::CheckerMaterial;
+}
+
 /// Returns true when a transform belongs to canonical affine wrapper order.
 inline bool isSdfAffineTransformNode(SdfNodeType type)
 {

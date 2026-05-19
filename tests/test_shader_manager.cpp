@@ -54,7 +54,9 @@ void testEditShaderHasGizmoInjectionShape(std::vector<TestFailure>& failures)
     const std::string testName = "edit shader gizmo injection shape";
     const std::string shader =
         "uniform bool uGizmoVisible;\n"
+        "uniform int uGizmoRotateStyle;\n"
         "uniform int uRenderQuality;\n"
+        "vec4 secondaryAlbedoScale;\n"
         "float sdCapsule(vec3 p, vec3 a, vec3 b, float radius) { return 0.0; }\n"
         "float sdTorus(vec3 p, vec2 t) { return 0.0; }\n"
         "float sdBox(vec3 p, vec3 halfSize) { return 0.0; }\n"
@@ -66,7 +68,9 @@ void testEditShaderHasGizmoInjectionShape(std::vector<TestFailure>& failures)
 
     expect(error.empty(), testName, "Expected no injection error.", failures);
     expect(contains(injected, "uGizmoVisible"), testName, "Expected gizmo uniforms preserved.", failures);
+    expect(contains(injected, "uGizmoRotateStyle"), testName, "Expected rotate style uniform preserved.", failures);
     expect(contains(injected, "uRenderQuality"), testName, "Expected quality uniform preserved.", failures);
+    expect(contains(injected, "secondaryAlbedoScale"), testName, "Expected procedural material field preserved.", failures);
     expect(contains(injected, "sdCapsule"), testName, "Expected gizmo SDF helper preserved.", failures);
     expect(contains(injected, "sdTorus"), testName, "Expected rotate gizmo SDF helper preserved.", failures);
     expect(contains(injected, "sdBox"), testName, "Expected scale gizmo SDF helper preserved.", failures);

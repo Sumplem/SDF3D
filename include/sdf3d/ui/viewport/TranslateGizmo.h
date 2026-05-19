@@ -22,11 +22,6 @@ private:
         Scale,
     };
 
-    enum class RotateStyle {
-        Rings,
-        AxisArcs,
-    };
-
     glm::vec3 m_dragWorldOrigin = {0.0f, 0.0f, 0.0f};
     glm::mat3 m_dragOrientation = glm::mat3{1.0f};
     glm::vec3 m_dragStartLocalPosition = {0.0f, 0.0f, 0.0f};
@@ -36,7 +31,7 @@ private:
     float m_dragStartAngle = 0.0f;
     int m_activeAxis = -1;
     Mode m_mode = Mode::Translate;
-    RotateStyle m_rotateStyle = RotateStyle::Rings;
+    GizmoRotateStyle m_rotateStyle = GizmoRotateStyle::Rings;
 };
 
 } // namespace sdf3d

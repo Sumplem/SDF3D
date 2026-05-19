@@ -1,6 +1,7 @@
 #include "sdf3d/systems/GlslEmitter.h"
 
 #include "GlslEmitterInternal.h"
+#include "sdf3d/scene/SdfNodeTraits.h"
 #include "sdf3d/systems/MaterialSystem.h"
 
 #include <cstdint>
@@ -71,6 +72,9 @@ void emitSdfHelperPostorder(
 
     visiting.insert(node.get());
     for (const SdfNodePtr& child : node->children) {
+        if (child && isSdfMaterialNode(child->type)) {
+            continue;
+        }
         emitSdfHelperPostorder(child, result, block, context, emittedIds, visiting);
     }
     visiting.erase(node.get());

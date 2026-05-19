@@ -51,6 +51,10 @@ const char* nodeTypeName(SdfNodeType type)
         return "Twist";
     case SdfNodeType::Bend:
         return "Bend";
+    case SdfNodeType::SolidMaterial:
+        return "SolidMaterial";
+    case SdfNodeType::CheckerMaterial:
+        return "CheckerMaterial";
     case SdfNodeType::MaterialOverride:
         return "MaterialOverride";
     case SdfNodeType::Output:
@@ -84,6 +88,8 @@ std::optional<SdfNodeType> parseNodeType(const std::string& name)
              SdfNodeType::Mirror,
              SdfNodeType::Twist,
              SdfNodeType::Bend,
+             SdfNodeType::SolidMaterial,
+             SdfNodeType::CheckerMaterial,
              SdfNodeType::MaterialOverride,
              SdfNodeType::Output,
          }) {
@@ -172,10 +178,13 @@ SdfGraphSocket socketFromJson(const nlohmann::json& value)
 nlohmann::json materialToJson(const SdfMaterial& material)
 {
     return nlohmann::json{
+        {"type", static_cast<int>(material.type)},
         {"albedo", {material.albedo.x, material.albedo.y, material.albedo.z}},
+        {"secondaryAlbedo", {material.secondaryAlbedo.x, material.secondaryAlbedo.y, material.secondaryAlbedo.z}},
         {"roughness", material.roughness},
         {"metallic", material.metallic},
         {"emission", material.emission},
+        {"patternScale", material.patternScale},
     };
 }
 
@@ -187,11 +196,42 @@ SdfMaterial materialFromJson(const nlohmann::json& value)
     }
 
     SdfMaterial material;
+    material.type = static_cast<SdfMaterialType>(value.value("type", 0));
     material.albedo = {albedo.at(0).get<float>(), albedo.at(1).get<float>(), albedo.at(2).get<float>()};
+    if (value.contains("secondaryAlbedo")) {
+        const nlohmann::json& secondaryAlbedo = value.at("secondaryAlbedo");
+        if (!secondaryAlbedo.is_array() || secondaryAlbedo.size() != 3) {
+            throw std::runtime_error("Material secondary albedo must have exactly three values.");
+        }
+        material.secondaryAlbedo = {
+            secondaryAlbedo.at(0).get<float>(),
+            secondaryAlbedo.at(1).get<float>(),
+            secondaryAlbedo.at(2).get<float>(),
+        };
+    }
     material.roughness = value.at("roughness").get<float>();
     material.metallic = value.at("metallic").get<float>();
     material.emission = value.at("emission").get<float>();
+    material.patternScale = value.value("patternScale", 4.0f);
     return material;
+}
+
+nlohmann::json materialDefinitionToJson(const MaterialDefinition& material)
+{
+    return nlohmann::json{
+        {"id", material.id},
+        {"name", material.name},
+        {"material", materialToJson(material.material)},
+    };
+}
+
+MaterialDefinition materialDefinitionFromJson(const nlohmann::json& value)
+{
+    return {
+        value.at("id").get<MaterialId>(),
+        value.at("name").get<std::string>(),
+        materialFromJson(value.at("material")),
+    };
 }
 
 nlohmann::json nodeToJson(const SdfGraphNode& node)
@@ -206,6 +246,7 @@ nlohmann::json nodeToJson(const SdfGraphNode& node)
         {"type", nodeTypeName(node.payload.type)},
         {"stableId", node.payload.stableId},
         {"name", node.payload.name},
+        {"materialId", node.payload.materialId},
         {"editor", {{"x", node.editorX}, {"y", node.editorY}, {"propertiesCollapsed", node.editorPropertiesCollapsed}}},
         {"parameters", parameters},
         {"material", materialToJson(node.payload.material)},
@@ -223,10 +264,13 @@ SdfGraphNode nodeFromJson(const nlohmann::json& value)
 
     SdfNode payload{*type, value.at("name").get<std::string>()};
     payload.stableId = value.at("stableId").get<uint64_t>();
+    payload.materialId = value.contains("materialId") ? value.at("materialId").get<MaterialId>() : 0;
     for (const auto& [key, parameter] : value.at("parameters").items()) {
         payload.parameters[key] = parameter.get<float>();
     }
-    payload.material = materialFromJson(value.at("material"));
+    if (value.contains("material")) {
+        payload.material = materialFromJson(value.at("material"));
+    }
 
     const nlohmann::json& editor = value.at("editor");
     SdfGraphNode node{value.at("id").get<SdfGraphNodeId>(), std::move(payload), editor.at("x").get<float>(), editor.at("y").get<float>()};

@@ -2,6 +2,7 @@
 
 #include "sdf3d/scene/SdfNodeDefinition.h"
 #include "sdf3d/scene/SdfRotationParams.h"
+#include "sdf3d/scene/SdfNodeTraits.h"
 
 #include <algorithm>
 #include <string>
@@ -51,6 +52,18 @@ bool drawAxisParameter(float& value)
     return true;
 }
 
+bool drawMaterialTypeCombo(SdfMaterial& material)
+{
+    const char* labels[] = {"Solid", "Checker"};
+    int type = static_cast<int>(material.type);
+    if (!ImGui::Combo("Type", &type, labels, 2)) {
+        return false;
+    }
+
+    material.type = type == 1 ? SdfMaterialType::Checker : SdfMaterialType::Solid;
+    return true;
+}
+
 } // namespace
 
 EditorDirtyState PropertiesPanel::draw(SceneGraph& sceneGraph)
@@ -89,19 +102,41 @@ EditorDirtyState PropertiesPanel::draw(SceneGraph& sceneGraph)
         dirty.scene = true;
     }
 
-    if (selected->type == SdfNodeType::MaterialOverride) {
+    if (isSdfMaterialNode(selected->type)) {
+        SdfMaterial* material = &selected->material;
+        if (selectedGraphNode != nullptr && selected->materialId != 0) {
+            if (MaterialDefinition* definition = sceneGraph.graph().materials().material(selected->materialId)) {
+                material = &definition->material;
+            }
+        }
+
         ImGui::SeparatorText("Material");
 
-        if (ImGui::ColorEdit3("Albedo", &selected->material.albedo.x)) {
+        material->type = selected->type == SdfNodeType::CheckerMaterial ? SdfMaterialType::Checker : SdfMaterialType::Solid;
+        if (ImGui::ColorEdit3("Albedo", &material->albedo.x)) {
+            selected->material = *material;
             dirty.material = true;
         }
-        if (ImGui::DragFloat("Roughness", &selected->material.roughness, 0.01f, 0.0f, 1.0f)) {
+        if (material->type == SdfMaterialType::Checker) {
+            if (ImGui::ColorEdit3("Secondary", &material->secondaryAlbedo.x)) {
+                selected->material = *material;
+                dirty.material = true;
+            }
+            if (ImGui::DragFloat("Pattern Scale", &material->patternScale, 0.1f, 0.001f, 100.0f)) {
+                selected->material = *material;
+                dirty.material = true;
+            }
+        }
+        if (ImGui::DragFloat("Roughness", &material->roughness, 0.01f, 0.0f, 1.0f)) {
+            selected->material = *material;
             dirty.material = true;
         }
-        if (ImGui::DragFloat("Metallic", &selected->material.metallic, 0.01f, 0.0f, 1.0f)) {
+        if (ImGui::DragFloat("Metallic", &material->metallic, 0.01f, 0.0f, 1.0f)) {
+            selected->material = *material;
             dirty.material = true;
         }
-        if (ImGui::DragFloat("Emission", &selected->material.emission, 0.01f, 0.0f, 100.0f)) {
+        if (ImGui::DragFloat("Emission", &material->emission, 0.01f, 0.0f, 100.0f)) {
+            selected->material = *material;
             dirty.material = true;
         }
     }

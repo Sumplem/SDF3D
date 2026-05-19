@@ -49,7 +49,9 @@ const std::vector<SdfNodeDefinition>& definitions()
         {SdfNodeType::Twist, SdfNodeCategory::Transform, "Twist", {{"strength", 1.0f, -20.0f, 20.0f, 0.01f}, {"axis", 1.0f, 0.0f, 2.0f, 1.0f}}, {inputSocket("child")}, {outputSocket("sdf")}},
         {SdfNodeType::Bend, SdfNodeCategory::Transform, "Bend", {{"strength", 0.5f, -20.0f, 20.0f, 0.01f}, {"axis", 0.0f, 0.0f, 2.0f, 1.0f}}, {inputSocket("child")}, {outputSocket("sdf")}},
 
-        {SdfNodeType::MaterialOverride, SdfNodeCategory::Material, "Material Override", {}, {inputSocket("sdf")}, {outputSocket("sdf")}},
+        {SdfNodeType::SolidMaterial, SdfNodeCategory::Material, "Solid Material", {}, {}, {outputSocket("material", SdfSocketType::Material)}},
+        {SdfNodeType::CheckerMaterial, SdfNodeCategory::Material, "Checker Material", {}, {}, {outputSocket("material", SdfSocketType::Material)}},
+        {SdfNodeType::MaterialOverride, SdfNodeCategory::Material, "Material Override", {}, {inputSocket("sdf"), inputSocket("material", SdfSocketType::Material)}, {outputSocket("sdf")}},
 
         {SdfNodeType::Output, SdfNodeCategory::Output, "Output", {}, {inputSocket("surface")}, {}},
     };

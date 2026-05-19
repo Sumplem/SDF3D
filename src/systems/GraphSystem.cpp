@@ -67,7 +67,13 @@ SdfGraphNodeId GraphSystem::createNode(SdfGraph& graph, SdfNodeType type, std::s
     if (!name.empty()) {
         payload->name = std::move(name);
     }
+    if (type == SdfNodeType::SolidMaterial || type == SdfNodeType::CheckerMaterial) {
+        payload->material.type = type == SdfNodeType::CheckerMaterial ? SdfMaterialType::Checker : SdfMaterialType::Solid;
+    }
     SdfGraphNode graphNode{id, *payload, 0.0f, 0.0f};
+    if (type == SdfNodeType::SolidMaterial || type == SdfNodeType::CheckerMaterial) {
+        graphNode.payload.materialId = graph.m_materials.createMaterial(graphNode.payload.name.empty() ? "Material" : graphNode.payload.name, graphNode.payload.material);
+    }
     graphNode.inputs = defaultInputsFor(type);
     graphNode.outputs = defaultOutputsFor(type);
 

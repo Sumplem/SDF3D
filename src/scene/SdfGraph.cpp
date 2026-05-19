@@ -137,6 +137,16 @@ const std::vector<SdfGraphLink>& SdfGraph::links() const
     return m_links;
 }
 
+MaterialRegistry& SdfGraph::materials()
+{
+    return m_materials;
+}
+
+const MaterialRegistry& SdfGraph::materials() const
+{
+    return m_materials;
+}
+
 SdfGraphNodeId SdfGraph::nextNodeIdForSerialization() const
 {
     return m_nextId;

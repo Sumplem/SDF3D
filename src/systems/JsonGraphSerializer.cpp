@@ -54,10 +54,16 @@ bool JsonGraphSerializer::save(const SdfGraph& graph, const std::filesystem::pat
         links.push_back(json_graph_serializer::linkToJson(link));
     }
 
+    json materials = json::array();
+    for (const MaterialDefinition& material : graph.materials().materials()) {
+        materials.push_back(json_graph_serializer::materialDefinitionToJson(material));
+    }
+
     json root{
         {"schema", GRAPH_SCHEMA},
         {"version", GRAPH_SCHEMA_VERSION},
         {"nextId", graph.nextNodeIdForSerialization()},
+        {"materials", {{"nextId", graph.materials().nextMaterialIdForSerialization()}, {"items", materials}}},
         {"outputNode", graph.outputNode()},
         {"selection", {{"primary", graph.selectedNode()}, {"nodes", graph.selectedNodes()}}},
         {"nodes", nodes},
@@ -91,9 +97,28 @@ bool JsonGraphSerializer::load(SdfGraph& graph, const std::filesystem::path& pat
             return false;
         }
 
+        MaterialRegistry materials;
+        if (root.contains("materials")) {
+            std::vector<MaterialDefinition> materialItems;
+            for (const json& materialValue : root.at("materials").at("items")) {
+                materialItems.push_back(json_graph_serializer::materialDefinitionFromJson(materialValue));
+            }
+            if (!materials.replaceMaterials(std::move(materialItems), root.at("materials").at("nextId").get<MaterialId>())) {
+                setLastError("Serialized material registry failed validation.");
+                return false;
+            }
+        }
+
         std::unordered_map<SdfGraphNodeId, SdfGraphNode> nodes;
         for (const json& nodeValue : root.at("nodes")) {
             SdfGraphNode node = json_graph_serializer::nodeFromJson(nodeValue);
+            if (node.payload.type == SdfNodeType::MaterialOverride) {
+                if (node.payload.materialId == 0 || materials.material(node.payload.materialId) == nullptr) {
+                    node.payload.materialId = materials.createMaterial(node.payload.name.empty() ? "Material" : node.payload.name, node.payload.material);
+                } else if (const MaterialDefinition* material = materials.material(node.payload.materialId)) {
+                    node.payload.material = material->material;
+                }
+            }
             const SdfGraphNodeId id = node.id;
             if (!nodes.emplace(id, std::move(node)).second) {
                 setLastError("Duplicate graph node id in file.");
@@ -117,6 +142,11 @@ bool JsonGraphSerializer::load(SdfGraph& graph, const std::filesystem::path& pat
             std::move(links));
         if (!replaced) {
             setLastError("Serialized graph failed structural validation.");
+            return false;
+        }
+
+        if (!graph.materials().replaceMaterials(std::vector<MaterialDefinition>{materials.materials().begin(), materials.materials().end()}, materials.nextMaterialIdForSerialization())) {
+            setLastError("Serialized material registry failed validation.");
             return false;
         }
 

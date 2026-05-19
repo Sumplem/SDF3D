@@ -63,6 +63,9 @@ bool GraphSystem::loweredNodeHasRequiredInputs(SdfNodeType type, const std::vect
     if (isSdfPrimitiveNode(type)) {
         return true;
     }
+    if (isSdfMaterialNode(type)) {
+        return true;
+    }
 
     switch (type) {
     case SdfNodeType::Translate:
@@ -74,7 +77,7 @@ bool GraphSystem::loweredNodeHasRequiredInputs(SdfNodeType type, const std::vect
     case SdfNodeType::Bend:
         return hasValidSocket(validSockets, "child");
     case SdfNodeType::MaterialOverride:
-        return hasValidSocket(validSockets, "sdf");
+        return hasValidSocket(validSockets, "sdf") && (hasValidSocket(validSockets, "material") || childCount == 1);
     case SdfNodeType::Subtract:
     case SdfNodeType::SmoothSubtract:
         return hasValidSocket(validSockets, "base");
