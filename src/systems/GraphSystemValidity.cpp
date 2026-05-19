@@ -1,22 +1,12 @@
 #include "sdf3d/systems/GraphSystem.h"
 
+#include "sdf3d/scene/SdfNodeTraits.h"
+
 #include <algorithm>
 #include <unordered_set>
 
 namespace sdf3d {
 namespace {
-
-bool isPrimitiveNode(SdfNodeType type)
-{
-    return type == SdfNodeType::Sphere
-        || type == SdfNodeType::Box
-        || type == SdfNodeType::Cylinder
-        || type == SdfNodeType::Torus
-        || type == SdfNodeType::Plane
-        || type == SdfNodeType::Capsule
-        || type == SdfNodeType::Cone
-        || type == SdfNodeType::RoundBox;
-}
 
 bool hasValidSocket(const std::vector<std::string>& sockets, const std::string& socket)
 {
@@ -44,7 +34,7 @@ bool producesValidSdfRecursive(const SdfGraph& graph, SdfGraphNodeId id, std::un
     if (node == nullptr) {
         return false;
     }
-    if (isPrimitiveNode(node->payload.type)) {
+    if (isSdfPrimitiveNode(node->payload.type)) {
         return true;
     }
 
@@ -70,7 +60,7 @@ bool producesValidSdfRecursive(const SdfGraph& graph, SdfGraphNodeId id, std::un
 
 bool GraphSystem::loweredNodeHasRequiredInputs(SdfNodeType type, const std::vector<std::string>& validSockets, std::size_t childCount)
 {
-    if (isPrimitiveNode(type)) {
+    if (isSdfPrimitiveNode(type)) {
         return true;
     }
 
@@ -118,7 +108,7 @@ std::optional<SdfGraphLink> GraphSystem::effectiveLinkToInput(const SdfGraph& gr
 
 bool GraphSystem::nodeHasMissingRequiredInput(const SdfGraph& graph, const SdfGraphNode& node)
 {
-    if (isPrimitiveNode(node.payload.type)) {
+    if (isSdfPrimitiveNode(node.payload.type)) {
         return false;
     }
 

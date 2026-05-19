@@ -1,5 +1,6 @@
 #include "sdf3d/systems/GraphSystem.h"
 
+#include "sdf3d/scene/SdfNodeTraits.h"
 #include "sdf3d/scene/SdfRotationParams.h"
 
 #include <algorithm>
@@ -46,27 +47,6 @@ int socketOrder(const std::string& socket)
         return 1;
     }
     return 100;
-}
-
-bool isTransformNode(SdfNodeType type)
-{
-    return type == SdfNodeType::Translate
-        || type == SdfNodeType::Rotate
-        || type == SdfNodeType::Scale
-        || type == SdfNodeType::Repeat
-        || type == SdfNodeType::Mirror
-        || type == SdfNodeType::Twist
-        || type == SdfNodeType::Bend;
-}
-
-bool isBooleanNode(SdfNodeType type)
-{
-    return type == SdfNodeType::Union
-        || type == SdfNodeType::SmoothUnion
-        || type == SdfNodeType::Subtract
-        || type == SdfNodeType::SmoothSubtract
-        || type == SdfNodeType::Intersect
-        || type == SdfNodeType::SmoothIntersect;
 }
 
 float sdBox(glm::vec3 point, glm::vec3 halfExtents)
@@ -167,7 +147,7 @@ SdfGraphNodeId nearestBranchTransform(const SdfGraph& graph, SdfGraphNodeId id)
         if (current == nullptr) {
             break;
         }
-        if (isTransformNode(current->payload.type)) {
+        if (isSdfTransformNode(current->payload.type)) {
             return currentId;
         }
 
@@ -360,7 +340,7 @@ std::optional<SdfGraphNodeId> pickBranchByRay(
     glm::vec3 direction)
 {
     const SdfGraphNode* branchNode = graph.node(branch.fromNode);
-    if (branchNode != nullptr && isBooleanNode(branchNode->payload.type)) {
+    if (branchNode != nullptr && isSdfBooleanNode(branchNode->payload.type)) {
         return pickBooleanInputByRay(graph, *branchNode, rayOrigin, direction);
     }
 
@@ -405,7 +385,7 @@ SdfGraphNodeId GraphSystem::pickNodeByRay(const SdfGraph& graph, glm::vec3 rayOr
 
     const glm::vec3 direction = glm::normalize(rayDirection);
     const SdfGraphNode* rootNode = graph.node(root->fromNode);
-    if (rootNode != nullptr && isBooleanNode(rootNode->payload.type)) {
+    if (rootNode != nullptr && isSdfBooleanNode(rootNode->payload.type)) {
         if (const std::optional<SdfGraphNodeId> pickedBranch = pickBooleanInputByRay(graph, *rootNode, rayOrigin, direction)) {
             return *pickedBranch;
         }

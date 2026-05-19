@@ -1,43 +1,12 @@
 #include "sdf3d/systems/GraphSystem.h"
 
+#include "sdf3d/scene/SdfNodeTraits.h"
+
 #include <algorithm>
 #include <vector>
 
 namespace sdf3d {
 namespace {
-
-bool isHighlightPassThrough(SdfNodeType type)
-{
-    return type == SdfNodeType::Translate
-        || type == SdfNodeType::Rotate
-        || type == SdfNodeType::Scale
-        || type == SdfNodeType::Repeat
-        || type == SdfNodeType::Mirror
-        || type == SdfNodeType::Twist
-        || type == SdfNodeType::Bend
-        || type == SdfNodeType::MaterialOverride;
-}
-
-bool isHighlightTransform(SdfNodeType type)
-{
-    return type == SdfNodeType::Translate
-        || type == SdfNodeType::Rotate
-        || type == SdfNodeType::Scale
-        || type == SdfNodeType::Repeat
-        || type == SdfNodeType::Mirror
-        || type == SdfNodeType::Twist
-        || type == SdfNodeType::Bend;
-}
-
-bool isBooleanNode(SdfNodeType type)
-{
-    return type == SdfNodeType::Union
-        || type == SdfNodeType::SmoothUnion
-        || type == SdfNodeType::Subtract
-        || type == SdfNodeType::SmoothSubtract
-        || type == SdfNodeType::Intersect
-        || type == SdfNodeType::SmoothIntersect;
-}
 
 bool feedsBooleanNode(const SdfGraph& graph, SdfGraphNodeId id)
 {
@@ -47,7 +16,7 @@ bool feedsBooleanNode(const SdfGraph& graph, SdfGraphNodeId id)
         }
 
         const SdfGraphNode* parent = graph.node(link.toNode);
-        if (parent != nullptr && isBooleanNode(parent->payload.type)) {
+        if (parent != nullptr && isSdfBooleanNode(parent->payload.type)) {
             return true;
         }
     }
@@ -72,7 +41,7 @@ SdfGraphNodeId singlePassThroughParent(const SdfGraph& graph, SdfGraphNodeId id)
         }
 
         const SdfGraphNode* parent = graph.node(link.toNode);
-        if (parent == nullptr || !isHighlightPassThrough(parent->payload.type)) {
+        if (parent == nullptr || !isSdfPassThroughNode(parent->payload.type)) {
             continue;
         }
         if (parentId != 0) {
@@ -94,7 +63,7 @@ SdfGraphNodeId GraphSystem::highlightNodeForSelection(const SdfGraph& graph)
     }
 
     const SdfGraphNode* selected = graph.node(currentId);
-    if (selected != nullptr && isHighlightTransform(selected->payload.type)) {
+    if (selected != nullptr && isSdfTransformNode(selected->payload.type)) {
         return currentId;
     }
 

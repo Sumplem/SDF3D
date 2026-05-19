@@ -2,6 +2,7 @@
 
 #include "sdf3d/core/EventBus.h"
 #include "sdf3d/scene/SdfNodeDefinition.h"
+#include "sdf3d/scene/SdfNodeTraits.h"
 #include "sdf3d/scene/SdfRotationParams.h"
 #include "sdf3d/systems/SelectionSystem.h"
 
@@ -43,37 +44,6 @@ const SdfGraphSocket* findSocket(const std::vector<SdfGraphSocket>& sockets, con
     return nullptr;
 }
 
-bool isPrimitiveNode(SdfNodeType type)
-{
-    return type == SdfNodeType::Sphere
-        || type == SdfNodeType::Box
-        || type == SdfNodeType::Cylinder
-        || type == SdfNodeType::Torus
-        || type == SdfNodeType::Plane
-        || type == SdfNodeType::Capsule
-        || type == SdfNodeType::Cone
-        || type == SdfNodeType::RoundBox;
-}
-
-bool isTransformPassThroughNode(SdfNodeType type)
-{
-    return type == SdfNodeType::Translate
-        || type == SdfNodeType::Rotate
-        || type == SdfNodeType::Scale
-        || type == SdfNodeType::Repeat
-        || type == SdfNodeType::Mirror
-        || type == SdfNodeType::Twist
-        || type == SdfNodeType::Bend
-        || type == SdfNodeType::MaterialOverride;
-}
-
-bool isAffineTransformNode(SdfNodeType type)
-{
-    return type == SdfNodeType::Scale
-        || type == SdfNodeType::Rotate
-        || type == SdfNodeType::Translate;
-}
-
 int affineTransformOrder(SdfNodeType type)
 {
     if (type == SdfNodeType::Scale) {
@@ -90,7 +60,7 @@ int affineTransformOrder(SdfNodeType type)
 
 bool canWrapWithTransform(SdfNodeType type)
 {
-    return isPrimitiveNode(type) || isTransformPassThroughNode(type);
+    return isSdfPrimitiveNode(type) || isSdfPassThroughNode(type);
 }
 
 float parameterOr(const SdfNode& node, const std::string& key, float fallback)
@@ -162,7 +132,7 @@ SdfGraphNodeId singlePassThroughParent(const SdfGraph& graph, SdfGraphNodeId id)
         }
 
         const SdfGraphNode* parent = graph.node(link.toNode);
-        if (parent == nullptr || !isTransformPassThroughNode(parent->payload.type)) {
+        if (parent == nullptr || !isSdfPassThroughNode(parent->payload.type)) {
             continue;
         }
         if (parentId != 0) {
@@ -211,7 +181,7 @@ SdfGraphNodeId findPassThroughChildOfType(const SdfGraph& graph, SdfGraphNodeId 
         if (child->payload.type == type) {
             return child->id;
         }
-        if (!isTransformPassThroughNode(child->payload.type)) {
+        if (!isSdfPassThroughNode(child->payload.type)) {
             return 0;
         }
         currentId = child->id;
@@ -239,7 +209,7 @@ SdfGraphNodeId affineChainStart(const SdfGraph& graph, SdfGraphNodeId id)
     while (currentId != 0 && std::find(visited.begin(), visited.end(), currentId) == visited.end()) {
         visited.push_back(currentId);
         const SdfGraphNode* current = graph.node(currentId);
-        if (current == nullptr || !isAffineTransformNode(current->payload.type)) {
+        if (current == nullptr || !isSdfAffineTransformNode(current->payload.type)) {
             return currentId;
         }
 
@@ -248,7 +218,7 @@ SdfGraphNodeId affineChainStart(const SdfGraph& graph, SdfGraphNodeId id)
             return currentId;
         }
         const SdfGraphNode* upstream = graph.node(child->fromNode);
-        if (upstream == nullptr || (!isPrimitiveNode(upstream->payload.type) && !isAffineTransformNode(upstream->payload.type))) {
+        if (upstream == nullptr || (!isSdfPrimitiveNode(upstream->payload.type) && !isSdfAffineTransformNode(upstream->payload.type))) {
             return currentId;
         }
         currentId = upstream->id;
@@ -267,7 +237,7 @@ SdfGraphNodeId canonicalTransformInsertionChild(const SdfGraph& graph, SdfGraphN
         visited.push_back(currentId);
         const SdfGraphNodeId parentId = singlePassThroughParent(graph, currentId);
         const SdfGraphNode* parent = graph.node(parentId);
-        if (parent == nullptr || !isAffineTransformNode(parent->payload.type)) {
+        if (parent == nullptr || !isSdfAffineTransformNode(parent->payload.type)) {
             break;
         }
         if (affineTransformOrder(parent->payload.type) >= targetOrder) {
@@ -667,7 +637,7 @@ glm::vec3 GraphSystem::accumulatedTranslatePosition(const SdfGraph& graph, SdfGr
             continue;
         }
 
-        if (isPrimitiveNode(current.payload.type)) {
+        if (isSdfPrimitiveNode(current.payload.type)) {
             break;
         }
 
@@ -730,7 +700,7 @@ std::vector<SdfCompiledNodeParam> GraphSystem::collectNodeParams(const SdfGraph&
 SdfGraphNodeId GraphSystem::placePrimitiveAtWorldPosition(SdfGraph& graph, SdfGraphNodeId primitiveNode, glm::vec3 worldPosition)
 {
     const auto primitiveIt = graph.m_nodes.find(primitiveNode);
-    if (primitiveIt == graph.m_nodes.end() || !isPrimitiveNode(primitiveIt->second.payload.type)) {
+    if (primitiveIt == graph.m_nodes.end() || !isSdfPrimitiveNode(primitiveIt->second.payload.type)) {
         return 0;
     }
 

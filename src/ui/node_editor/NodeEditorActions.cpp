@@ -1,6 +1,8 @@
 #include "sdf3d/ui/node_editor/NodeEditorCanvas.h"
 #include "sdf3d/ui/node_editor/NodeEditorLayout.h"
 
+#include "sdf3d/scene/SdfNodeTraits.h"
+
 #include <algorithm>
 #include <vector>
 
@@ -10,18 +12,6 @@ namespace {
 float layoutZoom(const GraphNodeLayout& layout)
 {
     return std::max(0.01f, layout.size.x / NODE_WIDTH);
-}
-
-bool isPrimitiveNode(SdfNodeType type)
-{
-    return type == SdfNodeType::Sphere
-        || type == SdfNodeType::Box
-        || type == SdfNodeType::Cylinder
-        || type == SdfNodeType::Torus
-        || type == SdfNodeType::Plane
-        || type == SdfNodeType::Capsule
-        || type == SdfNodeType::Cone
-        || type == SdfNodeType::RoundBox;
 }
 
 bool wrapInMaterialOverride(SdfGraph& graph, const GraphNodeLayout& layout)
@@ -194,7 +184,7 @@ bool drawNodeActions(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNod
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     const ImVec2 nodeEnd = {layout.position.x + layout.size.x, layout.position.y + layout.size.y};
     const bool mouseInsideNode = mouse.x >= layout.position.x && mouse.x <= nodeEnd.x && mouse.y >= layout.position.y && mouse.y <= nodeEnd.y;
-    if (isPrimitiveNode(layout.node->payload.type)
+    if (isSdfPrimitiveNode(layout.node->payload.type)
         && mouseInsideNode
         && ImGui::IsWindowHovered()
         && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {

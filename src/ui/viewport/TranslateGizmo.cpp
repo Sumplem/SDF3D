@@ -1,5 +1,6 @@
 #include "sdf3d/ui/viewport/TranslateGizmo.h"
 
+#include "sdf3d/scene/SdfNodeTraits.h"
 #include "sdf3d/scene/SdfRotationParams.h"
 #include "sdf3d/systems/GraphSystem.h"
 
@@ -30,30 +31,6 @@ constexpr float MIN_SCALE = 0.001f;
 float radians(float degrees)
 {
     return degrees * PI / 180.0f;
-}
-
-bool isPrimitiveNode(SdfNodeType type)
-{
-    return type == SdfNodeType::Sphere
-        || type == SdfNodeType::Box
-        || type == SdfNodeType::Cylinder
-        || type == SdfNodeType::Torus
-        || type == SdfNodeType::Plane
-        || type == SdfNodeType::Capsule
-        || type == SdfNodeType::Cone
-        || type == SdfNodeType::RoundBox;
-}
-
-bool isTransformPassThroughNode(SdfNodeType type)
-{
-    return type == SdfNodeType::Translate
-        || type == SdfNodeType::Rotate
-        || type == SdfNodeType::Scale
-        || type == SdfNodeType::Repeat
-        || type == SdfNodeType::Mirror
-        || type == SdfNodeType::Twist
-        || type == SdfNodeType::Bend
-        || type == SdfNodeType::MaterialOverride;
 }
 
 float parameterOr(const SdfNode& node, const std::string& key, float fallback)
@@ -100,7 +77,7 @@ SdfGraphNodeId singlePassThroughParent(const SdfGraph& graph, SdfGraphNodeId id)
         }
 
         const SdfGraphNode* parent = graph.node(link.toNode);
-        if (parent == nullptr || !isTransformPassThroughNode(parent->payload.type)) {
+        if (parent == nullptr || !isSdfPassThroughNode(parent->payload.type)) {
             continue;
         }
         if (parentId != 0) {
@@ -143,13 +120,13 @@ SdfGraphNodeId findPassThroughChildOfType(const SdfGraph& graph, SdfGraphNodeId 
         }
 
         const SdfGraphNode* upstream = graph.node(sdf->fromNode);
-        if (upstream == nullptr || (!isPrimitiveNode(upstream->payload.type) && !isTransformPassThroughNode(upstream->payload.type))) {
+        if (upstream == nullptr || (!isSdfPrimitiveNode(upstream->payload.type) && !isSdfPassThroughNode(upstream->payload.type))) {
             return 0;
         }
         if (upstream->payload.type == type) {
             return upstream->id;
         }
-        if (!isTransformPassThroughNode(upstream->payload.type)) {
+        if (!isSdfPassThroughNode(upstream->payload.type)) {
             return 0;
         }
         currentId = upstream->id;
@@ -515,7 +492,7 @@ EditorDirtyState TranslateGizmo::update(SceneGraph& sceneGraph, const RenderCame
     } else if (m_mode == Mode::Scale) {
         activeType = SdfNodeType::Scale;
     }
-    if (selected == nullptr || (selected->payload.type != activeType && !isPrimitiveNode(selected->payload.type) && !isTransformPassThroughNode(selected->payload.type))) {
+    if (selected == nullptr || (selected->payload.type != activeType && !isSdfPrimitiveNode(selected->payload.type) && !isSdfPassThroughNode(selected->payload.type))) {
         m_activeAxis = -1;
         return dirty;
     }

@@ -1,6 +1,7 @@
 #include "sdf3d/ui/AddMenu.h"
 
 #include "sdf3d/scene/SdfNodeDefinition.h"
+#include "sdf3d/scene/SdfNodeTraits.h"
 #include "sdf3d/systems/GraphSystem.h"
 #include "sdf3d/ui/node_editor/NodeEditorCanvas.h"
 
@@ -100,18 +101,6 @@ bool tryLinkNewNodeOutputToInput(SdfGraph& graph, SdfGraphNodeId newNode, SdfGra
     }
 
     return false;
-}
-
-bool isPrimitiveNode(SdfNodeType type)
-{
-    return type == SdfNodeType::Sphere
-        || type == SdfNodeType::Box
-        || type == SdfNodeType::Cylinder
-        || type == SdfNodeType::Torus
-        || type == SdfNodeType::Plane
-        || type == SdfNodeType::Capsule
-        || type == SdfNodeType::Cone
-        || type == SdfNodeType::RoundBox;
 }
 
 } // namespace
@@ -311,7 +300,7 @@ void AddMenu::addPrimitive(SceneGraph& sceneGraph, SdfNodePtr node, bool linkToS
             graphNode->editorY = *m_spawnEditorY;
         }
     }
-    const bool viewportPrimitive = m_spawnWorldPosition && isPrimitiveNode(node->type);
+    const bool viewportPrimitive = m_spawnWorldPosition && isSdfPrimitiveNode(node->type);
     if (!viewportPrimitive && activeOutputNodeExists(sceneGraph) && !outputSurfaceLinked(sceneGraph) && node->type != SdfNodeType::Output) {
         sceneGraph.graph().link(id, "sdf", sceneGraph.graph().outputNode(), "surface");
     }
