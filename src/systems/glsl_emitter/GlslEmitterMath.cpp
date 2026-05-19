@@ -1,4 +1,4 @@
-#include "GlslEmitterDomainTransforms.h"
+#include "GlslEmitterMath.h"
 
 #include "GlslEmitterFormatting.h"
 
@@ -66,6 +66,31 @@ std::string mirroredPointFor(const SdfNode& node, const std::string& pointExpr)
 std::string warpCorrectionExpr(float strengthValue)
 {
     return "(1.0 + abs(" + glslFloat(strengthValue) + ") * " + glslFloat(kWarpCorrection) + ")";
+}
+
+std::string glslRotationQuaternionFunction()
+{
+    return
+        "mat3 sdf3d_rotationQuat(vec4 q)\n"
+        "{\n"
+        "    float x = q.x;\n"
+        "    float y = q.y;\n"
+        "    float z = q.z;\n"
+        "    float w = q.w;\n"
+        "    float xx = x * x;\n"
+        "    float yy = y * y;\n"
+        "    float zz = z * z;\n"
+        "    float xy = x * y;\n"
+        "    float xz = x * z;\n"
+        "    float yz = y * z;\n"
+        "    float wx = w * x;\n"
+        "    float wy = w * y;\n"
+        "    float wz = w * z;\n"
+        "    return mat3(\n"
+        "        1.0 - 2.0 * yy - 2.0 * zz, 2.0 * xy + 2.0 * wz, 2.0 * xz - 2.0 * wy,\n"
+        "        2.0 * xy - 2.0 * wz, 1.0 - 2.0 * xx - 2.0 * zz, 2.0 * yz + 2.0 * wx,\n"
+        "        2.0 * xz + 2.0 * wy, 2.0 * yz - 2.0 * wx, 1.0 - 2.0 * xx - 2.0 * yy);\n"
+        "}\n\n";
 }
 
 } // namespace sdf3d::glsl_emitter

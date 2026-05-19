@@ -1,5 +1,7 @@
 #include "sdf3d/scene/SdfNodeDefinition.h"
 
+#include "sdf3d/scene/SdfRotationParams.h"
+
 #include <utility>
 
 namespace sdf3d {
@@ -32,7 +34,15 @@ const std::vector<SdfNodeDefinition>& definitions()
         {SdfNodeType::SmoothIntersect, SdfNodeCategory::Boolean, "Smooth Intersect", {{"smoothness", 0.25f, 0.001f, 100.0f, 0.01f}}, {inputSocket("left"), inputSocket("right")}, {outputSocket("sdf")}},
 
         {SdfNodeType::Translate, SdfNodeCategory::Transform, "Translate", {{"x", 0.0f, -100.0f, 100.0f, 0.01f}, {"y", 0.0f, -100.0f, 100.0f, 0.01f}, {"z", 0.0f, -100.0f, 100.0f, 0.01f}}, {inputSocket("child")}, {outputSocket("sdf")}},
-        {SdfNodeType::Rotate, SdfNodeCategory::Transform, "Rotate", {{"xDegrees", 0.0f, -360.0f, 360.0f, 1.0f}, {"yDegrees", 0.0f, -360.0f, 360.0f, 1.0f}, {"zDegrees", 0.0f, -360.0f, 360.0f, 1.0f}}, {inputSocket("child")}, {outputSocket("sdf")}},
+        {SdfNodeType::Rotate, SdfNodeCategory::Transform, "Rotate", {
+            {"xDegrees", 0.0f, -360.0f, 360.0f, 1.0f},
+            {"yDegrees", 0.0f, -360.0f, 360.0f, 1.0f},
+            {"zDegrees", 0.0f, -360.0f, 360.0f, 1.0f},
+            {RotateParamQx, 0.0f, -1.0f, 1.0f, 0.01f, SdfParameterVisibility::Hidden},
+            {RotateParamQy, 0.0f, -1.0f, 1.0f, 0.01f, SdfParameterVisibility::Hidden},
+            {RotateParamQz, 0.0f, -1.0f, 1.0f, 0.01f, SdfParameterVisibility::Hidden},
+            {RotateParamQw, 1.0f, -1.0f, 1.0f, 0.01f, SdfParameterVisibility::Hidden},
+        }, {inputSocket("child")}, {outputSocket("sdf")}},
         {SdfNodeType::Scale, SdfNodeCategory::Transform, "Scale", {{"x", 1.0f, 0.001f, 100.0f, 0.01f}, {"y", 1.0f, 0.001f, 100.0f, 0.01f}, {"z", 1.0f, 0.001f, 100.0f, 0.01f}}, {inputSocket("child")}, {outputSocket("sdf")}},
         {SdfNodeType::Repeat, SdfNodeCategory::Transform, "Repeat", {{"x", 2.0f, 0.001f, 100.0f, 0.01f}, {"y", 2.0f, 0.001f, 100.0f, 0.01f}, {"z", 2.0f, 0.001f, 100.0f, 0.01f}, {"repeatX", 1.0f, 0.0f, 1.0f, 1.0f}, {"repeatY", 1.0f, 0.0f, 1.0f, 1.0f}, {"repeatZ", 1.0f, 0.0f, 1.0f, 1.0f}}, {inputSocket("child")}, {outputSocket("sdf")}},
         {SdfNodeType::Mirror, SdfNodeCategory::Transform, "Mirror", {{"x", 1.0f, 0.0f, 1.0f, 1.0f}, {"y", 0.0f, 0.0f, 1.0f, 1.0f}, {"z", 0.0f, 0.0f, 1.0f, 1.0f}}, {inputSocket("child")}, {outputSocket("sdf")}},
@@ -58,6 +68,28 @@ const SdfNodeDefinition* sdfNodeDefinition(SdfNodeType type)
     }
 
     return nullptr;
+}
+
+const SdfParameterDefinition* sdfParameterDefinition(SdfNodeType type, const std::string& name)
+{
+    const SdfNodeDefinition* definition = sdfNodeDefinition(type);
+    if (definition == nullptr) {
+        return nullptr;
+    }
+
+    for (const SdfParameterDefinition& parameter : definition->parameters) {
+        if (parameter.name == name) {
+            return &parameter;
+        }
+    }
+
+    return nullptr;
+}
+
+bool isSdfParameterVisible(SdfNodeType type, const std::string& name)
+{
+    const SdfParameterDefinition* parameter = sdfParameterDefinition(type, name);
+    return parameter == nullptr || parameter->visibility == SdfParameterVisibility::Visible;
 }
 
 std::vector<SdfNodeType> sdfNodeTypesForCategory(SdfNodeCategory category)

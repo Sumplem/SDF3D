@@ -1,7 +1,10 @@
 #include "sdf3d/scene/SdfGraph.h"
+#include "sdf3d/scene/SdfNodeDefinition.h"
+#include "sdf3d/scene/SdfRotationParams.h"
 #include "sdf3d/systems/GraphSystem.h"
 #include "sdf3d/ui/node_editor/NodeEditorCanvas.h"
 #include "sdf3d/ui/node_editor/NodeEditorLayout.h"
+#include "sdf3d/ui/node_editor/NodeEditorProperties.h"
 
 #include <cmath>
 #include <iostream>
@@ -299,6 +302,23 @@ void testGraphSystemReusesRotateWrapper(std::vector<TestFailure>& failures)
     expect(reused == rotate, testName, "Expected existing Rotate wrapper reused.", failures);
     expect(graph.selectedNode() == rotate, testName, "Expected existing Rotate selected.", failures);
     expect(graph.nodes().size() == 3, testName, "Expected no extra node beyond Output, Sphere, Rotate.", failures);
+}
+
+void testRotateQuaternionParamsAreHiddenMetadata(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "rotate quaternion params are hidden metadata";
+    const sdf3d::SdfNodePtr rotate = sdf3d::makeSdfNodeFromDefinition(sdf3d::SdfNodeType::Rotate);
+
+    expect(rotate != nullptr, testName, "Expected rotate node.", failures);
+    if (rotate == nullptr) {
+        return;
+    }
+
+    expect(rotate->parameters.find(sdf3d::RotateParamQx) != rotate->parameters.end(), testName, "Expected qx runtime param.", failures);
+    expect(rotate->parameters.find(sdf3d::RotateParamQw) != rotate->parameters.end(), testName, "Expected qw runtime param.", failures);
+    expect(!sdf3d::isSdfParameterVisible(rotate->type, sdf3d::RotateParamQx), testName, "Expected qx hidden by metadata.", failures);
+    expect(!sdf3d::isSdfParameterVisible(rotate->type, sdf3d::RotateParamQw), testName, "Expected qw hidden by metadata.", failures);
+    expect(sdf3d::node_editor::visibleInlinePropertyParameterCount(*rotate) == 3, testName, "Expected only Euler params visible.", failures);
 }
 
 void testGraphSystemCreatesScaleWrapper(std::vector<TestFailure>& failures)
@@ -682,6 +702,7 @@ int main()
     testGraphSystemReusesTranslateWrapper(failures);
     testGraphSystemCreatesRotateWrapper(failures);
     testGraphSystemReusesRotateWrapper(failures);
+    testRotateQuaternionParamsAreHiddenMetadata(failures);
     testGraphSystemCreatesScaleWrapper(failures);
     testGraphSystemReusesScaleWrapper(failures);
     testGraphSystemAccumulatedTranslateDirectChain(failures);

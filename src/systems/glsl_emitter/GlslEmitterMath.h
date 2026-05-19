@@ -13,5 +13,6 @@ std::string rotatePointAroundAxis(const std::string& pointExpr, int axis, const 
 std::string repeatedPointFor(const SdfNode& node, const std::string& pointExpr);
 std::string mirroredPointFor(const SdfNode& node, const std::string& pointExpr);
 std::string warpCorrectionExpr(float strengthValue);
+std::string glslRotationQuaternionFunction();
 
 } // namespace sdf3d::glsl_emitter

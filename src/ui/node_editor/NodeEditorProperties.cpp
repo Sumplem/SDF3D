@@ -2,6 +2,7 @@
 
 #include "sdf3d/scene/SdfNodeDefinition.h"
 #include "sdf3d/scene/SdfRotationParams.h"
+#include "sdf3d/ui/node_editor/NodeEditorProperties.h"
 
 #include <algorithm>
 #include <string>
@@ -20,6 +21,26 @@ constexpr float enabledValue = 1.0f;
 constexpr int axisX = 0;
 constexpr int axisZ = 2;
 constexpr int axisCount = 3;
+constexpr float defaultWindowFontScale = 1.0f;
+
+class ScopedWidgetZoom {
+public:
+    explicit ScopedWidgetZoom(float zoom)
+    {
+        const ImGuiStyle& style = ImGui::GetStyle();
+        ImGui::SetWindowFontScale(zoom);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {style.FramePadding.x * zoom, style.FramePadding.y * zoom});
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemInnerSpacing, {style.ItemInnerSpacing.x * zoom, style.ItemInnerSpacing.y * zoom});
+        ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, style.GrabMinSize * zoom);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, style.FrameRounding * zoom);
+    }
+
+    ~ScopedWidgetZoom()
+    {
+        ImGui::PopStyleVar(4);
+        ImGui::SetWindowFontScale(defaultWindowFontScale);
+    }
+};
 
 bool isBooleanParameter(const SdfParameterDefinition& definition)
 {
@@ -56,6 +77,9 @@ std::vector<std::string> orderedParameterKeys(const SdfNode& node, std::unordere
 
     if (const SdfNodeDefinition* definition = sdfNodeDefinition(node.type)) {
         for (const SdfParameterDefinition& parameter : definition->parameters) {
+            if (parameter.visibility == SdfParameterVisibility::Hidden) {
+                continue;
+            }
             parameterDefinitions.emplace(parameter.name, parameter);
             if (node.parameters.find(parameter.name) != node.parameters.end()) {
                 keys.push_back(parameter.name);
@@ -67,7 +91,7 @@ std::vector<std::string> orderedParameterKeys(const SdfNode& node, std::unordere
     std::vector<std::string> customKeys;
     for (const auto& [key, value] : node.parameters) {
         (void)value;
-        if (node.type == SdfNodeType::Rotate && isHiddenRotationQuaternionParameter(key)) {
+        if (!isInlinePropertyParameterVisible(node, key)) {
             continue;
         }
         if (addedKeys.find(key) == addedKeys.end()) {
@@ -99,6 +123,7 @@ EditorDirtyState drawNodeInlineProperties(const GraphNodeLayout& layout, const C
     const float fieldX = layout.contentPosition.x + labelWidth;
     const float fieldWidth = layout.size.x - labelWidth - scaleValue(frame, 20.0f);
     const float rowHeight = scaleValue(frame, 24.0f);
+    const ScopedWidgetZoom widgetZoom(frame.zoom);
 
     char nameBuffer[96] = {};
     const size_t copyLength = std::min(node.name.size(), sizeof(nameBuffer) - 1);

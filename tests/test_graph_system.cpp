@@ -188,6 +188,33 @@ void testCollectNodeParamsPacksTransformValues(std::vector<TestFailure>& failure
     }
 }
 
+void testCollectNodeParamsNormalizesRotateQuaternion(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "collect node params normalizes rotate quaternion";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId rotate = graph.createNode(sdf3d::SdfNodeType::Rotate, "Rotate");
+    if (sdf3d::SdfGraphNode* node = graph.node(rotate)) {
+        node->payload.parameters[sdf3d::RotateParamQx] = 0.0f;
+        node->payload.parameters[sdf3d::RotateParamQy] = 0.0f;
+        node->payload.parameters[sdf3d::RotateParamQz] = 0.0f;
+        node->payload.parameters[sdf3d::RotateParamQw] = 2.0f;
+    }
+
+    const std::vector<sdf3d::SdfCompiledNodeParam> params = sdf3d::GraphSystem::collectNodeParams(graph);
+    const auto rotateIt = std::find_if(params.begin(), params.end(), [rotate](const sdf3d::SdfCompiledNodeParam& param) {
+        return param.nodeId == rotate;
+    });
+
+    expect(rotateIt != params.end(), testName, "Expected rotate node id packed.", failures);
+    if (rotateIt != params.end()) {
+        expect(rotateIt->data0[0] == 0.0f, testName, "Expected qx normalized.", failures);
+        expect(rotateIt->data0[1] == 0.0f, testName, "Expected qy normalized.", failures);
+        expect(rotateIt->data0[2] == 0.0f, testName, "Expected qz normalized.", failures);
+        expect(rotateIt->data0[3] == 1.0f, testName, "Expected qw normalized.", failures);
+    }
+}
+
 void testPickNodeByRaySelectsTranslatedPrimitive(std::vector<TestFailure>& failures)
 {
     const std::string testName = "pick node by ray selects translated primitive";
@@ -484,6 +511,7 @@ int main()
     testEffectiveValidityDropsInvalidUpstream(failures);
     testLoweredRequiredInputRules(failures);
     testCollectNodeParamsPacksTransformValues(failures);
+    testCollectNodeParamsNormalizesRotateQuaternion(failures);
     testPickNodeByRaySelectsTranslatedPrimitive(failures);
     testPickNodeByRayMissesEmptySpace(failures);
     testPickNodeByRaySelectsBooleanInputBranchTransform(failures);

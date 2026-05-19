@@ -241,6 +241,8 @@ void testRotate(std::vector<TestFailure>& failures)
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
     expect(result.usesRotate, testName, "Expected rotation helper flag.", failures);
     expect(contains(result.glsl, "mat3 sdf3d_rotationQuat"), testName, "Expected rotation helper.", failures);
+    expect(!contains(result.glsl, "normalize(q)"), testName, "Expected quaternion normalize to stay CPU-side.", failures);
+    expect(contains(result.glsl, "float xy = x * y;"), testName, "Expected precomputed quaternion products.", failures);
     expect(contains(result.glsl, "transpose(sdf3d_rotationQuat(vec4("), testName, "Expected inverse quaternion rotation expression.", failures);
 }
 

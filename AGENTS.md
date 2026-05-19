@@ -7,15 +7,19 @@
 - Selection highlight: `uHighlightNodeId` + `sceneNodeSDF(int nodeId, vec3 p)` · smooth distance band
 - Translate/Rotate/Scale gizmos live · oriented by branch Rotate · runtime param SSBO binding=1 · drag = no recompile
 - Rotate: hidden `qx/qy/qz/qw` quaternion · Euler degrees = UI adapter only
+- Quaternion rotate helper assumes normalized CPU input · shader has no `normalize(q)` · products precomputed in GLSL
 - Canonical branch order: Scale → Rotate → Translate · ensure-wrapper reuses existing nodes in chain
 - `SdfNodeTraits.h` centralizes node taxonomy · replaces all duplicated predicates
 - `GraphSystemTransforms.cpp` owns transform wrapper logic · `GraphSystem.cpp` owns CRUD + param collection
-- `GlslEmitter` currently 9 files (over-split by code path) · target 8 files by engineering concern · consolidation approved not started
+- `GlslEmitter` consolidated to 8 files by engineering concern: dispatch · primitives · booleans · domain · materials · scene assembly · math · formatting
 - Material SSBO binding=0 · node param SSBO binding=1 · no material cap
 - Cook-Torrance GGX · soft shadows · AO · `NORMAL_EPSILON = 0.00035`
 - Save/load JSON · `GraphSerializer` interface · `JsonGraphSerializer` · nlohmann/json pinned
 - Phase 2 ops: Repeat · Mirror · Twist · Bend (artifacts + axis config pending)
 - Auto layout: graph-traversal · parent-row-ordered · centered columns · empty slot preservation
+- Node inline property widgets scale font/style with canvas zoom
+- Rotate node layout ignores hidden quaternion params so node height matches visible fields
+- Parameter visibility lives in `SdfNodeDefinition` metadata; UI must not hardcode hidden rotate params
 - Build: `cmake --build build --config Debug` ✅
 - Tests: all focused test executables pass ✅ · GUI smoke ✅
 
@@ -23,7 +27,7 @@
 
 ## Active
 
-GlslEmitter consolidation — priority 1. Reorganizing 9 current files into 8 files each with one engineering reason to change. Not started. Must complete before any new emitter features.
+Parameter visibility metadata fix complete. Review gate open.
 
 ---
 
@@ -71,4 +75,4 @@ GlslEmitter consolidation — priority 1. Reorganizing 9 current files into 8 fi
 
 ## Next
 
-Begin GlslEmitter consolidation: read all current glsl_emitter files, map every function to its target file in the 8-file structure, show full mapping table, wait for approval before touching any file.
+Review parameter visibility metadata fix, then continue backlog item 3 only after approval.

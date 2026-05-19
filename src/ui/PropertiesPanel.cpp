@@ -123,6 +123,9 @@ EditorDirtyState PropertiesPanel::draw(SceneGraph& sceneGraph)
     // parameters still render after known parameters for forward compatibility.
     if (const SdfNodeDefinition* definition = sdfNodeDefinition(selected->type)) {
         for (const SdfParameterDefinition& parameter : definition->parameters) {
+            if (parameter.visibility == SdfParameterVisibility::Hidden) {
+                continue;
+            }
             parameterDefinitions.emplace(parameter.name, parameter);
             if (selected->parameters.find(parameter.name) != selected->parameters.end()) {
                 keys.push_back(parameter.name);
@@ -134,7 +137,7 @@ EditorDirtyState PropertiesPanel::draw(SceneGraph& sceneGraph)
     std::vector<std::string> customKeys;
     for (const auto& [key, value] : selected->parameters) {
         (void)value;
-        if (selected->type == SdfNodeType::Rotate && isHiddenRotationQuaternionParameter(key)) {
+        if (!isSdfParameterVisible(selected->type, key)) {
             continue;
         }
         if (addedKeys.find(key) == addedKeys.end()) {

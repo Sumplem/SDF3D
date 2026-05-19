@@ -1,11 +1,45 @@
 #include "sdf3d/systems/GlslEmitter.h"
 
-#include "GlslEmitterSdfHelperContext.h"
+#include "GlslEmitterInternal.h"
+#include "sdf3d/systems/MaterialSystem.h"
 
 #include <cstdint>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
+
+namespace sdf3d::glsl_emitter {
+
+uint64_t helperIdFor(const SdfNodePtr& node, SdfHelperEmitContext& context)
+{
+    if (node->stableId != 0) {
+        return node->stableId;
+    }
+
+    const SdfNode* key = node.get();
+    auto it = context.generatedIds.find(key);
+    if (it != context.generatedIds.end()) {
+        return it->second;
+    }
+
+    // AGENT: Legacy tree compiles have no graph IDs; generated IDs are isolated
+    // above normal graph IDs so graph-less compile paths remain deterministic.
+    const uint64_t id = context.nextGeneratedId++;
+    context.generatedIds.emplace(key, id);
+    return id;
+}
+
+std::string helperNameFor(const SdfNodePtr& node, SdfHelperEmitContext& context)
+{
+    return "sdf_node_" + std::to_string(helperIdFor(node, context));
+}
+
+std::string helperCallFor(const SdfNodePtr& node, const std::string& pointExpr, SdfHelperEmitContext& context)
+{
+    return helperNameFor(node, context) + "(" + pointExpr + ")";
+}
+
+} // namespace sdf3d::glsl_emitter
 
 namespace sdf3d {
 namespace {
@@ -74,6 +108,17 @@ GlslSdfHelperBlock GlslEmitter::emitSdfHelpers(const SdfNodePtr& root, SdfCompil
     emitSdfHelperPostorder(root, result, block, context, emittedIds, visiting);
     block.rootFunctionName = glsl_emitter::helperNameFor(root, context);
     return block;
+}
+
+std::string GlslEmitter::emitSceneMaterialExpression(
+    const SdfNodePtr& root,
+    const std::string& pointExpr,
+    SdfCompileResult& result,
+    const GlslSdfHelperBlock& sdfHelpers) const
+{
+    const MaterialSystem materialSystem;
+    materialSystem.ensureDefaultMaterial(result);
+    return glsl_emitter::emitMaterialFor(root, pointExpr, result, sdfHelpers);
 }
 
 } // namespace sdf3d

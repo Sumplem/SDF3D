@@ -4,6 +4,8 @@
 #include "sdf3d/systems/GlslEmitter.h"
 #include "sdf3d/systems/GraphSystem.h"
 
+#include "glsl_emitter/GlslEmitterMath.h"
+
 #include <sstream>
 
 namespace sdf3d {
@@ -91,18 +93,7 @@ SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root) const
     }
 
     if (result.usesRotate) {
-        glsl << "mat3 sdf3d_rotationQuat(vec4 q)\n";
-        glsl << "{\n";
-        glsl << "    q = normalize(q);\n";
-        glsl << "    float x = q.x;\n";
-        glsl << "    float y = q.y;\n";
-        glsl << "    float z = q.z;\n";
-        glsl << "    float w = q.w;\n";
-        glsl << "    return mat3(\n";
-        glsl << "        1.0 - 2.0 * y * y - 2.0 * z * z, 2.0 * x * y + 2.0 * w * z, 2.0 * x * z - 2.0 * w * y,\n";
-        glsl << "        2.0 * x * y - 2.0 * w * z, 1.0 - 2.0 * x * x - 2.0 * z * z, 2.0 * y * z + 2.0 * w * x,\n";
-        glsl << "        2.0 * x * z + 2.0 * w * y, 2.0 * y * z - 2.0 * w * x, 1.0 - 2.0 * x * x - 2.0 * y * y);\n";
-        glsl << "}\n\n";
+        glsl << glsl_emitter::glslRotationQuaternionFunction();
     }
 
     for (const GlslSdfHelper& helper : sdfHelpers.helpers) {

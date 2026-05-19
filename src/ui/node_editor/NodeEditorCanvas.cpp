@@ -1,6 +1,7 @@
 #include "sdf3d/ui/node_editor/NodeEditorCanvas.h"
 
 #include "sdf3d/scene/SdfNodeDefinition.h"
+#include "sdf3d/ui/node_editor/NodeEditorProperties.h"
 
 #include <algorithm>
 #include <optional>
@@ -63,7 +64,7 @@ size_t inlinePropertyRows(const SdfGraphNode& node)
 
     constexpr size_t nameRows = 1;
     const size_t materialRows = node.payload.type == SdfNodeType::MaterialOverride ? 4 : 0;
-    return nameRows + materialRows + node.payload.parameters.size();
+    return nameRows + materialRows + visibleInlinePropertyParameterCount(node.payload);
 }
 
 std::vector<SdfGraphNodeId> sortedNodeIds(const SdfGraph& graph)

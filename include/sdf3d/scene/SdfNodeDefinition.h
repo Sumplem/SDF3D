@@ -16,6 +16,12 @@ enum class SdfNodeCategory {
     Output,
 };
 
+/// Controls whether a parameter is user-editable in generic parameter UIs.
+enum class SdfParameterVisibility {
+    Visible,
+    Hidden,
+};
+
 /// Declares one float parameter and its default value.
 struct SdfParameterDefinition {
     std::string name;
@@ -23,6 +29,7 @@ struct SdfParameterDefinition {
     float minValue = 0.0f;
     float maxValue = 0.0f;
     float step = 0.01f;
+    SdfParameterVisibility visibility = SdfParameterVisibility::Visible;
 };
 
 /// Static metadata shared by graph sockets, Add menu, and default nodes.
@@ -37,6 +44,12 @@ struct SdfNodeDefinition {
 
 /// Returns metadata for a node type, or nullptr when not defined for Phase 1.
 const SdfNodeDefinition* sdfNodeDefinition(SdfNodeType type);
+
+/// Returns metadata for one parameter, or nullptr when custom/unknown.
+const SdfParameterDefinition* sdfParameterDefinition(SdfNodeType type, const std::string& name);
+
+/// Returns false only for metadata-declared hidden parameters.
+bool isSdfParameterVisible(SdfNodeType type, const std::string& name);
 
 /// Returns node types in menu order for one category.
 std::vector<SdfNodeType> sdfNodeTypesForCategory(SdfNodeCategory category);
