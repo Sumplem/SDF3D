@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sdf3d/scene/SdfGraph.h"
+#include "sdf3d/scene/GraphGroupRegistry.h"
 #include "sdf3d/ui/EditorDirtyState.h"
 
 #include "sdf3d/core/EventBus.h"

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "sdf3d/renderer/UniformUploader.h"
-#include "sdf3d/scene/SceneGraph.h"
+#include "sdf3d/scene/SdfGraph.h"
 #include "sdf3d/ui/EditorDirtyState.h"
 
 #include <glm/glm.hpp>
@@ -11,7 +11,7 @@ namespace sdf3d {
 
 class TranslateGizmo {
 public:
-    EditorDirtyState update(SceneGraph& sceneGraph, const RenderCamera& camera, ImVec2 imageMin, ImVec2 imageMax, RenderGizmo& gizmo);
+    EditorDirtyState update(SdfGraph& graph, const RenderCamera& camera, ImVec2 imageMin, ImVec2 imageMax, RenderGizmo& gizmo);
     void drawSettings();
     bool active() const;
 

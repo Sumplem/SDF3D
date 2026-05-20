@@ -5,6 +5,8 @@
 
 namespace sdf3d {
 
+class GraphGroupRegistry;
+
 /// Packs SDF materials into deterministic compiler output slots.
 class MaterialSystem {
 public:
@@ -19,6 +21,9 @@ public:
 
     /// Collects material uniforms from graph output without emitting GLSL.
     SdfCompileResult collectMaterials(const SdfGraph& graph) const;
+
+    /// Collects material uniforms from graph output with resolved groups.
+    SdfCompileResult collectMaterials(const SdfGraph& graph, const GraphGroupRegistry& groups) const;
 };
 
 } // namespace sdf3d

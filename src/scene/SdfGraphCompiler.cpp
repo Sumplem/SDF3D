@@ -1,5 +1,6 @@
 #include "sdf3d/scene/SdfGraphCompiler.h"
 
+#include "sdf3d/scene/GraphGroupRegistry.h"
 #include "sdf3d/systems/GraphSystem.h"
 
 #include <algorithm>
@@ -31,9 +32,11 @@ int socketOrder(const std::string& socket)
     return 100;
 }
 
-} // namespace
-
-SdfGraphLowerResult lowerSdfGraphToTree(const SdfGraph& graph)
+SdfGraphLowerResult lowerSdfGraphToTreeInternal(
+    const SdfGraph& graph,
+    const GraphGroupRegistry* groups,
+    std::unordered_map<GroupDefId, SdfNodePtr>* loweredGroups,
+    std::unordered_set<GroupDefId>* visitingGroups)
 {
     SdfGraphLowerResult result;
     if (graph.outputNode() == 0) {
@@ -84,6 +87,7 @@ SdfGraphLowerResult lowerSdfGraphToTree(const SdfGraph& graph)
         node->stableId = graphNode->payload.stableId != 0 ? graphNode->payload.stableId : graphNode->id;
         node->parameters = graphNode->payload.parameters;
         node->materialId = graphNode->payload.materialId;
+        node->groupDefinitionId = graphNode->payload.groupDefinitionId;
         node->material = graphNode->payload.material;
         if ((node->type == SdfNodeType::SolidMaterial || node->type == SdfNodeType::CheckerMaterial || node->type == SdfNodeType::MaterialOverride) && node->materialId != 0) {
             if (const MaterialDefinition* material = graph.materials().material(node->materialId)) {
@@ -113,6 +117,31 @@ SdfGraphLowerResult lowerSdfGraphToTree(const SdfGraph& graph)
         });
 
         std::vector<std::string> validSockets;
+        if (node->type == SdfNodeType::Group) {
+            if (groups == nullptr || loweredGroups == nullptr || visitingGroups == nullptr || node->groupDefinitionId == 0) {
+                result.errors.push_back("Group node references a missing definition.");
+            } else if (visitingGroups->find(node->groupDefinitionId) != visitingGroups->end()) {
+                result.errors.push_back("Cycle detected in graph group definitions.");
+            } else {
+                auto loweredGroup = loweredGroups->find(node->groupDefinitionId);
+                if (loweredGroup == loweredGroups->end()) {
+                    const GraphGroupDefinition* definition = groups->definition(node->groupDefinitionId);
+                    if (definition == nullptr) {
+                        result.errors.push_back("Group node references a missing definition.");
+                    } else {
+                        visitingGroups->insert(node->groupDefinitionId);
+                        SdfGraphLowerResult lowered = lowerSdfGraphToTreeInternal(definition->subgraph, groups, loweredGroups, visitingGroups);
+                        visitingGroups->erase(node->groupDefinitionId);
+                        result.errors.insert(result.errors.end(), lowered.errors.begin(), lowered.errors.end());
+                        loweredGroup = loweredGroups->emplace(node->groupDefinitionId, lowered.root).first;
+                    }
+                }
+                if (loweredGroup != loweredGroups->end() && loweredGroup->second) {
+                    node->children.push_back(loweredGroup->second);
+                }
+            }
+        }
+
         for (const SdfGraphLink& link : inputs) {
             SdfNodePtr child = buildTree(link.fromNode);
             if (child) {
@@ -132,6 +161,20 @@ SdfGraphLowerResult lowerSdfGraphToTree(const SdfGraph& graph)
 
     result.root = buildTree(graphRoot);
     return result;
+}
+
+} // namespace
+
+SdfGraphLowerResult lowerSdfGraphToTree(const SdfGraph& graph)
+{
+    return lowerSdfGraphToTreeInternal(graph, nullptr, nullptr, nullptr);
+}
+
+SdfGraphLowerResult lowerSdfGraphToTree(const SdfGraph& graph, const GraphGroupRegistry& groups)
+{
+    std::unordered_map<GroupDefId, SdfNodePtr> loweredGroups;
+    std::unordered_set<GroupDefId> visitingGroups;
+    return lowerSdfGraphToTreeInternal(graph, &groups, &loweredGroups, &visitingGroups);
 }
 
 } // namespace sdf3d

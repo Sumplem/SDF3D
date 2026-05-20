@@ -19,6 +19,15 @@ SdfCompileResult CompilerSystem::compile(const SdfGraph& graph) const
     return result;
 }
 
+SdfCompileResult CompilerSystem::compile(const SdfGraph& graph, const GraphGroupRegistry& groups) const
+{
+    const SdfGraphLowerResult lowered = lowerSdfGraphToTree(graph, groups);
+    SdfCompileResult result = compile(lowered.root);
+    result.errors.insert(result.errors.begin(), lowered.errors.begin(), lowered.errors.end());
+    result.nodeParams = GraphSystem::collectNodeParams(graph);
+    return result;
+}
+
 SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root) const
 {
     SdfCompileResult result;

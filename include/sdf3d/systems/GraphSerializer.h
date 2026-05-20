@@ -7,6 +7,8 @@
 
 namespace sdf3d {
 
+class GraphGroupRegistry;
+
 /// Abstract graph persistence boundary so file format can change later.
 class GraphSerializer {
 public:

@@ -90,9 +90,9 @@ ImVec4 severityColor(DiagnosticSeverity severity)
 
 } // namespace
 
-void UI::drawPanels(SceneGraph& sceneGraph, const std::vector<DiagnosticEntry>& runtimeErrors)
+void UI::drawPanels(SceneGraph& sceneGraph, GraphGroupRegistry& groups, const std::vector<DiagnosticEntry>& runtimeErrors)
 {
-    drawScenePanel(sceneGraph);
+    drawScenePanel(sceneGraph, groups);
     drawDiagnosticsPanel(runtimeErrors);
     const EditorDirtyState propertiesDirty = m_propertiesPanel.draw(sceneGraph);
     if (propertiesDirty.scene) {
@@ -101,6 +101,11 @@ void UI::drawPanels(SceneGraph& sceneGraph, const std::vector<DiagnosticEntry>& 
     if (propertiesDirty.material) {
         markMaterialDirty();
     }
+}
+
+SdfGraph& UI::activeGraph(SceneGraph& sceneGraph, GraphGroupRegistry& groups)
+{
+    return m_nodeEditor.activeGraph(sceneGraph, groups);
 }
 
 bool UI::consumeSceneDirty()
@@ -113,7 +118,7 @@ bool UI::consumeMaterialDirty()
     return m_selectionSystem.consumeMaterialDirty();
 }
 
-void UI::drawScenePanel(SceneGraph& sceneGraph)
+void UI::drawScenePanel(SceneGraph& sceneGraph, GraphGroupRegistry& groups)
 {
     ImGui::Begin("Scene");
 
@@ -122,7 +127,7 @@ void UI::drawScenePanel(SceneGraph& sceneGraph)
             markSceneDirty();
         }
 
-        const EditorDirtyState nodeEditorDirty = m_nodeEditor.draw(sceneGraph);
+        const EditorDirtyState nodeEditorDirty = m_nodeEditor.draw(sceneGraph, groups);
         if (nodeEditorDirty.scene) {
             markSceneDirty();
         }

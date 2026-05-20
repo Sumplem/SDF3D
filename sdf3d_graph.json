@@ -1,37 +1,250 @@
 {
+  "definitions": [
+    {
+      "graph": {
+        "links": [
+          {
+            "from": {
+              "node": 7,
+              "socket": "sdf"
+            },
+            "to": {
+              "node": 9,
+              "socket": "child"
+            }
+          },
+          {
+            "from": {
+              "node": 9,
+              "socket": "sdf"
+            },
+            "to": {
+              "node": 12,
+              "socket": "sdf"
+            }
+          },
+          {
+            "from": {
+              "node": 13,
+              "socket": "material"
+            },
+            "to": {
+              "node": 12,
+              "socket": "material"
+            }
+          },
+          {
+            "from": {
+              "node": 12,
+              "socket": "sdf"
+            },
+            "to": {
+              "node": 14,
+              "socket": "surface"
+            }
+          }
+        ],
+        "materials": {
+          "items": [
+            {
+              "id": 4,
+              "material": {
+                "albedo": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "emission": 0.0,
+                "metallic": 1.0,
+                "patternScale": 4.0,
+                "roughness": 0.6800000071525574,
+                "secondaryAlbedo": [
+                  0.07999999821186066,
+                  0.07999999821186066,
+                  0.07999999821186066
+                ],
+                "type": 0
+              },
+              "name": "Solid Material"
+            }
+          ],
+          "nextId": 5
+        },
+        "nextId": 15,
+        "nodes": [
+          {
+            "editor": {
+              "propertiesCollapsed": false,
+              "x": -32.34112548828125,
+              "y": 178.76019287109375
+            },
+            "id": 7,
+            "name": "Box",
+            "parameters": {
+              "x": 1.0,
+              "y": 1.0,
+              "z": 1.0
+            },
+            "stableId": 7,
+            "type": "Box"
+          },
+          {
+            "editor": {
+              "propertiesCollapsed": false,
+              "x": 327.65887451171875,
+              "y": 178.76019287109375
+            },
+            "id": 9,
+            "name": "Translate",
+            "parameters": {
+              "x": 0.4287413954734802,
+              "y": 0.0,
+              "z": -1.1833796501159668
+            },
+            "stableId": 9,
+            "type": "Translate"
+          },
+          {
+            "editor": {
+              "propertiesCollapsed": false,
+              "x": 687.6588745117188,
+              "y": 178.76019287109375
+            },
+            "id": 12,
+            "materialId": 4,
+            "name": "Material Override",
+            "parameters": {},
+            "stableId": 12,
+            "type": "MaterialOverride"
+          },
+          {
+            "editor": {
+              "propertiesCollapsed": false,
+              "x": 327.65887451171875,
+              "y": 406.76019287109375
+            },
+            "id": 13,
+            "materialId": 4,
+            "name": "Solid Material",
+            "parameters": {},
+            "stableId": 13,
+            "type": "SolidMaterial"
+          },
+          {
+            "editor": {
+              "propertiesCollapsed": false,
+              "x": 1047.658935546875,
+              "y": 178.76019287109375
+            },
+            "id": 14,
+            "name": "Output",
+            "parameters": {},
+            "stableId": 14,
+            "type": "Output"
+          }
+        ],
+        "outputNode": 14
+      },
+      "id": 1,
+      "name": "Group"
+    }
+  ],
   "links": [
     {
       "from": {
-        "node": 2,
-        "socket": "sdf"
-      },
-      "to": {
-        "node": 3,
-        "socket": "sdf"
-      }
-    },
-    {
-      "from": {
-        "node": 3,
+        "node": 8,
         "socket": "sdf"
       },
       "to": {
         "node": 1,
         "socket": "surface"
       }
+    },
+    {
+      "from": {
+        "node": 2,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 10,
+        "socket": "sdf"
+      }
+    },
+    {
+      "from": {
+        "node": 10,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 6,
+        "socket": "child"
+      }
+    },
+    {
+      "from": {
+        "node": 11,
+        "socket": "material"
+      },
+      "to": {
+        "node": 10,
+        "socket": "material"
+      }
+    },
+    {
+      "from": {
+        "node": 6,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 8,
+        "socket": "left"
+      }
+    },
+    {
+      "from": {
+        "node": 14,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 8,
+        "socket": "right"
+      }
     }
   ],
   "materials": {
-    "items": [],
-    "nextId": 2
+    "items": [
+      {
+        "id": 3,
+        "material": {
+          "albedo": [
+            0.30519023537635803,
+            0.754077136516571,
+            0.18310238420963287
+          ],
+          "emission": 0.7900000214576721,
+          "metallic": 0.1599999964237213,
+          "patternScale": 4.0,
+          "roughness": 0.5,
+          "secondaryAlbedo": [
+            0.07999999821186066,
+            0.07999999821186066,
+            0.07999999821186066
+          ],
+          "type": 0
+        },
+        "name": "Solid Material"
+      }
+    ],
+    "nextId": 5
   },
-  "nextId": 5,
+  "nextDefinitionId": 2,
+  "nextId": 15,
   "nodes": [
     {
       "editor": {
         "propertiesCollapsed": false,
-        "x": 403.5,
-        "y": 206.0
+        "x": 1000.350830078125,
+        "y": 142.76748657226563
       },
       "id": 1,
       "name": "Output",
@@ -42,8 +255,8 @@
     {
       "editor": {
         "propertiesCollapsed": false,
-        "x": 43.5,
-        "y": 206.0
+        "x": -439.649169921875,
+        "y": 142.76748657226563
       },
       "id": 2,
       "name": "Sphere",
@@ -56,14 +269,69 @@
     {
       "editor": {
         "propertiesCollapsed": false,
-        "x": 237.0,
-        "y": 422.0
+        "x": 280.350830078125,
+        "y": 142.76748657226563
       },
-      "id": 3,
+      "id": 6,
+      "name": "Translate",
+      "parameters": {
+        "x": -1.4681503772735596,
+        "y": 0.20986396074295044,
+        "z": 0.0
+      },
+      "stableId": 6,
+      "type": "Translate"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 640.350830078125,
+        "y": 142.76748657226563
+      },
+      "id": 8,
+      "name": "Union",
+      "parameters": {},
+      "stableId": 8,
+      "type": "Union"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": -79.649169921875,
+        "y": 142.76748657226563
+      },
+      "id": 10,
+      "materialId": 3,
       "name": "Material Override",
       "parameters": {},
-      "stableId": 3,
+      "stableId": 10,
       "type": "MaterialOverride"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": -439.649169921875,
+        "y": 370.7674865722656
+      },
+      "id": 11,
+      "materialId": 3,
+      "name": "Solid Material",
+      "parameters": {},
+      "stableId": 11,
+      "type": "SolidMaterial"
+    },
+    {
+      "definitionId": 1,
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 280.350830078125,
+        "y": 370.7674865722656
+      },
+      "id": 14,
+      "name": "Group",
+      "parameters": {},
+      "stableId": 14,
+      "type": "Group"
     }
   ],
   "outputNode": 1,

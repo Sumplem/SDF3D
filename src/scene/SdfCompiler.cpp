@@ -10,6 +10,12 @@ SdfCompileResult SdfCompiler::compile(const SdfGraph& graph) const
     return compiler.compile(graph);
 }
 
+SdfCompileResult SdfCompiler::compile(const SdfGraph& graph, const GraphGroupRegistry& groups) const
+{
+    const CompilerSystem compiler;
+    return compiler.compile(graph, groups);
+}
+
 SdfCompileResult SdfCompiler::compile(const SdfNodePtr& root) const
 {
     const CompilerSystem compiler;

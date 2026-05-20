@@ -43,7 +43,7 @@ inline bool isSdfTransformNode(SdfNodeType type)
 /// Returns true when a node type forwards a single SDF branch without creating a boolean boundary.
 inline bool isSdfPassThroughNode(SdfNodeType type)
 {
-    return isSdfTransformNode(type) || type == SdfNodeType::MaterialOverride;
+    return isSdfTransformNode(type) || type == SdfNodeType::MaterialOverride || type == SdfNodeType::Group;
 }
 
 /// Returns true when a node type emits reusable material data.

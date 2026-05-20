@@ -83,6 +83,7 @@ const std::vector<SdfNodeDefinition>& definitions()
         {SdfNodeType::CheckerMaterial, SdfNodeCategory::Material, "Checker Material", {}, {}, {outputSocket("material", SdfSocketType::Material)}},
         {SdfNodeType::MaterialOverride, SdfNodeCategory::Material, "Material Override", {}, {inputSocket("sdf"), inputSocket("material", SdfSocketType::Material)}, {outputSocket("sdf")}},
 
+        {SdfNodeType::Group, SdfNodeCategory::Group, "Group", {}, {}, {outputSocket("sdf")}},
         {SdfNodeType::Output, SdfNodeCategory::Output, "Output", {}, {inputSocket("surface")}, {}},
     };
 

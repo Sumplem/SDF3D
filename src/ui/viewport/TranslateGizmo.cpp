@@ -476,11 +476,10 @@ void TranslateGizmo::drawSettings()
     }
 }
 
-EditorDirtyState TranslateGizmo::update(SceneGraph& sceneGraph, const RenderCamera& camera, ImVec2 imageMin, ImVec2 imageMax, RenderGizmo& gizmo)
+EditorDirtyState TranslateGizmo::update(SdfGraph& graph, const RenderCamera& camera, ImVec2 imageMin, ImVec2 imageMax, RenderGizmo& gizmo)
 {
     EditorDirtyState dirty;
     gizmo = {};
-    SdfGraph& graph = sceneGraph.graph();
     SdfGraphNodeId selectedId = graph.selectedNode();
     SdfGraphNode* selected = graph.node(selectedId);
     SdfNodeType activeType = SdfNodeType::Translate;

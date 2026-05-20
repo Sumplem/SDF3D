@@ -8,6 +8,8 @@
 
 namespace sdf3d {
 
+class GraphGroupRegistry;
+
 /// Result of lowering an editable graph into the compiler's tree model.
 struct SdfGraphLowerResult {
     SdfNodePtr root;
@@ -16,5 +18,8 @@ struct SdfGraphLowerResult {
 
 /// Lowers the graph output path into an SDF expression tree.
 SdfGraphLowerResult lowerSdfGraphToTree(const SdfGraph& graph);
+
+/// Lowers the graph output path and resolves Group nodes through a registry.
+SdfGraphLowerResult lowerSdfGraphToTree(const SdfGraph& graph, const GraphGroupRegistry& groups);
 
 } // namespace sdf3d

@@ -1,7 +1,9 @@
 #include "sdf3d/systems/GraphSystem.h"
 
 #include "sdf3d/core/EventBus.h"
+#include "sdf3d/scene/GraphGroupRegistry.h"
 #include "sdf3d/scene/SdfNodeDefinition.h"
+#include "sdf3d/scene/SdfNodeTraits.h"
 #include "sdf3d/scene/SdfRotationParams.h"
 #include "sdf3d/systems/SelectionSystem.h"
 
@@ -46,6 +48,54 @@ float parameterOr(const SdfNode& node, const std::string& key, float fallback)
 {
     const auto it = node.parameters.find(key);
     return it == node.parameters.end() ? fallback : it->second;
+}
+
+void clearMaterialOverrideIfMaterialInputRemoved(
+    std::unordered_map<SdfGraphNodeId, SdfGraphNode>& nodes,
+    SdfGraphNodeId toNode,
+    const std::string& toSocket)
+{
+    if (toSocket != "material") {
+        return;
+    }
+
+    const auto it = nodes.find(toNode);
+    if (it == nodes.end() || it->second.payload.type != SdfNodeType::MaterialOverride) {
+        return;
+    }
+
+    it->second.payload.materialId = 0;
+    it->second.payload.material = {};
+}
+
+std::vector<SdfGraphNodeId> materialOverridesUsingDeletedSource(
+    const std::unordered_map<SdfGraphNodeId, SdfGraphNode>& nodes,
+    const std::vector<SdfGraphLink>& links,
+    SdfGraphNodeId sourceId,
+    MaterialId materialId)
+{
+    std::vector<SdfGraphNodeId> overrideIds;
+    if (materialId == 0) {
+        return overrideIds;
+    }
+
+    for (const SdfGraphLink& link : links) {
+        if (link.fromNode != sourceId || link.fromSocket != "material" || link.toSocket != "material") {
+            continue;
+        }
+
+        const auto it = nodes.find(link.toNode);
+        if (it != nodes.end() && it->second.payload.type == SdfNodeType::MaterialOverride && it->second.payload.materialId == materialId) {
+            overrideIds.push_back(link.toNode);
+        }
+    }
+
+    return overrideIds;
+}
+
+bool nodeHasSdfOutput(const SdfGraphNode& node)
+{
+    return findSocket(node.outputs, "sdf", SdfSocketDirection::Output) != nullptr;
 }
 
 } // namespace
@@ -167,6 +217,129 @@ std::vector<SdfGraphNodeId> GraphSystem::duplicateSelection(SdfGraph& graph, con
     return duplicateIds;
 }
 
+SdfGraphNodeId GraphSystem::groupSelection(
+    SdfGraph& graph,
+    GraphGroupRegistry& groups,
+    const std::vector<SdfGraphNodeId>& ids,
+    SdfGraphNodeId primary,
+    std::string name)
+{
+    std::vector<SdfGraphNodeId> sourceIds;
+    for (const SdfGraphNodeId id : ids) {
+        if (id == 0 || isOutputNode(graph, id) || graph.m_nodes.find(id) == graph.m_nodes.end()) {
+            continue;
+        }
+        if (std::find(sourceIds.begin(), sourceIds.end(), id) == sourceIds.end()) {
+            sourceIds.push_back(id);
+        }
+    }
+    if (sourceIds.empty()) {
+        return 0;
+    }
+
+    std::unordered_set<SdfGraphNodeId> sourceSet(sourceIds.begin(), sourceIds.end());
+    for (const SdfGraphLink& link : graph.m_links) {
+        const bool fromSelected = sourceSet.find(link.fromNode) != sourceSet.end();
+        const bool toSelected = sourceSet.find(link.toNode) != sourceSet.end();
+        if (!fromSelected && toSelected) {
+            return 0;
+        }
+    }
+
+    SdfGraphNodeId groupRoot = 0;
+    for (const SdfGraphLink& link : graph.m_links) {
+        const bool fromSelected = sourceSet.find(link.fromNode) != sourceSet.end();
+        const bool toSelected = sourceSet.find(link.toNode) != sourceSet.end();
+        if (fromSelected && !toSelected && link.fromSocket == "sdf") {
+            groupRoot = link.fromNode;
+            if (link.toNode == graph.m_outputNode && link.toSocket == "surface") {
+                break;
+            }
+        }
+    }
+    if (groupRoot == 0 && sourceSet.find(primary) != sourceSet.end()) {
+        const auto primaryIt = graph.m_nodes.find(primary);
+        if (primaryIt != graph.m_nodes.end() && nodeHasSdfOutput(primaryIt->second)) {
+            groupRoot = primary;
+        }
+    }
+    if (groupRoot == 0) {
+        for (const SdfGraphNodeId id : sourceIds) {
+            const auto it = graph.m_nodes.find(id);
+            if (it != graph.m_nodes.end() && nodeHasSdfOutput(it->second)) {
+                groupRoot = id;
+                break;
+            }
+        }
+    }
+    if (groupRoot == 0) {
+        return 0;
+    }
+
+    std::unordered_map<SdfGraphNodeId, SdfGraphNode> groupNodes;
+    SdfGraphNodeId maxId = 0;
+    float x = 0.0f;
+    float y = 0.0f;
+    for (const SdfGraphNodeId id : sourceIds) {
+        const SdfGraphNode& node = graph.m_nodes.at(id);
+        groupNodes.emplace(id, node);
+        maxId = std::max(maxId, id);
+        x += node.editorX;
+        y += node.editorY;
+    }
+
+    const SdfGraphNodeId outputId = maxId + 1;
+    SdfNodePtr outputPayload = makeSdfNodeFromDefinition(SdfNodeType::Output);
+    outputPayload->stableId = outputId;
+    SdfGraphNode outputNode{outputId, *outputPayload, x / static_cast<float>(sourceIds.size()) + 280.0f, y / static_cast<float>(sourceIds.size())};
+    outputNode.inputs = defaultInputsFor(SdfNodeType::Output);
+    outputNode.outputs = defaultOutputsFor(SdfNodeType::Output);
+    groupNodes.emplace(outputId, std::move(outputNode));
+
+    std::vector<SdfGraphLink> groupLinks;
+    std::vector<SdfGraphLink> outgoingLinks;
+    for (const SdfGraphLink& link : graph.m_links) {
+        const bool fromSelected = sourceSet.find(link.fromNode) != sourceSet.end();
+        const bool toSelected = sourceSet.find(link.toNode) != sourceSet.end();
+        if (fromSelected && toSelected) {
+            groupLinks.push_back(link);
+        } else if (link.fromNode == groupRoot && !toSelected && link.fromSocket == "sdf") {
+            outgoingLinks.push_back(link);
+        }
+    }
+    groupLinks.push_back({groupRoot, "sdf", outputId, "surface"});
+
+    SdfGraph subgraph;
+    subgraph.m_nextId = outputId + 1;
+    subgraph.m_outputNode = outputId;
+    subgraph.m_selectedNode = 0;
+    subgraph.m_selectedNodes = {};
+    subgraph.m_nodes = std::move(groupNodes);
+    subgraph.m_links = std::move(groupLinks);
+    (void)subgraph.materials().replaceMaterials(
+        std::vector<MaterialDefinition>{graph.materials().materials().begin(), graph.materials().materials().end()},
+        graph.materials().nextMaterialIdForSerialization());
+
+    const GroupDefId definitionId = groups.createDefinition(name.empty() ? "Group" : std::move(name), std::move(subgraph));
+    for (const SdfGraphNodeId id : sourceIds) {
+        (void)deleteNode(graph, id);
+    }
+
+    const SdfGraphNodeId groupId = createNode(graph, SdfNodeType::Group, "Group");
+    SdfGraphNode* groupNode = graph.node(groupId);
+    if (groupNode == nullptr) {
+        return 0;
+    }
+    groupNode->payload.groupDefinitionId = definitionId;
+    groupNode->editorX = x / static_cast<float>(sourceIds.size());
+    groupNode->editorY = y / static_cast<float>(sourceIds.size());
+    for (const SdfGraphLink& link : outgoingLinks) {
+        (void)GraphSystem::link(graph, groupId, "sdf", link.toNode, link.toSocket);
+    }
+    SelectionSystem::setSelectedNode(graph, groupId);
+    return groupId;
+}
+
 bool GraphSystem::deleteNode(SdfGraph& graph, SdfGraphNodeId id)
 {
     if (isOutputNode(graph, id)) {
@@ -178,11 +351,24 @@ bool GraphSystem::deleteNode(SdfGraph& graph, SdfGraphNodeId id)
     if (nodeIt == graph.m_nodes.end()) {
         return false;
     }
-    if (nodeIt->second.payload.type == SdfNodeType::SolidMaterial || nodeIt->second.payload.type == SdfNodeType::CheckerMaterial) {
+    if (nodeIt->second.payload.type == SdfNodeType::SolidMaterial
+        || nodeIt->second.payload.type == SdfNodeType::CheckerMaterial
+        || nodeIt->second.payload.type == SdfNodeType::MaterialOverride) {
         materialIdToCleanup = nodeIt->second.payload.materialId;
     }
+    const std::vector<SdfGraphNodeId> linkedOverridesToClear = isSdfMaterialNode(nodeIt->second.payload.type)
+        ? materialOverridesUsingDeletedSource(graph.m_nodes, graph.m_links, id, materialIdToCleanup)
+        : std::vector<SdfGraphNodeId>{};
 
     graph.m_nodes.erase(nodeIt);
+
+    for (const SdfGraphNodeId overrideId : linkedOverridesToClear) {
+        const auto overrideIt = graph.m_nodes.find(overrideId);
+        if (overrideIt != graph.m_nodes.end() && overrideIt->second.payload.materialId == materialIdToCleanup) {
+            overrideIt->second.payload.materialId = 0;
+            overrideIt->second.payload.material = {};
+        }
+    }
 
     graph.m_links.erase(std::remove_if(graph.m_links.begin(), graph.m_links.end(),
                             [id](const SdfGraphLink& link) {
@@ -292,6 +478,9 @@ bool GraphSystem::unlinkInput(SdfGraph& graph, SdfGraphNodeId toNode, const std:
                             }),
         graph.m_links.end());
 
+    if (graph.m_links.size() != oldSize) {
+        clearMaterialOverrideIfMaterialInputRemoved(graph.m_nodes, toNode, toSocket);
+    }
     return graph.m_links.size() != oldSize;
 }
 
@@ -307,6 +496,9 @@ bool GraphSystem::unlink(SdfGraph& graph, SdfGraphNodeId fromNode, const std::st
                             }),
         graph.m_links.end());
 
+    if (graph.m_links.size() != oldSize) {
+        clearMaterialOverrideIfMaterialInputRemoved(graph.m_nodes, toNode, toSocket);
+    }
     return graph.m_links.size() != oldSize;
 }
 

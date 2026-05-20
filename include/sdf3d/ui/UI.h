@@ -14,6 +14,7 @@
 namespace sdf3d {
 
 class EventBus;
+class GraphGroupRegistry;
 
 /// Coordinates editor UI panels and scene edit dirty state.
 class UI {
@@ -24,7 +25,10 @@ public:
     void drawMainMenu(SceneGraph& sceneGraph);
 
     /// Draws the scene outliner and properties panel.
-    void drawPanels(SceneGraph& sceneGraph, const std::vector<DiagnosticEntry>& runtimeErrors = {});
+    void drawPanels(SceneGraph& sceneGraph, GraphGroupRegistry& groups, const std::vector<DiagnosticEntry>& runtimeErrors = {});
+
+    /// Returns graph currently edited by graph UI.
+    SdfGraph& activeGraph(SceneGraph& sceneGraph, GraphGroupRegistry& groups);
 
     /// Returns true once when a scene edit requires shader recompilation.
     bool consumeSceneDirty();
@@ -33,7 +37,7 @@ public:
     bool consumeMaterialDirty();
 
 private:
-    void drawScenePanel(SceneGraph& sceneGraph);
+    void drawScenePanel(SceneGraph& sceneGraph, GraphGroupRegistry& groups);
     void drawDiagnosticsPanel(const std::vector<DiagnosticEntry>& runtimeErrors);
     void markSceneDirty();
     void markMaterialDirty();

@@ -1,4 +1,5 @@
 #include "sdf3d/core/EventBus.h"
+#include "sdf3d/scene/GraphGroupRegistry.h"
 #include "sdf3d/scene/SdfGraph.h"
 #include "sdf3d/scene/SdfRotationParams.h"
 #include "sdf3d/systems/GraphSystem.h"
@@ -203,6 +204,37 @@ void testMaterialSourceDeleteKeepsRegistryEntryReferencedByOverride(std::vector<
     sdf3d::SdfGraph graph;
 
     const sdf3d::SdfGraphNodeId materialNodeId = graph.createNode(sdf3d::SdfNodeType::SolidMaterial, "Paint");
+    const sdf3d::SdfGraphNodeId linkedOverrideNodeId = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Apply Paint");
+    const sdf3d::SdfGraphNodeId otherOverrideNodeId = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Other Paint");
+    const sdf3d::SdfGraphNode* materialNode = graph.node(materialNodeId);
+    expect(materialNode != nullptr && materialNode->payload.materialId != 0, testName, "Expected material node with registry id.", failures);
+    if (materialNode == nullptr) {
+        return;
+    }
+
+    const sdf3d::MaterialId materialId = materialNode->payload.materialId;
+    if (sdf3d::SdfGraphNode* otherOverride = graph.node(otherOverrideNodeId)) {
+        otherOverride->payload.materialId = materialId;
+    }
+    expect(graph.link(materialNodeId, "material", linkedOverrideNodeId, "material"), testName, "Expected material link.", failures);
+    const sdf3d::SdfGraphNode* linkedOverride = graph.node(linkedOverrideNodeId);
+    expect(linkedOverride != nullptr && linkedOverride->payload.materialId == materialId, testName, "Expected linked override to reference material id.", failures);
+    expect(graph.deleteNode(materialNodeId), testName, "Expected material node delete.", failures);
+    expect(graph.materials().material(materialId) != nullptr, testName, "Expected referenced registry material preserved.", failures);
+    linkedOverride = graph.node(linkedOverrideNodeId);
+    const sdf3d::SdfGraphNode* otherOverride = graph.node(otherOverrideNodeId);
+    expect(linkedOverride != nullptr && linkedOverride->payload.materialId == 0, testName, "Expected directly linked override cleared.", failures);
+    expect(otherOverride != nullptr && otherOverride->payload.materialId == materialId, testName, "Expected other override still referencing material.", failures);
+    expect(graph.deleteNode(otherOverrideNodeId), testName, "Expected other override delete.", failures);
+    expect(graph.materials().material(materialId) == nullptr, testName, "Expected unreferenced registry material removed.", failures);
+}
+
+void testMaterialSourceDeleteClearsDirectOverrideReference(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "material source delete clears direct override reference";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId materialNodeId = graph.createNode(sdf3d::SdfNodeType::SolidMaterial, "Paint");
     const sdf3d::SdfGraphNodeId overrideNodeId = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Apply Paint");
     const sdf3d::SdfGraphNode* materialNode = graph.node(materialNodeId);
     expect(materialNode != nullptr && materialNode->payload.materialId != 0, testName, "Expected material node with registry id.", failures);
@@ -212,10 +244,28 @@ void testMaterialSourceDeleteKeepsRegistryEntryReferencedByOverride(std::vector<
 
     const sdf3d::MaterialId materialId = materialNode->payload.materialId;
     expect(graph.link(materialNodeId, "material", overrideNodeId, "material"), testName, "Expected material link.", failures);
-    const sdf3d::SdfGraphNode* overrideNode = graph.node(overrideNodeId);
-    expect(overrideNode != nullptr && overrideNode->payload.materialId == materialId, testName, "Expected override to reference material id.", failures);
     expect(graph.deleteNode(materialNodeId), testName, "Expected material node delete.", failures);
-    expect(graph.materials().material(materialId) != nullptr, testName, "Expected referenced registry material preserved.", failures);
+    const sdf3d::SdfGraphNode* overrideNode = graph.node(overrideNodeId);
+    expect(overrideNode != nullptr && overrideNode->payload.materialId == 0, testName, "Expected override reset to default material.", failures);
+    expect(graph.materials().material(materialId) == nullptr, testName, "Expected registry material removed.", failures);
+}
+
+void testUnlinkMaterialInputClearsOverrideMaterial(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "unlink material input clears override material";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId materialNodeId = graph.createNode(sdf3d::SdfNodeType::SolidMaterial, "Paint");
+    const sdf3d::SdfGraphNodeId overrideNodeId = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Apply Paint");
+    const sdf3d::SdfGraphNode* materialNode = graph.node(materialNodeId);
+    const sdf3d::MaterialId materialId = materialNode != nullptr ? materialNode->payload.materialId : 0;
+    expect(graph.link(materialNodeId, "material", overrideNodeId, "material"), testName, "Expected material link.", failures);
+    const sdf3d::SdfGraphNode* linkedOverride = graph.node(overrideNodeId);
+    expect(linkedOverride != nullptr && linkedOverride->payload.materialId == materialId, testName, "Expected linked override material.", failures);
+
+    expect(graph.unlink(materialNodeId, "material", overrideNodeId, "material"), testName, "Expected material unlink.", failures);
+    const sdf3d::SdfGraphNode* unlinkedOverride = graph.node(overrideNodeId);
+    expect(unlinkedOverride != nullptr && unlinkedOverride->payload.materialId == 0, testName, "Expected override to use default material.", failures);
 }
 
 void testCollectNodeParamsPacksTransformValues(std::vector<TestFailure>& failures)
@@ -589,6 +639,50 @@ void testEnsureTransformWrapperReusesExistingChainChild(std::vector<TestFailure>
     expect(graph.selectedNode() == rotate, testName, "Expected existing rotate selected.", failures);
 }
 
+void testGroupSelectionCreatesDefinitionAndInstance(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "group selection creates definition and instance";
+    sdf3d::SdfGraph graph;
+    sdf3d::GraphGroupRegistry groups;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    expect(graph.link(sphere, "sdf", graph.outputNode(), "surface"), testName, "Expected sphere to output link.", failures);
+    expect(graph.setSelectedNodes({sphere}, sphere), testName, "Expected sphere selection.", failures);
+
+    const sdf3d::SdfGraphNodeId group = sdf3d::GraphSystem::groupSelection(graph, groups, graph.selectedNodes(), graph.selectedNode(), "Sphere Group");
+
+    expect(group != 0, testName, "Expected group instance.", failures);
+    const sdf3d::SdfGraphNode* groupNode = graph.node(group);
+    expect(groupNode != nullptr && groupNode->payload.type == sdf3d::SdfNodeType::Group, testName, "Expected Group node type.", failures);
+    expect(groupNode != nullptr && groupNode->payload.groupDefinitionId != 0, testName, "Expected group definition id.", failures);
+    expect(groups.definitions().size() == 1, testName, "Expected one registry definition.", failures);
+    expect(graph.node(sphere) == nullptr, testName, "Expected grouped source removed from instance graph.", failures);
+    expect(hasLink(graph, group, "sdf", graph.outputNode(), "surface"), testName, "Expected group linked to output.", failures);
+}
+
+void testGroupSelectionUsesOutgoingSurfaceRoot(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "group selection uses outgoing surface root";
+    sdf3d::SdfGraph graph;
+    sdf3d::GraphGroupRegistry groups;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId overrideNode = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Override");
+    expect(graph.link(sphere, "sdf", overrideNode, "sdf"), testName, "Expected sphere to override link.", failures);
+    expect(graph.link(overrideNode, "sdf", graph.outputNode(), "surface"), testName, "Expected override to output link.", failures);
+    expect(graph.setSelectedNodes({sphere, overrideNode}, sphere), testName, "Expected selection with inner primary.", failures);
+
+    const sdf3d::SdfGraphNodeId group = sdf3d::GraphSystem::groupSelection(graph, groups, graph.selectedNodes(), graph.selectedNode(), "Surface Group");
+
+    expect(group != 0, testName, "Expected group instance.", failures);
+    expect(hasLink(graph, group, "sdf", graph.outputNode(), "surface"), testName, "Expected group output link restored from selected surface root.", failures);
+    const sdf3d::GraphGroupDefinition* definition = groups.definitions().empty() ? nullptr : &groups.definitions().front();
+    expect(definition != nullptr, testName, "Expected group definition.", failures);
+    if (definition != nullptr) {
+        expect(hasLink(definition->subgraph, overrideNode, "sdf", definition->subgraph.outputNode(), "surface"), testName, "Expected definition output to use surface root, not primary.", failures);
+    }
+}
+
 } // namespace
 
 int main()
@@ -602,6 +696,8 @@ int main()
     testMaterialRegistryRenameAndSafeDelete(failures);
     testMaterialSourceDeleteCleansUnreferencedRegistryEntry(failures);
     testMaterialSourceDeleteKeepsRegistryEntryReferencedByOverride(failures);
+    testMaterialSourceDeleteClearsDirectOverrideReference(failures);
+    testUnlinkMaterialInputClearsOverrideMaterial(failures);
     testCollectNodeParamsPacksTransformValues(failures);
     testCollectNodeParamsNormalizesRotateQuaternion(failures);
     testPickNodeByRaySelectsTranslatedPrimitive(failures);
@@ -616,6 +712,8 @@ int main()
     testEnsureTransformWrapperUsesCanonicalOrder(failures);
     testEnsureTransformWrapperReusesExistingChainParent(failures);
     testEnsureTransformWrapperReusesExistingChainChild(failures);
+    testGroupSelectionCreatesDefinitionAndInstance(failures);
+    testGroupSelectionUsesOutgoingSurfaceRoot(failures);
 
     if (!failures.empty()) {
         for (const TestFailure& failure : failures) {

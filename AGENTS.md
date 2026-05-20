@@ -4,35 +4,28 @@
 
 - Edit shader `raymarch_edit.frag` active always during editing; `raymarch_scene.frag` for export only
 - Translate/Rotate/Scale gizmos live; edit gizmos/highlight force direct preview even when path-trace mode is selected
-- Viewport picking uses `GraphSystem::pickNodeByRay()` and chain-aware final visible transform selection
-- Selection highlight uses `uHighlightNodeId` + `sceneNodeSDF(int nodeId, vec3 p)` with smooth distance band
 - Canonical branch order: Scale -> Rotate -> Translate; ensure-wrapper reuses existing nodes in chain
 - `SdfNodeTraits.h` centralizes node taxonomy; `GraphSystemTransforms.cpp` owns transform wrapper logic
 - `GlslEmitter` consolidated to 8 files by engineering concern: dispatch, primitives, booleans, domain, materials, scene assembly, math, formatting
-- Plane primitive normal components stay user-editable; emitter normalizes with `normalize(vec3(...))` in GLSL
 - `SdfNodeDefinition` metadata owns parameter type: Float, Bool, Enum; UI must not infer bool/enum from numeric ranges
-- Repeat/Mirror toggles use Bool metadata; Twist/Bend axis uses Enum metadata with X=0, Y=1, Z=2
 - MaterialRegistry owns reusable graph materials; SolidMaterial/CheckerMaterial nodes hold stable `materialId`
 - MaterialOverride consumes `sdf` + `material`; inline material fallback remains legacy-only
-- Material SSBO binding=0; node param SSBO binding=1; no material cap
-- M6 path-tracing infrastructure exists: `RenderMode`, lazy `raymarch_pathtrace.frag`, HDR `PathTraceAccumulation`, sample reset keys
+- Node groups exist: App-owned `GraphGroupRegistry`, `SdfNodeType::Group`, root JSON `definitions`, Ctrl+G grouping shortcut
+- Node editor supports group navigation: Tab enters selected group, Shift+Tab exits, breadcrumb switches active graph
+- Entered group subgraph is active editor/viewport/compiler target; viewport picking/gizmos/Add use active graph
+- Group compile resolves definitions through `CompilerSystem`/`MaterialSystem`; missing definition is safe no-hit with diagnostics
+- Group definitions have one sdf output only; exposed params, library sharing, and Make Unique remain deferred
 - Path-trace shader has stochastic GI bounces, cosine hemisphere sampling, direct light shadow checks, emissive contribution, and progressive accumulation
-- Path-trace accumulation resets on camera, viewport, scene, material, node-param, quality, and mode changes
 - Save/load JSON uses `GraphSerializer` interface and `JsonGraphSerializer`; nlohmann/json pinned
-- GraphSerializer tests verify MaterialRegistry round-trip reaches compiled material output after load
 - Shared graph validity lives in `GraphSystemValidity.cpp`; compiler and UI consume GraphSystem queries
-- Incomplete-node bypass visuals use `GraphSystem::effectiveBypassSourceLink()` instead of UI-local rules
 - Properties panel has Material Palette with swatch, rename, and safe delete for orphan registry materials
-- GraphSystem owns MaterialRegistry rename/delete safety; referenced materials cannot be deleted
 - JSON graph serialization is clean: stableId assigned/restored, materialId preserved, sockets/material blobs/selection omitted
-- JSON load migrates old material blobs and stale socket/selection fields silently
-- Root `sdf3d_graph.json` sample uses clean scene schema with no selection, socket arrays, node material blobs, or zero stable IDs
 - Deleting unreferenced material source nodes removes their registry entries; MaterialOverride references keep registry entries alive
 - Build/tests: full Debug build pass; all test executables pass; GUI smoke pass
 
 ## Active
 
-JSON serialization correctness batch complete: six fixes landed, clean JSON verified by serializer tests, and review gate open.
+Node group active-graph slice complete: entering a group compiles/renders only that group subgraph, and viewport selection/gizmos/Add target the active graph. Review gate open.
 
 ## Decisions
 
@@ -67,6 +60,10 @@ JSON serialization correctness batch complete: six fixes landed, clean JSON veri
 - 2026-05 - MaterialRegistry mutation safety is GraphSystem-owned; UI cannot delete materials still referenced by graph nodes
 - 2026-05 - Scene JSON stores graph state only; selection is ephemeral UI state and sockets are reconstructed from SdfNodeDefinition
 - 2026-05 - Node material payload is legacy migration data only; saved JSON stores registry material data plus node materialId references
+- 2026-05 - GraphGroupRegistry is App-owned and serialized at scene root; Group instance nodes store only definitionId
+- 2026-05 - Group compilation resolves definitions through compiler/material-system overloads, keeping renderer unaware of graph/group data
+- 2026-05 - NodeEditor active graph can be root or group subgraph; Add menu targets the active graph, while viewport Add remains root graph
+- 2026-05 - When inside a group, renderer compile/material collection and viewport picking use the active group subgraph instead of root graph
 
 ## Constraints
 
@@ -81,6 +78,7 @@ JSON serialization correctness batch complete: six fixes landed, clean JSON veri
 - Never split files unilaterally because user approval is required
 - Never add new GlslEmitter features until consolidation to 8-file structure is complete
 - Do not split tests/test_sdf_graph.cpp because user declined
+- Do not add group exposed params, Make Unique, or library sharing until explicitly requested because node group M6+ deferred scope
 
 ## Environment
 
@@ -94,4 +92,4 @@ JSON serialization correctness batch complete: six fixes landed, clean JSON veri
 
 ## Next
 
-Review JSON serialization correctness batch, then next backlog item is viewport picking improvement.
+Review node group active-graph behavior, then choose next group UX slice.

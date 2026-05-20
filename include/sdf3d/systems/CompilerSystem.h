@@ -4,6 +4,8 @@
 
 namespace sdf3d {
 
+class GraphGroupRegistry;
+
 /// Orchestrates graph lowering and GLSL scene assembly.
 class CompilerSystem {
 public:
@@ -12,6 +14,9 @@ public:
 
     /// Compiles a graph output into self-contained SDF GLSL.
     SdfCompileResult compile(const SdfGraph& graph) const;
+
+    /// Compiles a graph output with resolved group definitions.
+    SdfCompileResult compile(const SdfGraph& graph, const GraphGroupRegistry& groups) const;
 };
 
 } // namespace sdf3d

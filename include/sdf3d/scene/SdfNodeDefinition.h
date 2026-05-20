@@ -13,6 +13,7 @@ enum class SdfNodeCategory {
     Boolean,
     Transform,
     Material,
+    Group,
     Output,
 };
 

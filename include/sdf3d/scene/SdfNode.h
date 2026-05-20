@@ -13,6 +13,8 @@
 
 namespace sdf3d {
 
+using GroupDefId = uint64_t;
+
 /// Canonical SDF node taxonomy for Phase 1 and planned Phase 2 extensions.
 enum class SdfNodeType {
     Sphere,
@@ -39,6 +41,7 @@ enum class SdfNodeType {
     SolidMaterial,
     CheckerMaterial,
     MaterialOverride,
+    Group,
     Output,
 };
 
@@ -56,6 +59,7 @@ struct SdfNode {
     std::unordered_map<std::string, float> parameters;
     std::vector<std::shared_ptr<SdfNode>> children;
     MaterialId materialId = 0;
+    GroupDefId groupDefinitionId = 0;
     SdfMaterial material;
 };
 
@@ -78,6 +82,7 @@ inline SdfNodePtr cloneSdfNodeTree(const SdfNodePtr& node)
     clone->stableId = node->stableId;
     clone->parameters = node->parameters;
     clone->materialId = node->materialId;
+    clone->groupDefinitionId = node->groupDefinitionId;
     clone->material = node->material;
     clone->children.reserve(node->children.size());
 

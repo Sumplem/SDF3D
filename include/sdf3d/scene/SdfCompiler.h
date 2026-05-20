@@ -10,6 +10,8 @@
 
 namespace sdf3d {
 
+class GraphGroupRegistry;
+
 /// Material data emitted beside generated GLSL for renderer upload.
 struct SdfCompiledMaterial {
     SdfMaterial material;
@@ -43,6 +45,9 @@ public:
 
     /// Compiles a graph output into self-contained SDF GLSL.
     SdfCompileResult compile(const SdfGraph& graph) const;
+
+    /// Compiles a graph output with resolved group definitions.
+    SdfCompileResult compile(const SdfGraph& graph, const GraphGroupRegistry& groups) const;
 };
 
 } // namespace sdf3d

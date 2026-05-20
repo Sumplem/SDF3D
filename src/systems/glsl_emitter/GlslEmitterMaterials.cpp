@@ -123,6 +123,15 @@ std::string emitMaterialFor(
         const int materialId = materialSystem.appendMaterial(result, node->material);
         return sampleMaterialCall(materialId, pointExpr);
     }
+    case SdfNodeType::Group:
+        if (node->children.empty()) {
+            result.errors.push_back("Group node references a missing definition.");
+            return defaultMaterial(pointExpr);
+        }
+        if (node->children.size() > 1) {
+            result.errors.push_back("Group node ignores extra children.");
+        }
+        return emitMaterialFor(node->children.front(), pointExpr, result, sdfHelpers);
     case SdfNodeType::Translate: {
         if (node->children.empty()) {
             result.errors.push_back("Translate node has no child.");

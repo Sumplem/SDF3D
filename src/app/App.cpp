@@ -24,24 +24,14 @@ void glfwErrorCallback(int error, const char* description)
     std::cerr << "[SDF3D][GLFW] " << error << ": " << description << '\n';
 }
 
-SdfCompileResult compileScene(const SceneGraph& sceneGraph, const SdfCompiler& compiler)
+SdfCompileResult compileScene(const SdfGraph& graph, const GraphGroupRegistry& groups, const SdfCompiler& compiler)
 {
-    // AGENT: Graph output becomes authoritative once graph UI starts creating
-    // nodes, while tree fallback keeps current panels functional during migration.
-    if (sceneGraph.graph().outputNode() != 0) {
-        return compiler.compile(sceneGraph.graph());
-    }
-
-    return compiler.compile(sceneGraph.root());
+    return compiler.compile(graph, groups);
 }
 
-SdfCompileResult collectSceneMaterials(const SceneGraph& sceneGraph, const MaterialSystem& materials)
+SdfCompileResult collectSceneMaterials(const SdfGraph& graph, const GraphGroupRegistry& groups, const MaterialSystem& materials)
 {
-    if (sceneGraph.graph().outputNode() != 0) {
-        return materials.collectMaterials(sceneGraph.graph());
-    }
-
-    return materials.collectMaterials(sceneGraph.root());
+    return materials.collectMaterials(graph, groups);
 }
 
 } // namespace
@@ -118,15 +108,15 @@ bool App::init()
         refreshMaterials();
     });
     m_eventBus.subscribe<DuplicateSelectionEvent>([this](const DuplicateSelectionEvent& event) {
-        GraphSystem::duplicateSelection(m_sceneGraph.graph(), event.selectedNodeIds, m_eventBus);
+        GraphSystem::duplicateSelection(m_ui.activeGraph(m_sceneGraph, m_groupRegistry), event.selectedNodeIds, m_eventBus);
     });
     m_eventBus.subscribe<SaveGraphEvent>([this](const SaveGraphEvent& event) {
-        if (!m_graphSerializer.save(m_sceneGraph.graph(), event.path)) {
+        if (!m_graphSerializer.save(m_sceneGraph.graph(), m_groupRegistry, event.path)) {
             std::cerr << "[SDF3D][GraphSerializer] " << m_graphSerializer.lastError() << '\n';
         }
     });
     m_eventBus.subscribe<LoadGraphEvent>([this](const LoadGraphEvent& event) {
-        if (!m_graphSerializer.load(m_sceneGraph.graph(), event.path)) {
+        if (!m_graphSerializer.load(m_sceneGraph.graph(), m_groupRegistry, event.path)) {
             std::cerr << "[SDF3D][GraphSerializer] " << m_graphSerializer.lastError() << '\n';
             return;
         }
@@ -229,8 +219,8 @@ void App::drawDockspace()
 
 void App::drawPanels()
 {
-    m_ui.drawPanels(m_sceneGraph, m_diagnostics.typedEntries());
-    const EditorDirtyState viewportDirty = m_viewport.draw(m_renderer, m_sceneGraph);
+    m_ui.drawPanels(m_sceneGraph, m_groupRegistry, m_diagnostics.typedEntries());
+    const EditorDirtyState viewportDirty = m_viewport.draw(m_renderer, m_ui.activeGraph(m_sceneGraph, m_groupRegistry));
     if (viewportDirty.scene) {
         m_eventBus.emit(SceneDirtyEvent{});
     }
@@ -254,7 +244,7 @@ void App::endFrame()
 bool App::recompileScene(bool keepPreviousProgramOnFailure)
 {
     m_diagnostics.clear();
-    const SdfCompileResult sceneGlsl = compileScene(m_sceneGraph, m_sdfCompiler);
+    const SdfCompileResult sceneGlsl = compileScene(m_ui.activeGraph(m_sceneGraph, m_groupRegistry), m_groupRegistry, m_sdfCompiler);
     for (const std::string& error : sceneGlsl.errors) {
         m_diagnostics.add(DiagnosticSeverity::Warning, "SdfCompiler", error);
         std::cerr << "[SDF3D][SdfCompiler] " << error << '\n';
@@ -277,7 +267,7 @@ bool App::recompileScene(bool keepPreviousProgramOnFailure)
 
 bool App::refreshMaterials()
 {
-    const SdfCompileResult materials = collectSceneMaterials(m_sceneGraph, m_materialSystem);
+    const SdfCompileResult materials = collectSceneMaterials(m_ui.activeGraph(m_sceneGraph, m_groupRegistry), m_groupRegistry, m_materialSystem);
     for (const std::string& error : materials.errors) {
         m_diagnostics.add(DiagnosticSeverity::Warning, "MaterialSystem", error);
         std::cerr << "[SDF3D][MaterialSystem] " << error << '\n';

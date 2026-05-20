@@ -14,6 +14,7 @@
 namespace sdf3d {
 
 class EventBus;
+class GraphGroupRegistry;
 
 /// Owns SDF graph mutation and validation rules.
 class GraphSystem {
@@ -29,6 +30,14 @@ public:
 
     /// Duplicates selected nodes and preserves links wholly inside the selection.
     static std::vector<SdfGraphNodeId> duplicateSelection(SdfGraph& graph, const std::vector<SdfGraphNodeId>& ids, EventBus& eventBus);
+
+    /// Creates a group definition from selected self-contained nodes and replaces them with one Group instance.
+    static SdfGraphNodeId groupSelection(
+        SdfGraph& graph,
+        GraphGroupRegistry& groups,
+        const std::vector<SdfGraphNodeId>& ids,
+        SdfGraphNodeId primary,
+        std::string name);
 
     /// Replaces graph internals after validating loaded serialized data.
     static bool replaceGraphData(

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "sdf3d/renderer/Renderer.h"
-#include "sdf3d/scene/SceneGraph.h"
+#include "sdf3d/scene/SdfGraph.h"
 #include "sdf3d/ui/AddMenu.h"
 #include "sdf3d/ui/EditorDirtyState.h"
 #include "sdf3d/ui/viewport/TranslateGizmo.h"
@@ -17,7 +17,7 @@ public:
     Viewport() = default;
 
     /// Draws the viewport panel and renders the raymarched scene into it.
-    EditorDirtyState draw(Renderer& renderer, SceneGraph& sceneGraph);
+    EditorDirtyState draw(Renderer& renderer, SdfGraph& graph);
 
     /// Returns the current camera values for rendering.
     RenderCamera camera() const;

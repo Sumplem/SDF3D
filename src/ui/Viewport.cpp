@@ -63,7 +63,7 @@ glm::vec3 viewportSpawnPosition(ImVec2 mouse, const RenderCamera& camera, ImVec2
 
 } // namespace
 
-EditorDirtyState Viewport::draw(Renderer& renderer, SceneGraph& sceneGraph)
+EditorDirtyState Viewport::draw(Renderer& renderer, SdfGraph& graph)
 {
     EditorDirtyState dirty;
     ImGui::Begin("Viewport");
@@ -79,8 +79,8 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SceneGraph& sceneGraph)
     const ImVec2 imageMax = {imageMin.x + available.x, imageMin.y + available.y};
     const RenderCamera renderCamera = camera();
     RenderGizmo gizmo;
-    const EditorDirtyState gizmoDirty = m_translateGizmo.update(sceneGraph, renderCamera, imageMin, imageMax, gizmo);
-    gizmo.highlightNodeId = static_cast<int>(GraphSystem::highlightNodeForSelection(sceneGraph.graph()));
+    const EditorDirtyState gizmoDirty = m_translateGizmo.update(graph, renderCamera, imageMin, imageMax, gizmo);
+    gizmo.highlightNodeId = static_cast<int>(GraphSystem::highlightNodeForSelection(graph));
     renderer.setGizmo(gizmo);
     renderer.setQuality(m_quality);
     renderer.setRenderMode(m_renderMode);
@@ -123,11 +123,11 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SceneGraph& sceneGraph)
         && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         const std::optional<glm::vec3> rayDirection = screenRayDirection(ImGui::GetIO().MousePos, renderCamera, imageMin, imageMax);
         if (rayDirection) {
-            const SdfGraphNodeId pickedNode = GraphSystem::pickNodeByRay(sceneGraph.graph(), renderCamera.position, *rayDirection);
+            const SdfGraphNodeId pickedNode = GraphSystem::pickNodeByRay(graph, renderCamera.position, *rayDirection);
             if (pickedNode != 0) {
-                sceneGraph.graph().setSelectedNode(pickedNode);
+                graph.setSelectedNode(pickedNode);
             } else {
-                sceneGraph.graph().clearSelection();
+                graph.clearSelection();
             }
         }
     }
@@ -138,12 +138,12 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SceneGraph& sceneGraph)
         m_pendingAddWorldPosition = viewportSpawnPosition(ImGui::GetIO().MousePos, renderCamera, imageMin, imageMax);
         ImGui::OpenPopup(node_editor::NODE_ADD_POPUP_ID);
     }
-    if (m_viewportAddMenu.drawViewportPopup(sceneGraph, m_pendingAddWorldPosition)) {
+    if (m_viewportAddMenu.drawViewportPopup(graph, m_pendingAddWorldPosition)) {
         dirty.scene = true;
     }
 
     if (gizmoDirty.params) {
-        renderer.setNodeParams(GraphSystem::collectNodeParams(sceneGraph.graph()));
+        renderer.setNodeParams(GraphSystem::collectNodeParams(graph));
         dirty.params = true;
     }
     dirty.scene = dirty.scene || gizmoDirty.scene;

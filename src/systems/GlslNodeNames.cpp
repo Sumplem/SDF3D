@@ -53,6 +53,8 @@ std::string glslNodeTypeName(SdfNodeType type)
         return "CheckerMaterial";
     case SdfNodeType::MaterialOverride:
         return "MaterialOverride";
+    case SdfNodeType::Group:
+        return "Group";
     case SdfNodeType::Output:
         return "Output";
     }

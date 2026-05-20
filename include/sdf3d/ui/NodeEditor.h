@@ -5,21 +5,32 @@
 #include "sdf3d/ui/EditorDirtyState.h"
 #include "sdf3d/ui/node_editor/NodeEditorCanvas.h"
 
+#include <vector>
+
 namespace sdf3d {
 
 class EventBus;
+class GraphGroupRegistry;
 
 /// Draws the graph canvas and returns true when the scene graph changes.
 class NodeEditor {
 public:
     void setEventBus(EventBus* eventBus);
 
-    EditorDirtyState draw(SceneGraph& sceneGraph);
+    EditorDirtyState draw(SceneGraph& sceneGraph, GraphGroupRegistry& groups);
+
+    /// Returns graph currently visible in node editor: root or entered group subgraph.
+    SdfGraph& activeGraph(SceneGraph& sceneGraph, GraphGroupRegistry& groups);
 
 private:
-    bool drawAddPopup(SceneGraph& sceneGraph);
+    const char* activeGroupName(const GraphGroupRegistry& groups) const;
+    bool enterSelectedGroup(SdfGraph& graph, GraphGroupRegistry& groups);
+    bool exitGroup();
+    bool drawBreadcrumb(GraphGroupRegistry& groups);
+    bool drawAddPopup(SdfGraph& graph);
 
     EventBus* m_eventBus = nullptr;
+    std::vector<GroupDefId> m_groupPath;
     node_editor::NodeEditorDragState m_drag;
     AddMenu m_addMenu;
     node_editor::NodeEditorPopupState m_popup;

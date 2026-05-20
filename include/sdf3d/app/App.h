@@ -2,6 +2,7 @@
 
 #include "sdf3d/core/EventBus.h"
 #include "sdf3d/renderer/Renderer.h"
+#include "sdf3d/scene/GraphGroupRegistry.h"
 #include "sdf3d/scene/SceneGraph.h"
 #include "sdf3d/scene/SdfCompiler.h"
 #include "sdf3d/systems/DiagnosticsSystem.h"
@@ -44,6 +45,7 @@ private:
     GLFWwindow* m_window = nullptr;
     Renderer m_renderer;
     SceneGraph m_sceneGraph;
+    GraphGroupRegistry m_groupRegistry;
     SdfCompiler m_sdfCompiler;
     JsonGraphSerializer m_graphSerializer;
     MaterialSystem m_materialSystem;

@@ -37,6 +37,17 @@ void collectNodeMaterials(const SdfNodePtr& node, SdfCompileResult& result, cons
         materialSystem.appendMaterial(result, node->material);
         return;
 
+    case SdfNodeType::Group:
+        if (node->children.empty()) {
+            result.errors.push_back("Group node references a missing definition.");
+            return;
+        }
+        if (node->children.size() > 1) {
+            result.errors.push_back("Group node ignores extra children.");
+        }
+        collectNodeMaterials(node->children.front(), result, materialSystem);
+        return;
+
     case SdfNodeType::Translate:
     case SdfNodeType::Rotate:
     case SdfNodeType::Scale:
@@ -136,6 +147,14 @@ SdfCompileResult MaterialSystem::collectMaterials(const SdfNodePtr& root) const
 SdfCompileResult MaterialSystem::collectMaterials(const SdfGraph& graph) const
 {
     const SdfGraphLowerResult lowered = lowerSdfGraphToTree(graph);
+    SdfCompileResult result = collectMaterials(lowered.root);
+    result.errors.insert(result.errors.begin(), lowered.errors.begin(), lowered.errors.end());
+    return result;
+}
+
+SdfCompileResult MaterialSystem::collectMaterials(const SdfGraph& graph, const GraphGroupRegistry& groups) const
+{
+    const SdfGraphLowerResult lowered = lowerSdfGraphToTree(graph, groups);
     SdfCompileResult result = collectMaterials(lowered.root);
     result.errors.insert(result.errors.begin(), lowered.errors.begin(), lowered.errors.end());
     return result;

@@ -34,6 +34,14 @@ namespace sdf3d
         {
             return emitMaterialNode(node, pointExpr, result);
         }
+        if (node->type == SdfNodeType::Group)
+        {
+            if (node->children.empty()) {
+                result.errors.push_back("Group node references a missing definition.");
+                return glslNoHit();
+            }
+            return emitNode(node->children.front(), pointExpr, result);
+        }
 
         result.errors.push_back("Unsupported SDF node type in compiler: " + glslNodeTypeName(node->type));
         return glslNoHit();
@@ -61,6 +69,14 @@ namespace sdf3d::glsl_emitter
         if (node->type == SdfNodeType::MaterialOverride)
         {
             return emitMaterialGeometryExpression(node, pointExpr, result, context);
+        }
+        if (node->type == SdfNodeType::Group)
+        {
+            if (node->children.empty()) {
+                result.errors.push_back("Group node references a missing definition.");
+                return "1e6";
+            }
+            return helperCallFor(node->children.front(), pointExpr, context);
         }
 
         result.errors.push_back("Unsupported SDF node type in geometry helper emission: " + glslNodeTypeName(node->type));

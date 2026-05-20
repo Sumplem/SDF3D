@@ -1,5 +1,6 @@
 #include "sdf3d/systems/JsonGraphSerializer.h"
 
+#include "sdf3d/scene/GraphGroupRegistry.h"
 #include "sdf3d/scene/SdfCompiler.h"
 
 #include <cstdint>
@@ -241,6 +242,107 @@ void testJsonGraphMigratesSourceMaterialNode(std::vector<TestFailure>& failures)
     std::filesystem::remove(path);
 }
 
+void testJsonGraphLoadRepairsLinkedOverrideMaterialId(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "json graph load repairs linked override material id";
+    const std::filesystem::path path = testPath("sdf3d_graph_repair_override_material.json");
+    const std::filesystem::path savedPath = testPath("sdf3d_graph_repaired_override_material.json");
+    {
+        std::ofstream output(path);
+        output
+            << "{\n"
+            << "  \"schema\": \"sdf3d.graph\",\n"
+            << "  \"version\": 1,\n"
+            << "  \"nextId\": 5,\n"
+            << "  \"outputNode\": 1,\n"
+            << "  \"materials\": {\"nextId\": 4, \"items\": [\n"
+            << "    {\"id\": 1, \"name\": \"Stale Override\", \"material\": {\"type\": 0, \"albedo\": [1.0, 0.0, 0.0], \"secondaryAlbedo\": [0.0, 0.0, 0.0], \"roughness\": 0.5, \"metallic\": 0.0, \"emission\": 0.0, \"patternScale\": 4.0}},\n"
+            << "    {\"id\": 2, \"name\": \"Linked Checker\", \"material\": {\"type\": 1, \"albedo\": [0.1, 0.2, 0.3], \"secondaryAlbedo\": [0.4, 0.5, 0.6], \"roughness\": 0.7, \"metallic\": 0.0, \"emission\": 0.0, \"patternScale\": 8.0}},\n"
+            << "    {\"id\": 3, \"name\": \"Deleted Material\", \"material\": {\"type\": 0, \"albedo\": [0.9, 0.9, 0.9], \"secondaryAlbedo\": [0.0, 0.0, 0.0], \"roughness\": 0.5, \"metallic\": 0.0, \"emission\": 0.0, \"patternScale\": 4.0}}\n"
+            << "  ]},\n"
+            << "  \"nodes\": [\n"
+            << "    {\"id\": 1, \"type\": \"Output\", \"stableId\": 1, \"name\": \"Output\", \"editor\": {\"x\": 0, \"y\": 0, \"propertiesCollapsed\": false}, \"parameters\": {}},\n"
+            << "    {\"id\": 2, \"type\": \"Sphere\", \"stableId\": 2, \"name\": \"Sphere\", \"editor\": {\"x\": 0, \"y\": 0, \"propertiesCollapsed\": false}, \"parameters\": {\"radius\": 1.0}},\n"
+            << "    {\"id\": 3, \"type\": \"MaterialOverride\", \"stableId\": 3, \"name\": \"Override\", \"materialId\": 1, \"editor\": {\"x\": 0, \"y\": 0, \"propertiesCollapsed\": false}, \"parameters\": {}},\n"
+            << "    {\"id\": 4, \"type\": \"CheckerMaterial\", \"stableId\": 4, \"name\": \"Linked Checker\", \"materialId\": 2, \"editor\": {\"x\": 0, \"y\": 0, \"propertiesCollapsed\": false}, \"parameters\": {}}\n"
+            << "  ],\n"
+            << "  \"links\": [\n"
+            << "    {\"from\": {\"node\": 2, \"socket\": \"sdf\"}, \"to\": {\"node\": 3, \"socket\": \"sdf\"}},\n"
+            << "    {\"from\": {\"node\": 4, \"socket\": \"material\"}, \"to\": {\"node\": 3, \"socket\": \"material\"}},\n"
+            << "    {\"from\": {\"node\": 3, \"socket\": \"sdf\"}, \"to\": {\"node\": 1, \"socket\": \"surface\"}}\n"
+            << "  ]\n"
+            << "}\n";
+    }
+
+    sdf3d::SdfGraph graph;
+    sdf3d::JsonGraphSerializer serializer;
+    expect(serializer.load(graph, path), testName, "Expected load success: " + serializer.lastError(), failures);
+    const sdf3d::SdfGraphNode* overrideNode = graph.node(3);
+    expect(overrideNode != nullptr && overrideNode->payload.materialId == 2, testName, "Expected linked material id to win.", failures);
+
+    expect(serializer.save(graph, savedPath), testName, "Expected repaired save success: " + serializer.lastError(), failures);
+    nlohmann::json saved;
+    {
+        std::ifstream input(savedPath);
+        input >> saved;
+    }
+    bool savedLinked = false;
+    bool savedStale = false;
+    for (const nlohmann::json& material : saved.at("materials").at("items")) {
+        savedLinked = savedLinked || material.at("name").get<std::string>() == "Linked Checker";
+        savedStale = savedStale || material.at("name").get<std::string>() == "Stale Override";
+    }
+    expect(savedLinked, testName, "Expected linked material retained.", failures);
+    expect(!savedStale, testName, "Expected stale override material pruned.", failures);
+
+    std::filesystem::remove(path);
+    std::filesystem::remove(savedPath);
+}
+
+void testJsonGraphGroupDefinitionsRoundTrip(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "json graph group definitions round trip";
+    const std::filesystem::path path = testPath("sdf3d_graph_groups_round_trip.json");
+    sdf3d::JsonGraphSerializer serializer;
+
+    sdf3d::SdfGraph groupGraph;
+    const sdf3d::SdfGraphNodeId groupSphere = groupGraph.createNode(sdf3d::SdfNodeType::Sphere, "Group Sphere");
+    expect(groupGraph.link(groupSphere, "sdf", groupGraph.outputNode(), "surface"), testName, "Expected group output link.", failures);
+
+    sdf3d::GraphGroupRegistry groups;
+    const sdf3d::GroupDefId definitionId = groups.createDefinition("Ball Group", groupGraph);
+
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId groupInstance = graph.createNode(sdf3d::SdfNodeType::Group, "Ball Instance");
+    if (sdf3d::SdfGraphNode* node = graph.node(groupInstance)) {
+        node->payload.groupDefinitionId = definitionId;
+    }
+    expect(graph.link(groupInstance, "sdf", graph.outputNode(), "surface"), testName, "Expected group instance output link.", failures);
+    expect(serializer.save(graph, groups, path), testName, "Expected save success: " + serializer.lastError(), failures);
+
+    nlohmann::json saved;
+    {
+        std::ifstream input(path);
+        input >> saved;
+    }
+    expect(saved.contains("definitions"), testName, "Expected root definitions array.", failures);
+    expect(saved.at("definitions").size() == 1, testName, "Expected one group definition.", failures);
+
+    sdf3d::SdfGraph loadedGraph;
+    sdf3d::GraphGroupRegistry loadedGroups;
+    expect(serializer.load(loadedGraph, loadedGroups, path), testName, "Expected load success: " + serializer.lastError(), failures);
+
+    const sdf3d::SdfGraphNode* loadedGroup = loadedGraph.node(groupInstance);
+    expect(loadedGroups.definition(definitionId) != nullptr, testName, "Expected group definition loaded.", failures);
+    expect(loadedGroup != nullptr && loadedGroup->payload.groupDefinitionId == definitionId, testName, "Expected group instance definition id preserved.", failures);
+
+    const sdf3d::SdfCompileResult compileResult = sdf3d::SdfCompiler{}.compile(loadedGraph, loadedGroups);
+    expect(compileResult.errors.empty(), testName, "Expected loaded group graph to compile without errors.", failures);
+    expect(compileResult.glsl.find("sceneSDF") != std::string::npos, testName, "Expected group compile GLSL.", failures);
+
+    std::filesystem::remove(path);
+}
+
 void testJsonGraphLoadFailureKeepsGraph(std::vector<TestFailure>& failures)
 {
     const std::string testName = "json graph load failure keeps graph";
@@ -271,6 +373,8 @@ int main()
     testJsonGraphRoundTrip(failures);
     testJsonGraphMigratesInlineMaterial(failures);
     testJsonGraphMigratesSourceMaterialNode(failures);
+    testJsonGraphLoadRepairsLinkedOverrideMaterialId(failures);
+    testJsonGraphGroupDefinitionsRoundTrip(failures);
     testJsonGraphLoadFailureKeepsGraph(failures);
 
     if (!failures.empty()) {

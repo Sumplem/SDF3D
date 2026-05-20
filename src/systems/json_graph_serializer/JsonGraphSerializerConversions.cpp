@@ -59,6 +59,8 @@ const char* nodeTypeName(SdfNodeType type)
         return "CheckerMaterial";
     case SdfNodeType::MaterialOverride:
         return "MaterialOverride";
+    case SdfNodeType::Group:
+        return "Group";
     case SdfNodeType::Output:
         return "Output";
     }
@@ -93,6 +95,7 @@ std::optional<SdfNodeType> parseNodeType(const std::string& name)
              SdfNodeType::SolidMaterial,
              SdfNodeType::CheckerMaterial,
              SdfNodeType::MaterialOverride,
+             SdfNodeType::Group,
              SdfNodeType::Output,
          }) {
         if (name == nodeTypeName(type)) {
@@ -254,6 +257,9 @@ nlohmann::json nodeToJson(const SdfGraphNode& node)
     if (node.payload.materialId != 0) {
         value["materialId"] = node.payload.materialId;
     }
+    if (node.payload.type == SdfNodeType::Group && node.payload.groupDefinitionId != 0) {
+        value["definitionId"] = node.payload.groupDefinitionId;
+    }
     return value;
 }
 
@@ -270,6 +276,7 @@ SdfGraphNode nodeFromJson(const nlohmann::json& value)
         payload.stableId = value.at("id").get<SdfGraphNodeId>();
     }
     payload.materialId = value.contains("materialId") ? value.at("materialId").get<MaterialId>() : 0;
+    payload.groupDefinitionId = value.contains("definitionId") ? value.at("definitionId").get<GroupDefId>() : 0;
     for (const auto& [key, parameter] : value.at("parameters").items()) {
         payload.parameters[key] = parameter.get<float>();
     }
