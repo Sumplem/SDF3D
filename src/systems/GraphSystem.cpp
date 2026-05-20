@@ -53,7 +53,9 @@ float parameterOr(const SdfNode& node, const std::string& key, float fallback)
 void GraphSystem::initialize(SdfGraph& graph)
 {
     const SdfGraphNodeId id = graph.m_nextId++;
-    SdfGraphNode graphNode{id, *makeSdfNodeFromDefinition(SdfNodeType::Output), 560.0f, 40.0f};
+    SdfNodePtr payload = makeSdfNodeFromDefinition(SdfNodeType::Output);
+    payload->stableId = id;
+    SdfGraphNode graphNode{id, *payload, 560.0f, 40.0f};
     graphNode.inputs = defaultInputsFor(SdfNodeType::Output);
     graphNode.outputs = defaultOutputsFor(SdfNodeType::Output);
     graph.m_nodes.emplace(id, std::move(graphNode));
@@ -67,6 +69,7 @@ SdfGraphNodeId GraphSystem::createNode(SdfGraph& graph, SdfNodeType type, std::s
     if (!name.empty()) {
         payload->name = std::move(name);
     }
+    payload->stableId = id;
     if (type == SdfNodeType::SolidMaterial || type == SdfNodeType::CheckerMaterial) {
         payload->material.type = type == SdfNodeType::CheckerMaterial ? SdfMaterialType::Checker : SdfMaterialType::Solid;
     }
@@ -97,6 +100,7 @@ SdfGraphNodeId GraphSystem::duplicateNode(SdfGraph& graph, SdfGraphNodeId id)
 
     const SdfGraphNodeId duplicateId = graph.m_nextId++;
     SdfGraphNode graphNode{duplicateId, it->second.payload, it->second.editorX + 32.0f, it->second.editorY + 32.0f};
+    graphNode.payload.stableId = duplicateId;
     graphNode.inputs = it->second.inputs;
     graphNode.outputs = it->second.outputs;
     graphNode.editorPropertiesCollapsed = it->second.editorPropertiesCollapsed;
@@ -169,9 +173,16 @@ bool GraphSystem::deleteNode(SdfGraph& graph, SdfGraphNodeId id)
         return false;
     }
 
-    if (graph.m_nodes.erase(id) == 0) {
+    MaterialId materialIdToCleanup = 0;
+    const auto nodeIt = graph.m_nodes.find(id);
+    if (nodeIt == graph.m_nodes.end()) {
         return false;
     }
+    if (nodeIt->second.payload.type == SdfNodeType::SolidMaterial || nodeIt->second.payload.type == SdfNodeType::CheckerMaterial) {
+        materialIdToCleanup = nodeIt->second.payload.materialId;
+    }
+
+    graph.m_nodes.erase(nodeIt);
 
     graph.m_links.erase(std::remove_if(graph.m_links.begin(), graph.m_links.end(),
                             [id](const SdfGraphLink& link) {
@@ -186,7 +197,51 @@ bool GraphSystem::deleteNode(SdfGraph& graph, SdfGraphNodeId id)
     if (graph.m_selectedNode == id) {
         graph.m_selectedNode = graph.m_selectedNodes.empty() ? 0 : graph.m_selectedNodes.back();
     }
+    if (materialIdToCleanup != 0 && canDeleteMaterial(graph, materialIdToCleanup)) {
+        (void)graph.m_materials.removeMaterial(materialIdToCleanup);
+    }
     return true;
+}
+
+bool GraphSystem::renameMaterial(SdfGraph& graph, MaterialId id, std::string name)
+{
+    MaterialDefinition* material = graph.m_materials.material(id);
+    if (material == nullptr || name.empty()) {
+        return false;
+    }
+
+    material->name = std::move(name);
+    for (auto& [nodeId, node] : graph.m_nodes) {
+        (void)nodeId;
+        if (node.payload.materialId == id) {
+            node.payload.name = material->name;
+        }
+    }
+    return true;
+}
+
+bool GraphSystem::canDeleteMaterial(const SdfGraph& graph, MaterialId id)
+{
+    if (id == 0 || graph.m_materials.material(id) == nullptr) {
+        return false;
+    }
+
+    for (const auto& [nodeId, node] : graph.m_nodes) {
+        (void)nodeId;
+        if (node.payload.materialId == id) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool GraphSystem::deleteMaterial(SdfGraph& graph, MaterialId id)
+{
+    if (!canDeleteMaterial(graph, id)) {
+        return false;
+    }
+
+    return graph.m_materials.removeMaterial(id);
 }
 
 bool GraphSystem::link(SdfGraph& graph, SdfGraphNodeId fromNode, SdfGraphNodeId toNode, std::string toSocket)
@@ -219,6 +274,12 @@ bool GraphSystem::link(SdfGraph& graph, SdfGraphNodeId fromNode, std::string fro
     // AGENT: Links carry both sockets, matching Geometry Nodes semantics
     // while preserving default `sdf` output path.
     graph.m_links.push_back({fromNode, std::move(fromSocket), toNode, std::move(toSocket)});
+    if (toIt->second.payload.type == SdfNodeType::MaterialOverride && graph.m_links.back().toSocket == "material") {
+        toIt->second.payload.materialId = fromIt->second.payload.materialId;
+        if (const MaterialDefinition* material = graph.m_materials.material(fromIt->second.payload.materialId)) {
+            toIt->second.payload.material = material->material;
+        }
+    }
     return true;
 }
 

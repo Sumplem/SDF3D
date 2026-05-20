@@ -6,6 +6,7 @@
 #include "sdf3d/renderer/UniformUploader.h"
 #include "sdf3d/scene/SdfCompiler.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -57,6 +58,12 @@ public:
     /// Returns the color texture containing the most recent viewport render.
     unsigned int outputTexture() const;
 
+    /// Returns progressive path-trace samples accumulated for current frame key.
+    uint32_t pathTraceSampleCount() const;
+
+    /// Returns true when the last rendered frame used progressive path tracing.
+    bool pathTraceActive() const;
+
 private:
     FboRenderer m_fboRenderer;
     PathTraceAccumulation m_pathTraceAccumulation;
@@ -65,6 +72,7 @@ private:
     RenderGizmo m_gizmo;
     RenderQuality m_quality = RenderQuality::High;
     RenderMode m_renderMode = RenderMode::DirectPreview;
+    bool m_lastFramePathTracing = false;
     uint64_t m_sceneRevision = 0;
     uint64_t m_materialRevision = 0;
     uint64_t m_nodeParamRevision = 0;

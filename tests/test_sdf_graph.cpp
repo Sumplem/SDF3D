@@ -523,6 +523,12 @@ void testPhaseTwoDomainNodeDefinitions(std::vector<TestFailure>& failures)
         expect(repeatNode->payload.parameters.at("repeatX") == 1.0f, testName, "Expected repeat x enabled by default.", failures);
         expect(repeatNode->payload.parameters.at("repeatY") == 1.0f, testName, "Expected repeat y enabled by default.", failures);
         expect(repeatNode->payload.parameters.at("repeatZ") == 1.0f, testName, "Expected repeat z enabled by default.", failures);
+        const sdf3d::SdfParameterDefinition* repeatX = sdf3d::sdfParameterDefinition(sdf3d::SdfNodeType::Repeat, "repeatX");
+        const sdf3d::SdfParameterDefinition* repeatY = sdf3d::sdfParameterDefinition(sdf3d::SdfNodeType::Repeat, "repeatY");
+        const sdf3d::SdfParameterDefinition* repeatZ = sdf3d::sdfParameterDefinition(sdf3d::SdfNodeType::Repeat, "repeatZ");
+        expect(repeatX != nullptr && repeatX->type == sdf3d::SdfParameterType::Bool, testName, "Expected repeat x metadata to be bool.", failures);
+        expect(repeatY != nullptr && repeatY->type == sdf3d::SdfParameterType::Bool, testName, "Expected repeat y metadata to be bool.", failures);
+        expect(repeatZ != nullptr && repeatZ->type == sdf3d::SdfParameterType::Bool, testName, "Expected repeat z metadata to be bool.", failures);
     }
     if (mirrorNode != nullptr) {
         expect(mirrorNode->inputs.size() == 1 && mirrorNode->inputs[0].name == "child", testName, "Expected mirror child input.", failures);
@@ -534,12 +540,23 @@ void testPhaseTwoDomainNodeDefinitions(std::vector<TestFailure>& failures)
         expect(twistNode->outputs.size() == 1 && twistNode->outputs[0].name == "sdf", testName, "Expected twist SDF output.", failures);
         expect(twistNode->payload.parameters.at("strength") == 1.0f, testName, "Expected twist default strength.", failures);
         expect(twistNode->payload.parameters.at("axis") == 1.0f, testName, "Expected twist default y axis.", failures);
+        const sdf3d::SdfParameterDefinition* twistAxis = sdf3d::sdfParameterDefinition(sdf3d::SdfNodeType::Twist, "axis");
+        expect(twistAxis != nullptr && twistAxis->type == sdf3d::SdfParameterType::Enum, testName, "Expected twist axis metadata to be enum.", failures);
+        expect(twistAxis != nullptr && twistAxis->enumValues.size() == 3, testName, "Expected twist axis enum values.", failures);
+        if (twistAxis != nullptr && twistAxis->enumValues.size() == 3) {
+            expect(twistAxis->enumValues[0].name == "X" && twistAxis->enumValues[0].value == 0, testName, "Expected twist X enum.", failures);
+            expect(twistAxis->enumValues[1].name == "Y" && twistAxis->enumValues[1].value == 1, testName, "Expected twist Y enum.", failures);
+            expect(twistAxis->enumValues[2].name == "Z" && twistAxis->enumValues[2].value == 2, testName, "Expected twist Z enum.", failures);
+        }
     }
     if (bendNode != nullptr) {
         expect(bendNode->inputs.size() == 1 && bendNode->inputs[0].name == "child", testName, "Expected bend child input.", failures);
         expect(bendNode->outputs.size() == 1 && bendNode->outputs[0].name == "sdf", testName, "Expected bend SDF output.", failures);
         expect(bendNode->payload.parameters.at("strength") == 0.5f, testName, "Expected bend default strength.", failures);
         expect(bendNode->payload.parameters.at("axis") == 0.0f, testName, "Expected bend default x axis.", failures);
+        const sdf3d::SdfParameterDefinition* bendAxis = sdf3d::sdfParameterDefinition(sdf3d::SdfNodeType::Bend, "axis");
+        expect(bendAxis != nullptr && bendAxis->type == sdf3d::SdfParameterType::Enum, testName, "Expected bend axis metadata to be enum.", failures);
+        expect(bendAxis != nullptr && bendAxis->enumValues.size() == 3, testName, "Expected bend axis enum values.", failures);
     }
 }
 

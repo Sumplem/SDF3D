@@ -19,9 +19,6 @@ constexpr float LABEL_WIDTH = 76.0f;
 constexpr float enabledThreshold = 0.5f;
 constexpr float disabledValue = 0.0f;
 constexpr float enabledValue = 1.0f;
-constexpr int axisX = 0;
-constexpr int axisZ = 2;
-constexpr int axisCount = 3;
 constexpr float defaultWindowFontScale = 1.0f;
 
 class ScopedWidgetZoom {
@@ -43,11 +40,6 @@ public:
     }
 };
 
-bool isBooleanParameter(const SdfParameterDefinition& definition)
-{
-    return definition.minValue == disabledValue && definition.maxValue == enabledValue && definition.step == enabledValue;
-}
-
 bool drawBoolParameter(const std::string& id, float& value)
 {
     bool enabled = value >= enabledThreshold;
@@ -59,15 +51,28 @@ bool drawBoolParameter(const std::string& id, float& value)
     return true;
 }
 
-bool drawAxisParameter(const std::string& id, float& value)
+bool drawEnumParameter(const std::string& id, const SdfParameterDefinition& definition, float& value)
 {
-    const char* axisLabels[] = {"X", "Y", "Z"};
-    int axis = static_cast<int>(std::clamp(value, static_cast<float>(axisX), static_cast<float>(axisZ)) + enabledThreshold);
-    if (!ImGui::Combo(id.c_str(), &axis, axisLabels, axisCount)) {
+    if (definition.enumValues.empty()) {
         return false;
     }
 
-    value = static_cast<float>(axis);
+    const int currentValue = static_cast<int>(value);
+    int selectedIndex = 0;
+    std::vector<const char*> labels;
+    labels.reserve(definition.enumValues.size());
+    for (int i = 0; i < static_cast<int>(definition.enumValues.size()); ++i) {
+        labels.push_back(definition.enumValues[i].name.c_str());
+        if (definition.enumValues[i].value == currentValue) {
+            selectedIndex = i;
+        }
+    }
+
+    if (!ImGui::Combo(id.c_str(), &selectedIndex, labels.data(), static_cast<int>(labels.size()))) {
+        return false;
+    }
+
+    value = static_cast<float>(definition.enumValues[selectedIndex].value);
     return true;
 }
 
@@ -230,10 +235,10 @@ EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, const GraphNodeLayout
         ImGui::SetNextItemWidth(fieldWidth);
         const std::string id = "##node-param-" + std::to_string(layout.id) + "-" + key;
         bool changed = false;
-        if (definition != parameterDefinitions.end() && isBooleanParameter(definition->second)) {
+        if (definition != parameterDefinitions.end() && definition->second.type == SdfParameterType::Bool) {
             changed = drawBoolParameter(id, value);
-        } else if ((node.type == SdfNodeType::Twist || node.type == SdfNodeType::Bend) && key == "axis") {
-            changed = drawAxisParameter(id, value);
+        } else if (definition != parameterDefinitions.end() && definition->second.type == SdfParameterType::Enum) {
+            changed = drawEnumParameter(id, definition->second, value);
         } else {
             changed = ImGui::DragFloat(id.c_str(), &value, step, minValue, maxValue);
         }

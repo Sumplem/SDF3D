@@ -22,7 +22,20 @@ enum class SdfParameterVisibility {
     Hidden,
 };
 
-/// Declares one float parameter and its default value.
+/// Value kind used by generic parameter UIs and compiler readers.
+enum class SdfParameterType {
+    Float,
+    Bool,
+    Enum,
+};
+
+/// One selectable value for enum parameters.
+struct SdfParameterEnumValue {
+    std::string name;
+    int value = 0;
+};
+
+/// Declares one typed parameter and its default value.
 struct SdfParameterDefinition {
     std::string name;
     float defaultValue = 0.0f;
@@ -30,6 +43,8 @@ struct SdfParameterDefinition {
     float maxValue = 0.0f;
     float step = 0.01f;
     SdfParameterVisibility visibility = SdfParameterVisibility::Visible;
+    SdfParameterType type = SdfParameterType::Float;
+    std::vector<SdfParameterEnumValue> enumValues;
 };
 
 /// Static metadata shared by graph sockets, Add menu, and default nodes.

@@ -3,6 +3,7 @@
 #include "sdf3d/scene/SdfNodeDefinition.h"
 #include "sdf3d/scene/SdfRotationParams.h"
 #include "sdf3d/scene/SdfNodeTraits.h"
+#include "sdf3d/systems/GraphSystem.h"
 
 #include <algorithm>
 #include <string>
@@ -19,15 +20,6 @@ namespace {
 constexpr float enabledThreshold = 0.5f;
 constexpr float disabledValue = 0.0f;
 constexpr float enabledValue = 1.0f;
-constexpr int axisX = 0;
-constexpr int axisY = 1;
-constexpr int axisZ = 2;
-constexpr int axisCount = 3;
-
-bool isBooleanParameter(const SdfParameterDefinition& definition)
-{
-    return definition.minValue == disabledValue && definition.maxValue == enabledValue && definition.step == enabledValue;
-}
 
 bool drawBoolParameter(const std::string& key, float& value)
 {
@@ -40,15 +32,28 @@ bool drawBoolParameter(const std::string& key, float& value)
     return true;
 }
 
-bool drawAxisParameter(float& value)
+bool drawEnumParameter(const std::string& key, const SdfParameterDefinition& definition, float& value)
 {
-    const char* axisLabels[] = {"X", "Y", "Z"};
-    int axis = static_cast<int>(std::clamp(value, static_cast<float>(axisX), static_cast<float>(axisZ)) + enabledThreshold);
-    if (!ImGui::Combo("Axis", &axis, axisLabels, axisCount)) {
+    if (definition.enumValues.empty()) {
         return false;
     }
 
-    value = static_cast<float>(axis);
+    const int currentValue = static_cast<int>(value);
+    int selectedIndex = 0;
+    std::vector<const char*> labels;
+    labels.reserve(definition.enumValues.size());
+    for (int i = 0; i < static_cast<int>(definition.enumValues.size()); ++i) {
+        labels.push_back(definition.enumValues[i].name.c_str());
+        if (definition.enumValues[i].value == currentValue) {
+            selectedIndex = i;
+        }
+    }
+
+    if (!ImGui::Combo(key.c_str(), &selectedIndex, labels.data(), static_cast<int>(labels.size()))) {
+        return false;
+    }
+
+    value = static_cast<float>(definition.enumValues[selectedIndex].value);
     return true;
 }
 
@@ -64,6 +69,65 @@ bool drawMaterialTypeCombo(SdfMaterial& material)
     return true;
 }
 
+const char* materialTypeName(SdfMaterialType type)
+{
+    return type == SdfMaterialType::Checker ? "Checker" : "Solid";
+}
+
+EditorDirtyState drawMaterialPalette(SdfGraph& graph)
+{
+    EditorDirtyState dirty;
+    ImGui::SeparatorText("Material Palette");
+
+    const std::vector<MaterialDefinition>& materials = graph.materials().materials();
+    if (materials.empty()) {
+        ImGui::TextUnformatted("No registry materials.");
+        return dirty;
+    }
+
+    MaterialId pendingDelete = 0;
+    for (const MaterialDefinition& material : materials) {
+        ImGui::PushID(static_cast<int>(material.id));
+        ImGui::ColorButton("##material-swatch", {material.material.albedo.x, material.material.albedo.y, material.material.albedo.z, 1.0f});
+        ImGui::SameLine();
+
+        char nameBuffer[96] = {};
+        const size_t copyLength = std::min(material.name.size(), sizeof(nameBuffer) - 1);
+        std::copy_n(material.name.data(), copyLength, nameBuffer);
+        ImGui::SetNextItemWidth(140.0f);
+        if (ImGui::InputText("##material-name", nameBuffer, sizeof(nameBuffer))) {
+            if (GraphSystem::renameMaterial(graph, material.id, nameBuffer)) {
+                dirty.scene = true;
+            }
+        }
+        ImGui::SameLine();
+        ImGui::TextUnformatted(materialTypeName(material.material.type));
+        ImGui::SameLine();
+        ImGui::Text("ID %llu", static_cast<unsigned long long>(material.id));
+        ImGui::SameLine();
+
+        const bool canDelete = GraphSystem::canDeleteMaterial(graph, material.id);
+        if (!canDelete) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::Button("Delete")) {
+            pendingDelete = material.id;
+        }
+        if (!canDelete) {
+            ImGui::EndDisabled();
+        }
+        if (!canDelete && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Delete material node first.");
+        }
+        ImGui::PopID();
+    }
+
+    if (pendingDelete != 0 && GraphSystem::deleteMaterial(graph, pendingDelete)) {
+        dirty.scene = true;
+    }
+    return dirty;
+}
+
 } // namespace
 
 EditorDirtyState PropertiesPanel::draw(SceneGraph& sceneGraph)
@@ -71,6 +135,9 @@ EditorDirtyState PropertiesPanel::draw(SceneGraph& sceneGraph)
     EditorDirtyState dirty;
 
     ImGui::Begin("Properties");
+    const EditorDirtyState paletteDirty = drawMaterialPalette(sceneGraph.graph());
+    dirty.scene = dirty.scene || paletteDirty.scene;
+    dirty.material = dirty.material || paletteDirty.material;
 
     SdfNode* selected = nullptr;
     if (sceneGraph.graph().selectedNodes().size() > 1) {
@@ -185,14 +252,14 @@ EditorDirtyState PropertiesPanel::draw(SceneGraph& sceneGraph)
     for (const std::string& key : keys) {
         float& value = selected->parameters[key];
         const auto definition = parameterDefinitions.find(key);
-        if (definition != parameterDefinitions.end() && isBooleanParameter(definition->second)) {
+        if (definition != parameterDefinitions.end() && definition->second.type == SdfParameterType::Bool) {
             if (drawBoolParameter(key, value)) {
                 dirty.scene = true;
             }
             continue;
         }
-        if ((selected->type == SdfNodeType::Twist || selected->type == SdfNodeType::Bend) && key == "axis") {
-            if (drawAxisParameter(value)) {
+        if (definition != parameterDefinitions.end() && definition->second.type == SdfParameterType::Enum) {
+            if (drawEnumParameter(key, definition->second, value)) {
                 dirty.scene = true;
             }
             continue;

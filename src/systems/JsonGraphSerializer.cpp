@@ -40,14 +40,7 @@ bool JsonGraphSerializer::save(const SdfGraph& graph, const std::filesystem::pat
         if (node == nullptr) {
             continue;
         }
-        json serializedNode = json_graph_serializer::nodeToJson(*node);
-        for (const SdfGraphSocket& input : node->inputs) {
-            serializedNode["inputs"].push_back(json_graph_serializer::socketToJson(input));
-        }
-        for (const SdfGraphSocket& output : node->outputs) {
-            serializedNode["outputs"].push_back(json_graph_serializer::socketToJson(output));
-        }
-        nodes.push_back(std::move(serializedNode));
+        nodes.push_back(json_graph_serializer::nodeToJson(*node));
     }
 
     json links = json::array();
@@ -66,7 +59,6 @@ bool JsonGraphSerializer::save(const SdfGraph& graph, const std::filesystem::pat
         {"nextId", graph.nextNodeIdForSerialization()},
         {"materials", {{"nextId", graph.materials().nextMaterialIdForSerialization()}, {"items", materials}}},
         {"outputNode", graph.outputNode()},
-        {"selection", {{"primary", graph.selectedNode()}, {"nodes", graph.selectedNodes()}}},
         {"nodes", nodes},
         {"links", links},
     };
@@ -122,10 +114,12 @@ bool JsonGraphSerializer::load(SdfGraph& graph, const std::filesystem::path& pat
                 }
             }
             if (node.payload.type == SdfNodeType::MaterialOverride) {
-                if (node.payload.materialId == 0 || materials.material(node.payload.materialId) == nullptr) {
+                if (node.payload.materialId != 0 && materials.material(node.payload.materialId) != nullptr) {
+                    node.payload.material = materials.material(node.payload.materialId)->material;
+                } else if (nodeValue.contains("material")) {
                     node.payload.materialId = materials.createMaterial(node.payload.name.empty() ? "Material" : node.payload.name, node.payload.material);
-                } else if (const MaterialDefinition* material = materials.material(node.payload.materialId)) {
-                    node.payload.material = material->material;
+                } else {
+                    node.payload.materialId = 0;
                 }
             }
             const SdfGraphNodeId id = node.id;
@@ -140,13 +134,12 @@ bool JsonGraphSerializer::load(SdfGraph& graph, const std::filesystem::path& pat
             links.push_back(json_graph_serializer::linkFromJson(linkValue));
         }
 
-        std::vector<SdfGraphNodeId> selectedNodes = root.at("selection").at("nodes").get<std::vector<SdfGraphNodeId>>();
         const bool replaced = GraphSystem::replaceGraphData(
             graph,
             root.at("nextId").get<SdfGraphNodeId>(),
             root.at("outputNode").get<SdfGraphNodeId>(),
-            root.at("selection").at("primary").get<SdfGraphNodeId>(),
-            std::move(selectedNodes),
+            0,
+            {},
             std::move(nodes),
             std::move(links));
         if (!replaced) {

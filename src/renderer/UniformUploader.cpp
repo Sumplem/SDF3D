@@ -67,6 +67,7 @@ void UniformUploader::upload(
     glUniform1i(glGetUniformLocation(program, "uGizmoRotateStyle"), static_cast<GLint>(gizmo.rotateStyle));
     glUniform1i(glGetUniformLocation(program, "uHighlightNodeId"), static_cast<GLint>(gizmo.highlightNodeId));
     glUniform1i(glGetUniformLocation(program, "uRenderQuality"), static_cast<GLint>(quality));
+    glUniform1i(glGetUniformLocation(program, "uPathTraceMaxBounces"), pathTraceMaxBouncesForQuality(quality));
 
     const size_t materialCount = materialCountForShader(materials.size());
     glUniform1i(glGetUniformLocation(program, "uMaterialCount"), static_cast<GLint>(materialCount));
@@ -128,6 +129,19 @@ std::vector<UniformUploader::GpuNodeParam> UniformUploader::packNodeParams(const
         });
     }
     return packed;
+}
+
+int UniformUploader::pathTraceMaxBouncesForQuality(RenderQuality quality)
+{
+    switch (quality) {
+    case RenderQuality::Low:
+        return 1;
+    case RenderQuality::Medium:
+        return 2;
+    case RenderQuality::High:
+        return 4;
+    }
+    return 2;
 }
 
 } // namespace sdf3d

@@ -1,5 +1,7 @@
 #include "JsonGraphSerializerConversions.h"
 
+#include "sdf3d/scene/SdfNodeDefinition.h"
+
 #include <optional>
 #include <stdexcept>
 
@@ -241,18 +243,18 @@ nlohmann::json nodeToJson(const SdfGraphNode& node)
         parameters[key] = value;
     }
 
-    return nlohmann::json{
+    nlohmann::json value{
         {"id", node.id},
         {"type", nodeTypeName(node.payload.type)},
         {"stableId", node.payload.stableId},
         {"name", node.payload.name},
-        {"materialId", node.payload.materialId},
         {"editor", {{"x", node.editorX}, {"y", node.editorY}, {"propertiesCollapsed", node.editorPropertiesCollapsed}}},
         {"parameters", parameters},
-        {"material", materialToJson(node.payload.material)},
-        {"inputs", nlohmann::json::array()},
-        {"outputs", nlohmann::json::array()},
     };
+    if (node.payload.materialId != 0) {
+        value["materialId"] = node.payload.materialId;
+    }
+    return value;
 }
 
 SdfGraphNode nodeFromJson(const nlohmann::json& value)
@@ -263,23 +265,24 @@ SdfGraphNode nodeFromJson(const nlohmann::json& value)
     }
 
     SdfNode payload{*type, value.at("name").get<std::string>()};
-    payload.stableId = value.at("stableId").get<uint64_t>();
+    payload.stableId = value.value("stableId", value.at("id").get<SdfGraphNodeId>());
+    if (payload.stableId == 0) {
+        payload.stableId = value.at("id").get<SdfGraphNodeId>();
+    }
     payload.materialId = value.contains("materialId") ? value.at("materialId").get<MaterialId>() : 0;
     for (const auto& [key, parameter] : value.at("parameters").items()) {
         payload.parameters[key] = parameter.get<float>();
     }
-    if (value.contains("material")) {
+    if (value.contains("material") && (*type == SdfNodeType::SolidMaterial || *type == SdfNodeType::CheckerMaterial || *type == SdfNodeType::MaterialOverride)) {
         payload.material = materialFromJson(value.at("material"));
     }
 
     const nlohmann::json& editor = value.at("editor");
     SdfGraphNode node{value.at("id").get<SdfGraphNodeId>(), std::move(payload), editor.at("x").get<float>(), editor.at("y").get<float>()};
     node.editorPropertiesCollapsed = editor.at("propertiesCollapsed").get<bool>();
-    for (const nlohmann::json& input : value.at("inputs")) {
-        node.inputs.push_back(socketFromJson(input));
-    }
-    for (const nlohmann::json& output : value.at("outputs")) {
-        node.outputs.push_back(socketFromJson(output));
+    if (const SdfNodeDefinition* definition = sdfNodeDefinition(*type)) {
+        node.inputs = definition->inputs;
+        node.outputs = definition->outputs;
     }
     return node;
 }

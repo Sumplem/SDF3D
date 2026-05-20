@@ -13,6 +13,22 @@ bool hasValidSocket(const std::vector<std::string>& sockets, const std::string& 
     return std::find(sockets.begin(), sockets.end(), socket) != sockets.end();
 }
 
+bool isBypassInput(SdfNodeType type, const std::string& socket)
+{
+    switch (type) {
+    case SdfNodeType::Union:
+    case SdfNodeType::SmoothUnion:
+    case SdfNodeType::Intersect:
+    case SdfNodeType::SmoothIntersect:
+        return socket == "left" || socket == "right";
+    case SdfNodeType::Subtract:
+    case SdfNodeType::SmoothSubtract:
+        return socket == "base";
+    default:
+        return false;
+    }
+}
+
 std::optional<SdfGraphLink> linkToInput(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket)
 {
     for (const SdfGraphLink& link : graph.links()) {
@@ -125,6 +141,25 @@ bool GraphSystem::nodeHasMissingRequiredInput(const SdfGraph& graph, const SdfGr
     }
 
     return false;
+}
+
+std::optional<SdfGraphLink> GraphSystem::effectiveBypassSourceLink(const SdfGraph& graph, const SdfGraphNode& node)
+{
+    if (!nodeHasMissingRequiredInput(graph, node)) {
+        return std::nullopt;
+    }
+
+    for (const SdfGraphSocket& input : node.inputs) {
+        if (input.type != SdfSocketType::Sdf || !isBypassInput(node.payload.type, input.name)) {
+            continue;
+        }
+
+        if (const std::optional<SdfGraphLink> link = effectiveLinkToInput(graph, node.id, input.name)) {
+            return link;
+        }
+    }
+
+    return std::nullopt;
 }
 
 } // namespace sdf3d

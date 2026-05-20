@@ -6,6 +6,14 @@
 #include "sdf3d/systems/MaterialSystem.h"
 
 namespace sdf3d {
+namespace {
+
+std::string planeNormalExpr(float normalX, float normalY, float normalZ)
+{
+    return "normalize(" + glsl_emitter::glslVec3(normalX, normalY, normalZ) + ")";
+}
+
+} // namespace
 
 std::string GlslEmitter::emitPrimitiveNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const
 {
@@ -44,7 +52,7 @@ std::string GlslEmitter::emitPrimitiveNode(const SdfNodePtr& node, const std::st
         const float normalY = parameterOr(*node, "normalY", 1.0f);
         const float normalZ = parameterOr(*node, "normalZ", 0.0f);
         const float offset = parameterOr(*node, "offset", 0.0f);
-        return glslHit("(dot(" + pointExpr + ", normalize(" + glslVec3(normalX, normalY, normalZ) + ")) + " + glslFloat(offset) + ")",
+        return glslHit("(dot(" + pointExpr + ", " + planeNormalExpr(normalX, normalY, normalZ) + ") + " + glslFloat(offset) + ")",
             defaultMaterialId);
     }
     default:
@@ -88,7 +96,7 @@ std::string emitPrimitiveGeometryExpression(const SdfNodePtr& node, const std::s
         const float normalY = parameterOr(*node, "normalY", 1.0f);
         const float normalZ = parameterOr(*node, "normalZ", 0.0f);
         const float offset = parameterOr(*node, "offset", 0.0f);
-        return "(dot(" + pointExpr + ", normalize(" + glslVec3(normalX, normalY, normalZ) + ")) + " + glslFloat(offset) + ")";
+        return "(dot(" + pointExpr + ", " + planeNormalExpr(normalX, normalY, normalZ) + ") + " + glslFloat(offset) + ")";
     }
     default:
         result.errors.push_back("Unsupported primitive node type in geometry helper emission: " + glslNodeTypeName(node->type));

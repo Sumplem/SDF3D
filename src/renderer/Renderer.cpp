@@ -41,8 +41,10 @@ void Renderer::render(const RenderCamera& camera)
     const bool progressive = m_renderMode == RenderMode::ProgressivePathTrace
         && !m_gizmo.visible
         && m_gizmo.highlightNodeId == 0;
+    m_lastFramePathTracing = progressive;
     const GLuint program = progressive ? m_shaderManager.pathTraceProgram() : m_shaderManager.program();
     if (program == 0 || !m_fboRenderer.begin()) {
+        m_lastFramePathTracing = false;
         return;
     }
 
@@ -135,6 +137,16 @@ const std::string& Renderer::lastError() const
 unsigned int Renderer::outputTexture() const
 {
     return m_fboRenderer.outputTexture();
+}
+
+uint32_t Renderer::pathTraceSampleCount() const
+{
+    return m_pathTraceAccumulation.sampleCount();
+}
+
+bool Renderer::pathTraceActive() const
+{
+    return m_lastFramePathTracing;
 }
 
 } // namespace sdf3d

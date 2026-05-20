@@ -8,8 +8,8 @@ namespace sdf3d::glsl_emitter {
 
 int axisIndexFor(const SdfNode& node, float defaultAxis)
 {
-    const float rawAxis = parameterOr(node, "axis", defaultAxis);
-    return static_cast<int>(std::clamp(rawAxis, 0.0f, 2.0f) + 0.5f);
+    const int rawAxis = static_cast<int>(parameterOr(node, "axis", defaultAxis));
+    return std::clamp(rawAxis, 0, 2);
 }
 
 std::string rotatePointAroundAxis(const std::string& pointExpr, int axis, const std::string& c, const std::string& s)
@@ -31,9 +31,9 @@ std::string repeatedPointFor(const SdfNode& node, const std::string& pointExpr)
     const float x = std::max(parameterOr(node, "x", 2.0f), 0.0001f);
     const float y = std::max(parameterOr(node, "y", 2.0f), 0.0001f);
     const float z = std::max(parameterOr(node, "z", 2.0f), 0.0001f);
-    const bool repeatX = parameterOr(node, "repeatX", 1.0f) >= 0.5f;
-    const bool repeatY = parameterOr(node, "repeatY", 1.0f) >= 0.5f;
-    const bool repeatZ = parameterOr(node, "repeatZ", 1.0f) >= 0.5f;
+    const bool repeatX = parameterOr(node, "repeatX", 1.0f) != 0.0f;
+    const bool repeatY = parameterOr(node, "repeatY", 1.0f) != 0.0f;
+    const bool repeatZ = parameterOr(node, "repeatZ", 1.0f) != 0.0f;
     const std::string cell = glslVec3(x, y, z);
 
     if (repeatX && repeatY && repeatZ) {

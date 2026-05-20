@@ -279,6 +279,7 @@ target_include_directories(sdf3d_shader_manager_tests PRIVATE
 
 target_link_libraries(sdf3d_shader_manager_tests PRIVATE
     glad_gl_core_46
+    glfw
 )
 
 if(MSVC)
@@ -390,6 +391,19 @@ add_executable(sdf3d_graph_serializer_tests
     src/systems/GraphSystemSerialization.cpp
     src/systems/JsonGraphSerializer.cpp
     src/systems/json_graph_serializer/JsonGraphSerializerConversions.cpp
+    src/scene/SdfCompiler.cpp
+    src/scene/SdfGraphCompiler.cpp
+    src/systems/CompilerSystem.cpp
+    src/systems/glsl_emitter/GlslEmitterBooleans.cpp
+    src/systems/glsl_emitter/GlslEmitterDomain.cpp
+    src/systems/glsl_emitter/GlslEmitterDispatch.cpp
+    src/systems/glsl_emitter/GlslEmitterFormatting.cpp
+    src/systems/glsl_emitter/GlslEmitterMaterials.cpp
+    src/systems/glsl_emitter/GlslEmitterMath.cpp
+    src/systems/glsl_emitter/GlslEmitterPrimitives.cpp
+    src/systems/glsl_emitter/GlslEmitterSceneAssembly.cpp
+    src/systems/GlslNodeNames.cpp
+    src/systems/MaterialSystem.cpp
     src/systems/SelectionSystem.cpp
     src/scene/SdfGraph.cpp
     src/scene/SdfNodeDefinition.cpp

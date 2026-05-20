@@ -148,10 +148,10 @@ void testPlane(std::vector<TestFailure>& failures)
 {
     const std::string testName = "plane";
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(sdf3d::makePlaneNode({0.0f, 1.0f, 0.0f}, -1.0f));
+    const sdf3d::SdfCompileResult result = compiler.compile(sdf3d::makePlaneNode({0.0f, 2.0f, 0.0f}, -1.0f));
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
-    expect(contains(result.glsl, "dot(p, normalize(vec3(0.000000, 1.000000, 0.000000)))"), testName, "Expected plane normal expression.", failures);
+    expect(contains(result.glsl, "dot(p, normalize(vec3(0.000000, 2.000000, 0.000000)))"), testName, "Expected non-unit plane normal to normalize in GLSL.", failures);
     expect(contains(result.glsl, "+ -1.000000"), testName, "Expected plane offset expression.", failures);
 }
 

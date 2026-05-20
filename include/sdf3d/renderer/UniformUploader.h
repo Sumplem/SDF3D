@@ -96,6 +96,9 @@ public:
     /// Packs compiler node parameters into shader storage buffer layout.
     static std::vector<GpuNodeParam> packNodeParams(const std::vector<SdfCompiledNodeParam>& nodeParams);
 
+    /// Maps editor quality to stochastic path-trace bounce count.
+    static int pathTraceMaxBouncesForQuality(RenderQuality quality);
+
 private:
     uint32_t m_materialBuffer = 0;
     uint32_t m_nodeParamBuffer = 0;

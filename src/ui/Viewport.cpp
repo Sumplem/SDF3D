@@ -109,6 +109,14 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SceneGraph& sceneGraph)
     if (ImGui::Combo("Mode", &renderMode, modeLabels, 2)) {
         m_renderMode = static_cast<RenderMode>(renderMode);
     }
+    if (m_renderMode == RenderMode::ProgressivePathTrace) {
+        ImGui::SameLine();
+        if (renderer.pathTraceActive()) {
+            ImGui::Text("Samples %u", renderer.pathTraceSampleCount());
+        } else {
+            ImGui::TextUnformatted("Direct preview");
+        }
+    }
 
     if (imageHovered
         && !m_translateGizmo.active()

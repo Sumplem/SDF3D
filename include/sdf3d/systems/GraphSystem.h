@@ -43,6 +43,15 @@ public:
     /// Deletes a node and all links connected to it.
     static bool deleteNode(SdfGraph& graph, SdfGraphNodeId id);
 
+    /// Renames one registry material by stable ID.
+    static bool renameMaterial(SdfGraph& graph, MaterialId id, std::string name);
+
+    /// Returns true when no graph node references the registry material.
+    static bool canDeleteMaterial(const SdfGraph& graph, MaterialId id);
+
+    /// Deletes one unreferenced registry material by stable ID.
+    static bool deleteMaterial(SdfGraph& graph, MaterialId id);
+
     /// Connects one node output to a named input socket on another node.
     static bool link(SdfGraph& graph, SdfGraphNodeId fromNode, SdfGraphNodeId toNode, std::string toSocket);
 
@@ -72,6 +81,9 @@ public:
 
     /// Returns true when a node is missing an effective required SDF input.
     static bool nodeHasMissingRequiredInput(const SdfGraph& graph, const SdfGraphNode& node);
+
+    /// Returns the effective source link used when an incomplete node visually bypasses itself.
+    static std::optional<SdfGraphLink> effectiveBypassSourceLink(const SdfGraph& graph, const SdfGraphNode& node);
 
     /// Returns true when lowered children satisfy graph validity rules.
     static bool loweredNodeHasRequiredInputs(SdfNodeType type, const std::vector<std::string>& validSockets, std::size_t childCount);

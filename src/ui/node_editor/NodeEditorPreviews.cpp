@@ -3,47 +3,8 @@
 #include "sdf3d/systems/GraphSystem.h"
 
 #include <optional>
-#include <string>
 
 namespace sdf3d::node_editor {
-namespace {
-
-bool isBypassInput(SdfNodeType type, const std::string& socket)
-{
-    switch (type) {
-    case SdfNodeType::Union:
-    case SdfNodeType::SmoothUnion:
-    case SdfNodeType::Intersect:
-    case SdfNodeType::SmoothIntersect:
-        return socket == "left" || socket == "right";
-    case SdfNodeType::Subtract:
-    case SdfNodeType::SmoothSubtract:
-        return socket == "base";
-    default:
-        return false;
-    }
-}
-
-std::optional<SdfGraphLink> bypassSourceLink(const SdfGraph& graph, const SdfGraphNode& node)
-{
-    if (!GraphSystem::nodeHasMissingRequiredInput(graph, node)) {
-        return std::nullopt;
-    }
-
-    for (const SdfGraphSocket& input : node.inputs) {
-        if (input.type != SdfSocketType::Sdf || !isBypassInput(node.payload.type, input.name)) {
-            continue;
-        }
-
-        if (const std::optional<SdfGraphLink> link = GraphSystem::effectiveLinkToInput(graph, node.id, input.name)) {
-            return link;
-        }
-    }
-
-    return std::nullopt;
-}
-
-} // namespace
 
 void drawInactiveNodePreview(
     const SdfGraph& graph,
@@ -70,7 +31,7 @@ void drawInactiveNodePreview(
         }
     }
 
-    const std::optional<SdfGraphLink> source = bypassSourceLink(graph, node);
+    const std::optional<SdfGraphLink> source = GraphSystem::effectiveBypassSourceLink(graph, node);
     const std::optional<SdfGraphLink> downstream = firstLinkFromOutput(graph, layout.id, "sdf");
     if (!source || !downstream) {
         return;

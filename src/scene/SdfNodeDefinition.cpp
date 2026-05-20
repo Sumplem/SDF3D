@@ -2,6 +2,7 @@
 
 #include "sdf3d/scene/SdfRotationParams.h"
 
+#include <initializer_list>
 #include <utility>
 
 namespace sdf3d {
@@ -17,37 +18,66 @@ SdfGraphSocket outputSocket(std::string name, SdfSocketType type = SdfSocketType
     return {std::move(name), type, SdfSocketDirection::Output, false};
 }
 
+SdfParameterDefinition floatParameter(std::string name, float defaultValue, float minValue, float maxValue, float step)
+{
+    return {std::move(name), defaultValue, minValue, maxValue, step};
+}
+
+SdfParameterDefinition hiddenFloatParameter(std::string name, float defaultValue, float minValue, float maxValue, float step)
+{
+    return {std::move(name), defaultValue, minValue, maxValue, step, SdfParameterVisibility::Hidden};
+}
+
+SdfParameterDefinition boolParameter(std::string name, float defaultValue)
+{
+    SdfParameterDefinition parameter;
+    parameter.name = std::move(name);
+    parameter.defaultValue = defaultValue;
+    parameter.type = SdfParameterType::Bool;
+    return parameter;
+}
+
+SdfParameterDefinition enumParameter(std::string name, int defaultValue, std::initializer_list<SdfParameterEnumValue> values)
+{
+    SdfParameterDefinition parameter;
+    parameter.name = std::move(name);
+    parameter.defaultValue = static_cast<float>(defaultValue);
+    parameter.type = SdfParameterType::Enum;
+    parameter.enumValues = values;
+    return parameter;
+}
+
 const std::vector<SdfNodeDefinition>& definitions()
 {
     static const std::vector<SdfNodeDefinition> items = {
-        {SdfNodeType::Sphere, SdfNodeCategory::Primitive, "Sphere", {{"radius", 1.0f, 0.001f, 100.0f, 0.01f}}, {}, {outputSocket("sdf")}},
-        {SdfNodeType::Box, SdfNodeCategory::Primitive, "Box", {{"x", 1.0f, 0.001f, 100.0f, 0.01f}, {"y", 1.0f, 0.001f, 100.0f, 0.01f}, {"z", 1.0f, 0.001f, 100.0f, 0.01f}}, {}, {outputSocket("sdf")}},
-        {SdfNodeType::Cylinder, SdfNodeCategory::Primitive, "Cylinder", {{"radius", 1.0f, 0.001f, 100.0f, 0.01f}, {"halfHeight", 1.0f, 0.001f, 100.0f, 0.01f}}, {}, {outputSocket("sdf")}},
-        {SdfNodeType::Torus, SdfNodeCategory::Primitive, "Torus", {{"majorRadius", 1.0f, 0.001f, 100.0f, 0.01f}, {"minorRadius", 0.25f, 0.001f, 100.0f, 0.01f}}, {}, {outputSocket("sdf")}},
-        {SdfNodeType::Plane, SdfNodeCategory::Primitive, "Plane", {{"normalX", 0.0f, -1.0f, 1.0f, 0.01f}, {"normalY", 1.0f, -1.0f, 1.0f, 0.01f}, {"normalZ", 0.0f, -1.0f, 1.0f, 0.01f}, {"offset", 0.0f, -100.0f, 100.0f, 0.01f}}, {}, {outputSocket("sdf")}},
+        {SdfNodeType::Sphere, SdfNodeCategory::Primitive, "Sphere", {floatParameter("radius", 1.0f, 0.001f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
+        {SdfNodeType::Box, SdfNodeCategory::Primitive, "Box", {floatParameter("x", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("y", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("z", 1.0f, 0.001f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
+        {SdfNodeType::Cylinder, SdfNodeCategory::Primitive, "Cylinder", {floatParameter("radius", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("halfHeight", 1.0f, 0.001f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
+        {SdfNodeType::Torus, SdfNodeCategory::Primitive, "Torus", {floatParameter("majorRadius", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("minorRadius", 0.25f, 0.001f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
+        {SdfNodeType::Plane, SdfNodeCategory::Primitive, "Plane", {floatParameter("normalX", 0.0f, -1.0f, 1.0f, 0.01f), floatParameter("normalY", 1.0f, -1.0f, 1.0f, 0.01f), floatParameter("normalZ", 0.0f, -1.0f, 1.0f, 0.01f), floatParameter("offset", 0.0f, -100.0f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
 
         {SdfNodeType::Union, SdfNodeCategory::Boolean, "Union", {}, {inputSocket("left"), inputSocket("right")}, {outputSocket("sdf")}},
         {SdfNodeType::Subtract, SdfNodeCategory::Boolean, "Subtract", {}, {inputSocket("base"), inputSocket("cutter")}, {outputSocket("sdf")}},
         {SdfNodeType::Intersect, SdfNodeCategory::Boolean, "Intersect", {}, {inputSocket("left"), inputSocket("right")}, {outputSocket("sdf")}},
-        {SdfNodeType::SmoothUnion, SdfNodeCategory::Boolean, "Smooth Union", {{"smoothness", 0.25f, 0.001f, 100.0f, 0.01f}}, {inputSocket("left"), inputSocket("right")}, {outputSocket("sdf")}},
-        {SdfNodeType::SmoothSubtract, SdfNodeCategory::Boolean, "Smooth Subtract", {{"smoothness", 0.25f, 0.001f, 100.0f, 0.01f}}, {inputSocket("base"), inputSocket("cutter")}, {outputSocket("sdf")}},
-        {SdfNodeType::SmoothIntersect, SdfNodeCategory::Boolean, "Smooth Intersect", {{"smoothness", 0.25f, 0.001f, 100.0f, 0.01f}}, {inputSocket("left"), inputSocket("right")}, {outputSocket("sdf")}},
+        {SdfNodeType::SmoothUnion, SdfNodeCategory::Boolean, "Smooth Union", {floatParameter("smoothness", 0.25f, 0.001f, 100.0f, 0.01f)}, {inputSocket("left"), inputSocket("right")}, {outputSocket("sdf")}},
+        {SdfNodeType::SmoothSubtract, SdfNodeCategory::Boolean, "Smooth Subtract", {floatParameter("smoothness", 0.25f, 0.001f, 100.0f, 0.01f)}, {inputSocket("base"), inputSocket("cutter")}, {outputSocket("sdf")}},
+        {SdfNodeType::SmoothIntersect, SdfNodeCategory::Boolean, "Smooth Intersect", {floatParameter("smoothness", 0.25f, 0.001f, 100.0f, 0.01f)}, {inputSocket("left"), inputSocket("right")}, {outputSocket("sdf")}},
 
-        {SdfNodeType::Translate, SdfNodeCategory::Transform, "Translate", {{"x", 0.0f, -100.0f, 100.0f, 0.01f}, {"y", 0.0f, -100.0f, 100.0f, 0.01f}, {"z", 0.0f, -100.0f, 100.0f, 0.01f}}, {inputSocket("child")}, {outputSocket("sdf")}},
+        {SdfNodeType::Translate, SdfNodeCategory::Transform, "Translate", {floatParameter("x", 0.0f, -100.0f, 100.0f, 0.01f), floatParameter("y", 0.0f, -100.0f, 100.0f, 0.01f), floatParameter("z", 0.0f, -100.0f, 100.0f, 0.01f)}, {inputSocket("child")}, {outputSocket("sdf")}},
         {SdfNodeType::Rotate, SdfNodeCategory::Transform, "Rotate", {
-            {"xDegrees", 0.0f, -360.0f, 360.0f, 1.0f},
-            {"yDegrees", 0.0f, -360.0f, 360.0f, 1.0f},
-            {"zDegrees", 0.0f, -360.0f, 360.0f, 1.0f},
-            {RotateParamQx, 0.0f, -1.0f, 1.0f, 0.01f, SdfParameterVisibility::Hidden},
-            {RotateParamQy, 0.0f, -1.0f, 1.0f, 0.01f, SdfParameterVisibility::Hidden},
-            {RotateParamQz, 0.0f, -1.0f, 1.0f, 0.01f, SdfParameterVisibility::Hidden},
-            {RotateParamQw, 1.0f, -1.0f, 1.0f, 0.01f, SdfParameterVisibility::Hidden},
+            floatParameter("xDegrees", 0.0f, -360.0f, 360.0f, 1.0f),
+            floatParameter("yDegrees", 0.0f, -360.0f, 360.0f, 1.0f),
+            floatParameter("zDegrees", 0.0f, -360.0f, 360.0f, 1.0f),
+            hiddenFloatParameter(RotateParamQx, 0.0f, -1.0f, 1.0f, 0.01f),
+            hiddenFloatParameter(RotateParamQy, 0.0f, -1.0f, 1.0f, 0.01f),
+            hiddenFloatParameter(RotateParamQz, 0.0f, -1.0f, 1.0f, 0.01f),
+            hiddenFloatParameter(RotateParamQw, 1.0f, -1.0f, 1.0f, 0.01f),
         }, {inputSocket("child")}, {outputSocket("sdf")}},
-        {SdfNodeType::Scale, SdfNodeCategory::Transform, "Scale", {{"x", 1.0f, 0.001f, 100.0f, 0.01f}, {"y", 1.0f, 0.001f, 100.0f, 0.01f}, {"z", 1.0f, 0.001f, 100.0f, 0.01f}}, {inputSocket("child")}, {outputSocket("sdf")}},
-        {SdfNodeType::Repeat, SdfNodeCategory::Transform, "Repeat", {{"x", 2.0f, 0.001f, 100.0f, 0.01f}, {"y", 2.0f, 0.001f, 100.0f, 0.01f}, {"z", 2.0f, 0.001f, 100.0f, 0.01f}, {"repeatX", 1.0f, 0.0f, 1.0f, 1.0f}, {"repeatY", 1.0f, 0.0f, 1.0f, 1.0f}, {"repeatZ", 1.0f, 0.0f, 1.0f, 1.0f}}, {inputSocket("child")}, {outputSocket("sdf")}},
-        {SdfNodeType::Mirror, SdfNodeCategory::Transform, "Mirror", {{"x", 1.0f, 0.0f, 1.0f, 1.0f}, {"y", 0.0f, 0.0f, 1.0f, 1.0f}, {"z", 0.0f, 0.0f, 1.0f, 1.0f}}, {inputSocket("child")}, {outputSocket("sdf")}},
-        {SdfNodeType::Twist, SdfNodeCategory::Transform, "Twist", {{"strength", 1.0f, -20.0f, 20.0f, 0.01f}, {"axis", 1.0f, 0.0f, 2.0f, 1.0f}}, {inputSocket("child")}, {outputSocket("sdf")}},
-        {SdfNodeType::Bend, SdfNodeCategory::Transform, "Bend", {{"strength", 0.5f, -20.0f, 20.0f, 0.01f}, {"axis", 0.0f, 0.0f, 2.0f, 1.0f}}, {inputSocket("child")}, {outputSocket("sdf")}},
+        {SdfNodeType::Scale, SdfNodeCategory::Transform, "Scale", {floatParameter("x", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("y", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("z", 1.0f, 0.001f, 100.0f, 0.01f)}, {inputSocket("child")}, {outputSocket("sdf")}},
+        {SdfNodeType::Repeat, SdfNodeCategory::Transform, "Repeat", {floatParameter("x", 2.0f, 0.001f, 100.0f, 0.01f), floatParameter("y", 2.0f, 0.001f, 100.0f, 0.01f), floatParameter("z", 2.0f, 0.001f, 100.0f, 0.01f), boolParameter("repeatX", 1.0f), boolParameter("repeatY", 1.0f), boolParameter("repeatZ", 1.0f)}, {inputSocket("child")}, {outputSocket("sdf")}},
+        {SdfNodeType::Mirror, SdfNodeCategory::Transform, "Mirror", {boolParameter("x", 1.0f), boolParameter("y", 0.0f), boolParameter("z", 0.0f)}, {inputSocket("child")}, {outputSocket("sdf")}},
+        {SdfNodeType::Twist, SdfNodeCategory::Transform, "Twist", {floatParameter("strength", 1.0f, -20.0f, 20.0f, 0.01f), enumParameter("axis", 1, {{"X", 0}, {"Y", 1}, {"Z", 2}})}, {inputSocket("child")}, {outputSocket("sdf")}},
+        {SdfNodeType::Bend, SdfNodeCategory::Transform, "Bend", {floatParameter("strength", 0.5f, -20.0f, 20.0f, 0.01f), enumParameter("axis", 0, {{"X", 0}, {"Y", 1}, {"Z", 2}})}, {inputSocket("child")}, {outputSocket("sdf")}},
 
         {SdfNodeType::SolidMaterial, SdfNodeCategory::Material, "Solid Material", {}, {}, {outputSocket("material", SdfSocketType::Material)}},
         {SdfNodeType::CheckerMaterial, SdfNodeCategory::Material, "Checker Material", {}, {}, {outputSocket("material", SdfSocketType::Material)}},

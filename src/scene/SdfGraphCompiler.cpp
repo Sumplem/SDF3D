@@ -81,7 +81,7 @@ SdfGraphLowerResult lowerSdfGraphToTree(const SdfGraph& graph)
         visiting.insert(id);
 
         SdfNodePtr node = makeSdfNode(graphNode->payload.type, graphNode->payload.name);
-        node->stableId = graphNode->id;
+        node->stableId = graphNode->payload.stableId != 0 ? graphNode->payload.stableId : graphNode->id;
         node->parameters = graphNode->payload.parameters;
         node->materialId = graphNode->payload.materialId;
         node->material = graphNode->payload.material;

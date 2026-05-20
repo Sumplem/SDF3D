@@ -3,35 +3,36 @@
 ## State
 
 - Edit shader `raymarch_edit.frag` active always during editing; `raymarch_scene.frag` for export only
-- Viewport picking: `GraphSystem::pickNodeByRay()` per boolean branch; returns nearest branch transform
-- Selection highlight: `uHighlightNodeId` + `sceneNodeSDF(int nodeId, vec3 p)`; smooth distance band
-- Translate/Rotate/Scale gizmos live; Rotate has `GizmoRotateStyle` with AxisArcs selectable stub falling back to rings
-- Scale gizmo uses edit-shader box SDF, CPU SDF hit-test, canonical Scale wrapper insertion, and runtime SSBO scale params
-- Translate gizmo uses edit-shader SDF capsules + CPU SDF raymarch hit-test; no GL lines/draw calls
-- Rotate: hidden `qx/qy/qz/qw` quaternion; Euler degrees = UI adapter only
-- Quaternion rotate helper assumes normalized CPU input; shader has no `normalize(q)`; products precomputed in GLSL
+- Translate/Rotate/Scale gizmos live; edit gizmos/highlight force direct preview even when path-trace mode is selected
+- Viewport picking uses `GraphSystem::pickNodeByRay()` and chain-aware final visible transform selection
+- Selection highlight uses `uHighlightNodeId` + `sceneNodeSDF(int nodeId, vec3 p)` with smooth distance band
 - Canonical branch order: Scale -> Rotate -> Translate; ensure-wrapper reuses existing nodes in chain
-- `SdfNodeTraits.h` centralizes node taxonomy; replaces all duplicated predicates
-- `GraphSystemTransforms.cpp` owns transform wrapper logic; `GraphSystem.cpp` owns CRUD + param collection
+- `SdfNodeTraits.h` centralizes node taxonomy; `GraphSystemTransforms.cpp` owns transform wrapper logic
 - `GlslEmitter` consolidated to 8 files by engineering concern: dispatch, primitives, booleans, domain, materials, scene assembly, math, formatting
+- Plane primitive normal components stay user-editable; emitter normalizes with `normalize(vec3(...))` in GLSL
+- `SdfNodeDefinition` metadata owns parameter type: Float, Bool, Enum; UI must not infer bool/enum from numeric ranges
+- Repeat/Mirror toggles use Bool metadata; Twist/Bend axis uses Enum metadata with X=0, Y=1, Z=2
 - MaterialRegistry owns reusable graph materials; SolidMaterial/CheckerMaterial nodes hold stable `materialId`
-- MaterialOverride consumes `sdf` + `material`; it applies material nodes to geometry and keeps inline fallback only for legacy files
-- Procedural materials support SolidMaterial and CheckerMaterial; material SSBO packs type, secondary color, and pattern scale
-- JSON load repairs legacy or partial source material nodes by creating missing MaterialRegistry entries
+- MaterialOverride consumes `sdf` + `material`; inline material fallback remains legacy-only
 - Material SSBO binding=0; node param SSBO binding=1; no material cap
 - M6 path-tracing infrastructure exists: `RenderMode`, lazy `raymarch_pathtrace.frag`, HDR `PathTraceAccumulation`, sample reset keys
-- Path trace mode is an explicit viewport toggle; edit gizmo/highlight forces direct preview so editing handles stay visible
-- Current path-trace shader is direct-light accumulation stub only; real stochastic bounces/BRDF sampling not landed yet
-- Cook-Torrance GGX; soft shadows; AO; `NORMAL_EPSILON = 0.00035`
-- Save/load JSON; `GraphSerializer` interface; `JsonGraphSerializer`; nlohmann/json pinned
-- Phase 2 ops complete: Repeat axis toggles, Twist/Bend axis combo, warp correction, material-space transform mirror
-- Node inline property widgets scale font/style with canvas zoom
-- Parameter visibility lives in `SdfNodeDefinition` metadata; UI must not hardcode hidden rotate params
+- Path-trace shader has stochastic GI bounces, cosine hemisphere sampling, direct light shadow checks, emissive contribution, and progressive accumulation
+- Path-trace accumulation resets on camera, viewport, scene, material, node-param, quality, and mode changes
+- Save/load JSON uses `GraphSerializer` interface and `JsonGraphSerializer`; nlohmann/json pinned
+- GraphSerializer tests verify MaterialRegistry round-trip reaches compiled material output after load
+- Shared graph validity lives in `GraphSystemValidity.cpp`; compiler and UI consume GraphSystem queries
+- Incomplete-node bypass visuals use `GraphSystem::effectiveBypassSourceLink()` instead of UI-local rules
+- Properties panel has Material Palette with swatch, rename, and safe delete for orphan registry materials
+- GraphSystem owns MaterialRegistry rename/delete safety; referenced materials cannot be deleted
+- JSON graph serialization is clean: stableId assigned/restored, materialId preserved, sockets/material blobs/selection omitted
+- JSON load migrates old material blobs and stale socket/selection fields silently
+- Root `sdf3d_graph.json` sample uses clean scene schema with no selection, socket arrays, node material blobs, or zero stable IDs
+- Deleting unreferenced material source nodes removes their registry entries; MaterialOverride references keep registry entries alive
 - Build/tests: full Debug build pass; all test executables pass; GUI smoke pass
 
 ## Active
 
-Material split complete: SolidMaterial and CheckerMaterial are separate material source nodes; MaterialOverride applies a material input to SDF input. Review gate open.
+JSON serialization correctness batch complete: six fixes landed, clean JSON verified by serializer tests, and review gate open.
 
 ## Decisions
 
@@ -53,6 +54,19 @@ Material split complete: SolidMaterial and CheckerMaterial are separate material
 - 2026-05 - Procedural material data stays in `SdfMaterial`; shader samples checker from world-space `p` through `sampleMaterial(materialId, p)`
 - 2026-05 - Material source nodes are separate from MaterialOverride; SolidMaterial/CheckerMaterial output `material`, MaterialOverride consumes `sdf` + `material`
 - 2026-05 - Progressive path tracing starts as renderer-only infrastructure: no compiler/material-system ownership, reset accumulation on camera/scene/material/node-param/quality/mode changes
+- 2026-05 - SdfNodeDefinition parameter metadata is typed; Bool and Enum drive UI widgets instead of numeric-range or node-type heuristics
+- 2026-05 - Path trace quality is renderer-owned; viewport Quality maps to max bounces while shader owns stochastic sampling and accumulation
+- 2026-05 - Path-trace denoise starts lightweight in shader: jitter samples for anti-aliasing and clamp high radiance before progressive accumulation
+- 2026-05 - Path-trace sample count is renderer-owned state exposed read-only to viewport UI
+- 2026-05 - Path-trace glossy rays use shader-owned roughness-aware importance sampling; renderer/compiler contracts unchanged
+- 2026-05 - Path-trace temporal denoise remains shader-only for now; no extra accumulation textures or compiler/material ownership
+- 2026-05 - Renderer exposes last-frame path-trace activity read-only so UI can report accumulation vs edit preview without duplicating renderer rules
+- 2026-05 - Spatial denoise stays shader-local and uses only the existing accumulation texture; no extra GL targets yet
+- 2026-05 - MaterialRegistry save/load verification must prove loaded registry data reaches compiler output, not only JSON fields
+- 2026-05 - Graph validity and incomplete-node bypass source selection are GraphSystem-owned; compiler and UI consume shared queries
+- 2026-05 - MaterialRegistry mutation safety is GraphSystem-owned; UI cannot delete materials still referenced by graph nodes
+- 2026-05 - Scene JSON stores graph state only; selection is ephemeral UI state and sockets are reconstructed from SdfNodeDefinition
+- 2026-05 - Node material payload is legacy migration data only; saved JSON stores registry material data plus node materialId references
 
 ## Constraints
 
@@ -80,4 +94,4 @@ Material split complete: SolidMaterial and CheckerMaterial are separate material
 
 ## Next
 
-Review material split, then next backlog item is full GI/path tracing design before code.
+Review JSON serialization correctness batch, then next backlog item is viewport picking improvement.

@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -134,6 +135,10 @@ void testEffectiveValidityDropsInvalidUpstream(std::vector<TestFailure>& failure
 
     const sdf3d::SdfGraphNode* unionGraphNode = graph.node(unionNode);
     expect(unionGraphNode != nullptr && sdf3d::GraphSystem::nodeHasMissingRequiredInput(graph, *unionGraphNode), testName, "Expected UI missing-input query to flag bypass visual.", failures);
+    const std::optional<sdf3d::SdfGraphLink> bypass = unionGraphNode != nullptr
+        ? sdf3d::GraphSystem::effectiveBypassSourceLink(graph, *unionGraphNode)
+        : std::nullopt;
+    expect(bypass.has_value() && bypass->fromNode == sphere && bypass->toSocket == "left", testName, "Expected shared bypass query to return valid source link.", failures);
 }
 
 void testLoweredRequiredInputRules(std::vector<TestFailure>& failures)
@@ -144,6 +149,73 @@ void testLoweredRequiredInputRules(std::vector<TestFailure>& failures)
     expect(sdf3d::GraphSystem::loweredNodeHasRequiredInputs(sdf3d::SdfNodeType::Subtract, {"base"}, 1), testName, "Expected subtract with base valid.", failures);
     expect(!sdf3d::GraphSystem::loweredNodeHasRequiredInputs(sdf3d::SdfNodeType::Translate, {}, 0), testName, "Expected transform without child invalid.", failures);
     expect(!sdf3d::GraphSystem::loweredNodeHasRequiredInputs(sdf3d::SdfNodeType::MaterialOverride, {}, 0), testName, "Expected material override without sdf invalid.", failures);
+}
+
+void testMaterialRegistryRenameAndSafeDelete(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "material registry rename and safe delete";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId materialNodeId = graph.createNode(sdf3d::SdfNodeType::SolidMaterial, "Paint");
+    sdf3d::SdfGraphNode* materialNode = graph.node(materialNodeId);
+    expect(materialNode != nullptr && materialNode->payload.materialId != 0, testName, "Expected material node with registry id.", failures);
+    if (materialNode == nullptr) {
+        return;
+    }
+
+    const sdf3d::MaterialId referencedId = materialNode->payload.materialId;
+    expect(sdf3d::GraphSystem::renameMaterial(graph, referencedId, "Renamed Paint"), testName, "Expected material rename.", failures);
+    expect(materialNode->payload.name == "Renamed Paint", testName, "Expected material node name to follow registry rename.", failures);
+    const sdf3d::MaterialDefinition* renamed = graph.materials().material(referencedId);
+    expect(renamed != nullptr && renamed->name == "Renamed Paint", testName, "Expected registry name updated.", failures);
+
+    expect(!sdf3d::GraphSystem::canDeleteMaterial(graph, referencedId), testName, "Expected referenced material delete blocked.", failures);
+    expect(!sdf3d::GraphSystem::deleteMaterial(graph, referencedId), testName, "Expected referenced material delete to fail.", failures);
+    expect(graph.materials().material(referencedId) != nullptr, testName, "Expected referenced material preserved.", failures);
+
+    const sdf3d::MaterialId orphanId = graph.materials().createMaterial("Orphan");
+    expect(sdf3d::GraphSystem::canDeleteMaterial(graph, orphanId), testName, "Expected orphan material deletable.", failures);
+    expect(sdf3d::GraphSystem::deleteMaterial(graph, orphanId), testName, "Expected orphan material delete.", failures);
+    expect(graph.materials().material(orphanId) == nullptr, testName, "Expected orphan material removed.", failures);
+}
+
+void testMaterialSourceDeleteCleansUnreferencedRegistryEntry(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "material source delete cleans unreferenced registry entry";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId materialNodeId = graph.createNode(sdf3d::SdfNodeType::CheckerMaterial, "Paint");
+    const sdf3d::SdfGraphNode* materialNode = graph.node(materialNodeId);
+    expect(materialNode != nullptr && materialNode->payload.materialId != 0, testName, "Expected material node with registry id.", failures);
+    if (materialNode == nullptr) {
+        return;
+    }
+
+    const sdf3d::MaterialId materialId = materialNode->payload.materialId;
+    expect(graph.materials().material(materialId) != nullptr, testName, "Expected registry material before delete.", failures);
+    expect(graph.deleteNode(materialNodeId), testName, "Expected material node delete.", failures);
+    expect(graph.materials().material(materialId) == nullptr, testName, "Expected unreferenced registry material removed.", failures);
+}
+
+void testMaterialSourceDeleteKeepsRegistryEntryReferencedByOverride(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "material source delete keeps registry entry referenced by override";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId materialNodeId = graph.createNode(sdf3d::SdfNodeType::SolidMaterial, "Paint");
+    const sdf3d::SdfGraphNodeId overrideNodeId = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Apply Paint");
+    const sdf3d::SdfGraphNode* materialNode = graph.node(materialNodeId);
+    expect(materialNode != nullptr && materialNode->payload.materialId != 0, testName, "Expected material node with registry id.", failures);
+    if (materialNode == nullptr) {
+        return;
+    }
+
+    const sdf3d::MaterialId materialId = materialNode->payload.materialId;
+    expect(graph.link(materialNodeId, "material", overrideNodeId, "material"), testName, "Expected material link.", failures);
+    const sdf3d::SdfGraphNode* overrideNode = graph.node(overrideNodeId);
+    expect(overrideNode != nullptr && overrideNode->payload.materialId == materialId, testName, "Expected override to reference material id.", failures);
+    expect(graph.deleteNode(materialNodeId), testName, "Expected material node delete.", failures);
+    expect(graph.materials().material(materialId) != nullptr, testName, "Expected referenced registry material preserved.", failures);
 }
 
 void testCollectNodeParamsPacksTransformValues(std::vector<TestFailure>& failures)
@@ -527,6 +599,9 @@ int main()
     testDuplicateSelectionSkipsOutput(failures);
     testEffectiveValidityDropsInvalidUpstream(failures);
     testLoweredRequiredInputRules(failures);
+    testMaterialRegistryRenameAndSafeDelete(failures);
+    testMaterialSourceDeleteCleansUnreferencedRegistryEntry(failures);
+    testMaterialSourceDeleteKeepsRegistryEntryReferencedByOverride(failures);
     testCollectNodeParamsPacksTransformValues(failures);
     testCollectNodeParamsNormalizesRotateQuaternion(failures);
     testPickNodeByRaySelectsTranslatedPrimitive(failures);

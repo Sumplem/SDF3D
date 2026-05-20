@@ -1,10 +1,15 @@
 #include "sdf3d/systems/JsonGraphSerializer.h"
 
+#include "sdf3d/scene/SdfCompiler.h"
+
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 namespace {
 
@@ -78,23 +83,44 @@ void testJsonGraphRoundTrip(std::vector<TestFailure>& failures)
     expect(graph.setSelectedNodes({sphere, material, materialOverride}, materialOverride), testName, "Expected graph selection.", failures);
 
     expect(serializer.save(graph, path), testName, "Expected save success: " + serializer.lastError(), failures);
+    nlohmann::json saved;
+    {
+        std::ifstream input(path);
+        input >> saved;
+    }
+    expect(!saved.contains("selection"), testName, "Expected selection omitted from saved JSON.", failures);
+    for (const nlohmann::json& node : saved.at("nodes")) {
+        expect(node.at("stableId").get<std::uint64_t>() != 0, testName, "Expected saved stableId assigned.", failures);
+        expect(!node.contains("inputs"), testName, "Expected inputs omitted from saved JSON.", failures);
+        expect(!node.contains("outputs"), testName, "Expected outputs omitted from saved JSON.", failures);
+        expect(!node.contains("material"), testName, "Expected node material blob omitted from saved JSON.", failures);
+        if (node.at("type").get<std::string>() == "MaterialOverride") {
+            const sdf3d::SdfGraphNode* overrideNode = graph.node(materialOverride);
+            expect(overrideNode != nullptr && node.contains("materialId") && node.at("materialId").get<sdf3d::MaterialId>() == overrideNode->payload.materialId, testName, "Expected MaterialOverride materialId saved.", failures);
+        }
+    }
 
     sdf3d::SdfGraph loaded;
     expect(serializer.load(loaded, path), testName, "Expected load success: " + serializer.lastError(), failures);
 
     const sdf3d::SdfGraphNode* loadedSphere = loaded.node(sphere);
     const sdf3d::SdfGraphNode* loadedMaterial = loaded.node(material);
+    const sdf3d::SdfGraphNode* loadedMaterialOverride = loaded.node(materialOverride);
     expect(loaded.outputNode() == output, testName, "Expected output node ID preserved.", failures);
     expect(loadedSphere != nullptr, testName, "Expected sphere loaded.", failures);
     expect(loadedMaterial != nullptr, testName, "Expected material loaded.", failures);
+    expect(loadedMaterialOverride != nullptr, testName, "Expected material override loaded.", failures);
+    expect(loaded.node(output) != nullptr && loaded.node(output)->payload.stableId == output, testName, "Expected output stableId preserved.", failures);
     if (loadedSphere != nullptr) {
         expect(loadedSphere->payload.name == "Sphere A", testName, "Expected sphere name preserved.", failures);
+        expect(loadedSphere->payload.stableId == sphere, testName, "Expected sphere stableId preserved.", failures);
         expect(loadedSphere->payload.parameters.at("radius") == 1.75f, testName, "Expected sphere radius preserved.", failures);
         expect(loadedSphere->editorX == 42.0f && loadedSphere->editorY == 84.0f, testName, "Expected editor position preserved.", failures);
         expect(loadedSphere->editorPropertiesCollapsed, testName, "Expected editor collapsed state preserved.", failures);
-        expect(loadedSphere->outputs.size() == 1 && loadedSphere->outputs[0].name == "sdf", testName, "Expected sockets preserved.", failures);
+        expect(loadedSphere->outputs.size() == 1 && loadedSphere->outputs[0].name == "sdf", testName, "Expected sockets reconstructed.", failures);
     }
     if (loadedMaterial != nullptr) {
+        expect(loadedMaterial->payload.stableId == material, testName, "Expected material stableId preserved.", failures);
         expect(loadedMaterial->payload.materialId != 0, testName, "Expected material id preserved.", failures);
         const sdf3d::MaterialDefinition* definition = loaded.materials().material(loadedMaterial->payload.materialId);
         expect(definition != nullptr, testName, "Expected registry material loaded.", failures);
@@ -106,12 +132,28 @@ void testJsonGraphRoundTrip(std::vector<TestFailure>& failures)
             expect(definition->material.patternScale == 9.0f, testName, "Expected pattern scale preserved.", failures);
         }
     }
+    if (loadedMaterialOverride != nullptr && loadedMaterial != nullptr) {
+        expect(loadedMaterialOverride->payload.stableId == materialOverride, testName, "Expected override stableId preserved.", failures);
+        expect(loadedMaterialOverride->payload.materialId == loadedMaterial->payload.materialId, testName, "Expected override material id preserved.", failures);
+    }
     expect(hasLink(loaded, sphere, "sdf", materialOverride, "sdf"), testName, "Expected override SDF input link preserved.", failures);
     expect(hasLink(loaded, material, "material", materialOverride, "material"), testName, "Expected material input link preserved.", failures);
     expect(hasLink(loaded, materialOverride, "sdf", output, "surface"), testName, "Expected output link preserved.", failures);
-    expect(loaded.selectedNode() == materialOverride, testName, "Expected primary selection preserved.", failures);
-    expect(loaded.selectedNodes().size() == 3 && loaded.selectedNodes()[0] == sphere && loaded.selectedNodes()[1] == material && loaded.selectedNodes()[2] == materialOverride, testName, "Expected selection order preserved.", failures);
+    expect(loaded.selectedNode() == 0 && loaded.selectedNodes().empty(), testName, "Expected selection not restored from scene file.", failures);
     expect(loaded.createNode(sdf3d::SdfNodeType::Box, "Next") == 5, testName, "Expected next stable ID preserved.", failures);
+
+    const sdf3d::SdfCompileResult compileResult = sdf3d::SdfCompiler{}.compile(loaded);
+    expect(compileResult.errors.empty(), testName, "Expected loaded graph to compile without errors.", failures);
+    bool compiledLoadedMaterial = false;
+    for (const sdf3d::SdfCompiledMaterial& compiledMaterial : compileResult.materials) {
+        const sdf3d::SdfMaterial& materialValue = compiledMaterial.material;
+        compiledLoadedMaterial = compiledLoadedMaterial
+            || (materialValue.type == sdf3d::SdfMaterialType::Checker
+                && materialValue.albedo.z == 0.75f
+                && materialValue.secondaryAlbedo.x == 0.75f
+                && materialValue.patternScale == 9.0f);
+    }
+    expect(compiledLoadedMaterial, testName, "Expected loaded registry material to reach compiled material output.", failures);
 
     std::filesystem::remove(path);
 }

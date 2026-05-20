@@ -107,6 +107,15 @@ void testRenderModeValues(std::vector<TestFailure>& failures)
     expect(static_cast<int>(sdf3d::RenderMode::ProgressivePathTrace) == 1, testName, "Expected path trace uniform value.", failures);
 }
 
+void testPathTraceQualityBounces(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "path trace quality bounces";
+
+    expect(sdf3d::UniformUploader::pathTraceMaxBouncesForQuality(sdf3d::RenderQuality::Low) == 1, testName, "Expected low quality one bounce.", failures);
+    expect(sdf3d::UniformUploader::pathTraceMaxBouncesForQuality(sdf3d::RenderQuality::Medium) == 2, testName, "Expected medium quality two bounces.", failures);
+    expect(sdf3d::UniformUploader::pathTraceMaxBouncesForQuality(sdf3d::RenderQuality::High) == 4, testName, "Expected high quality four bounces.", failures);
+}
+
 } // namespace
 
 int main()
@@ -119,6 +128,7 @@ int main()
     testRenderGizmoDefaults(failures);
     testRenderQualityValues(failures);
     testRenderModeValues(failures);
+    testPathTraceQualityBounces(failures);
 
     if (!failures.empty()) {
         for (const TestFailure& failure : failures) {
