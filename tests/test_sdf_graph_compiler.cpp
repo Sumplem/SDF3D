@@ -1,8 +1,11 @@
 #include "sdf3d/scene/SdfCompiler.h"
+#include "sdf3d/scene/GraphGroupRegistry.h"
 #include "sdf3d/scene/SdfGraph.h"
 
+#include <algorithm>
 #include <iostream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -15,6 +18,26 @@ struct TestFailure {
 bool contains(const std::string& text, const std::string& expected)
 {
     return text.find(expected) != std::string::npos;
+}
+
+bool hasDuplicateSdfHelperNames(const std::string& glsl)
+{
+    std::unordered_set<std::string> names;
+    std::size_t offset = 0;
+    const std::string prefix = "float sdf_node_";
+    while ((offset = glsl.find(prefix, offset)) != std::string::npos) {
+        const std::size_t nameStart = offset + std::string("float ").size();
+        const std::size_t nameEnd = glsl.find('(', nameStart);
+        if (nameEnd == std::string::npos) {
+            return true;
+        }
+        const std::string name = glsl.substr(nameStart, nameEnd - nameStart);
+        if (!names.insert(name).second) {
+            return true;
+        }
+        offset = nameEnd;
+    }
+    return false;
 }
 
 void expect(bool condition, const std::string& testName, const std::string& message, std::vector<TestFailure>& failures)
@@ -177,14 +200,81 @@ void testGraphCompilerNonUniformScale(std::vector<TestFailure>& failures)
     expect(result.nodeParams.size() == 1, testName, "Expected scale node param.", failures);
 }
 
+void testGraphCompilerCollectsGroupTransformParams(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph compiler collects group transform params";
+    sdf3d::SdfGraph groupGraph;
+    const sdf3d::SdfGraphNodeId sphere = groupGraph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId translate = groupGraph.createNode(sdf3d::SdfNodeType::Translate, "Group Translate");
+    if (sdf3d::SdfGraphNode* node = groupGraph.node(translate)) {
+        node->payload.parameters["x"] = 2.0f;
+        node->payload.parameters["y"] = 3.0f;
+        node->payload.parameters["z"] = 4.0f;
+    }
+    expect(groupGraph.link(sphere, translate, "child"), testName, "Expected group translate child link.", failures);
+    expect(groupGraph.link(translate, "sdf", groupGraph.outputNode(), "surface"), testName, "Expected group output link.", failures);
+
+    sdf3d::GraphGroupRegistry groups;
+    const sdf3d::GroupDefId definitionId = groups.createDefinition("Translated Group", groupGraph);
+
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId groupInstance = graph.createNode(sdf3d::SdfNodeType::Group, "Group Instance");
+    if (sdf3d::SdfGraphNode* node = graph.node(groupInstance)) {
+        node->payload.groupDefinitionId = definitionId;
+    }
+    expect(graph.link(groupInstance, "sdf", graph.outputNode(), "surface"), testName, "Expected group instance output link.", failures);
+
+    const sdf3d::SdfCompiler compiler;
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, groups);
+
+    expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
+    const auto it = std::find_if(result.nodeParams.begin(), result.nodeParams.end(), [translate](const sdf3d::SdfCompiledNodeParam& param) {
+        return param.nodeId != translate;
+    });
+    expect(it != result.nodeParams.end(), testName, "Expected group transform node param.", failures);
+    if (it != result.nodeParams.end()) {
+        expect(it->data0[0] == 2.0f && it->data0[1] == 3.0f && it->data0[2] == 4.0f, testName, "Expected group translate params packed.", failures);
+    }
+}
+
+void testGraphCompilerNamespacesGroupHelperIds(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph compiler namespaces group helper ids";
+    sdf3d::SdfGraph groupGraph;
+    const sdf3d::SdfGraphNodeId groupSphere = groupGraph.createNode(sdf3d::SdfNodeType::Sphere, "Group Sphere");
+    expect(groupSphere == 2, testName, "Expected group sphere id to collide with root sphere id.", failures);
+    expect(groupGraph.link(groupSphere, "sdf", groupGraph.outputNode(), "surface"), testName, "Expected group output link.", failures);
+
+    sdf3d::GraphGroupRegistry groups;
+    const sdf3d::GroupDefId definitionId = groups.createDefinition("Group", groupGraph);
+
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId rootSphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Root Sphere");
+    const sdf3d::SdfGraphNodeId groupInstance = graph.createNode(sdf3d::SdfNodeType::Group, "Group Instance");
+    const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
+    if (sdf3d::SdfGraphNode* node = graph.node(groupInstance)) {
+        node->payload.groupDefinitionId = definitionId;
+    }
+    expect(rootSphere == groupSphere, testName, "Expected root and group node stable ids to collide before namespacing.", failures);
+    expect(graph.link(rootSphere, "sdf", unionNode, "inputs"), testName, "Expected root sphere link.", failures);
+    expect(graph.link(groupInstance, "sdf", unionNode, "inputs"), testName, "Expected group instance link.", failures);
+    expect(graph.link(unionNode, "sdf", graph.outputNode(), "surface"), testName, "Expected output link.", failures);
+
+    const sdf3d::SdfCompiler compiler;
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, groups);
+
+    expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
+    expect(!hasDuplicateSdfHelperNames(result.glsl), testName, "Expected no duplicate sdf_node helper function names.", failures);
+}
+
 void testGraphCompilerCycle(std::vector<TestFailure>& failures)
 {
     const std::string testName = "graph compiler cycle";
     sdf3d::SdfGraph graph;
     const sdf3d::SdfGraphNodeId a = graph.createNode(sdf3d::SdfNodeType::Union, "A");
     const sdf3d::SdfGraphNodeId b = graph.createNode(sdf3d::SdfNodeType::Union, "B");
-    graph.link(a, b, "left");
-    graph.link(b, a, "left");
+    graph.link(a, b, "inputs");
+    graph.link(b, a, "inputs");
     graph.link(a, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
@@ -254,7 +344,7 @@ void testGraphCompilerBypassSingleInputUnion(std::vector<TestFailure>& failures)
         node->payload.parameters["radius"] = 1.25f;
     }
     const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
-    graph.link(sphere, unionNode, "left");
+    graph.link(sphere, unionNode, "inputs");
     graph.link(unionNode, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
@@ -262,6 +352,33 @@ void testGraphCompilerBypassSingleInputUnion(std::vector<TestFailure>& failures)
 
     expect(result.errors.empty(), testName, "Expected single-input union to bypass without errors.", failures);
     expect(contains(result.glsl, "length(p) - 1.250000"), testName, "Expected union to compile linked child.", failures);
+}
+
+void testGraphCompilerMultiInputUnion(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph compiler multi-input union";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId first = graph.createNode(sdf3d::SdfNodeType::Sphere, "First");
+    const sdf3d::SdfGraphNodeId second = graph.createNode(sdf3d::SdfNodeType::Sphere, "Second");
+    const sdf3d::SdfGraphNodeId third = graph.createNode(sdf3d::SdfNodeType::Sphere, "Third");
+    graph.node(first)->payload.parameters["radius"] = 1.0f;
+    graph.node(second)->payload.parameters["radius"] = 2.0f;
+    graph.node(third)->payload.parameters["radius"] = 3.0f;
+
+    const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
+    expect(graph.link(first, "sdf", unionNode, "inputs"), testName, "Expected first input link.", failures);
+    expect(graph.link(second, "sdf", unionNode, "inputs"), testName, "Expected second input link.", failures);
+    expect(graph.link(third, "sdf", unionNode, "inputs"), testName, "Expected third input link.", failures);
+    expect(graph.link(unionNode, "sdf", graph.outputNode(), "surface"), testName, "Expected union output link.", failures);
+
+    const sdf3d::SdfCompiler compiler;
+    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+
+    expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
+    expect(contains(result.glsl, "length(p) - 1.000000"), testName, "Expected first union child.", failures);
+    expect(contains(result.glsl, "length(p) - 2.000000"), testName, "Expected second union child.", failures);
+    expect(contains(result.glsl, "length(p) - 3.000000"), testName, "Expected third union child.", failures);
 }
 
 void testGraphCompilerBypassInvalidUnionInput(std::vector<TestFailure>& failures)
@@ -275,8 +392,8 @@ void testGraphCompilerBypassInvalidUnionInput(std::vector<TestFailure>& failures
     }
     const sdf3d::SdfGraphNodeId translate = graph.createNode(sdf3d::SdfNodeType::Translate, "Translate");
     const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
-    graph.link(sphere, unionNode, "left");
-    graph.link(translate, unionNode, "right");
+    graph.link(sphere, unionNode, "inputs");
+    graph.link(translate, unionNode, "inputs");
     graph.link(unionNode, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
@@ -450,10 +567,13 @@ int main()
     testGraphNodeDefinitionMaterialOverride(failures);
     testGraphCompilerLinkedTransform(failures);
     testGraphCompilerNonUniformScale(failures);
+    testGraphCompilerCollectsGroupTransformParams(failures);
+    testGraphCompilerNamespacesGroupHelperIds(failures);
     testGraphCompilerCycle(failures);
     testGraphCompilerSocketOrdering(failures);
     testGraphCompilerIncompleteUnion(failures);
     testGraphCompilerBypassSingleInputUnion(failures);
+    testGraphCompilerMultiInputUnion(failures);
     testGraphCompilerBypassInvalidUnionInput(failures);
     testGraphCompilerBypassSubtractBase(failures);
     testGraphCompilerMissingTransformChild(failures);

@@ -40,7 +40,8 @@ void Renderer::render(const RenderCamera& camera)
 {
     const bool progressive = m_renderMode == RenderMode::ProgressivePathTrace
         && !m_gizmo.visible
-        && m_gizmo.highlightNodeId == 0;
+        && m_gizmo.highlightNodeId == 0
+        && m_gizmo.hoverNodeId <= 0;
     m_lastFramePathTracing = progressive;
     const GLuint program = progressive ? m_shaderManager.pathTraceProgram() : m_shaderManager.program();
     if (program == 0 || !m_fboRenderer.begin()) {
@@ -137,6 +138,11 @@ const std::string& Renderer::lastError() const
 unsigned int Renderer::outputTexture() const
 {
     return m_fboRenderer.outputTexture();
+}
+
+int Renderer::readNodeIdPixel(int x, int y) const
+{
+    return m_fboRenderer.readNodeIdPixel(x, y);
 }
 
 uint32_t Renderer::pathTraceSampleCount() const

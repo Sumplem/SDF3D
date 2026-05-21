@@ -1,6 +1,8 @@
 #include "sdf3d/ui/SceneOutliner.h"
 
+#include "sdf3d/scene/GraphGroupRegistry.h"
 #include "sdf3d/scene/SdfNodeDefinition.h"
+#include "sdf3d/systems/GraphSystem.h"
 
 #include <algorithm>
 #include <string>
@@ -36,9 +38,10 @@ const char* socketTypeName(SdfSocketType type)
     return "Unknown";
 }
 
-std::string graphNodeLabel(const SdfGraphNode& node)
+std::string graphNodeLabel(const SdfGraphNode& node, const GraphGroupRegistry& groups)
 {
-    std::string label = node.payload.name.empty() ? graphNodeTypeName(node.payload.type) : node.payload.name;
+    const std::string displayName = GraphSystem::displayNameForNode(node, groups);
+    std::string label = displayName.empty() ? graphNodeTypeName(node.payload.type) : displayName;
     label += " #";
     label += std::to_string(node.id);
     label += "##graph-node-";
@@ -49,18 +52,22 @@ std::string graphNodeLabel(const SdfGraphNode& node)
 std::string socketDisplayName(const SdfGraphSocket& socket)
 {
     std::string label = socket.name;
+    if (socket.multiInput) {
+        label += "+";
+    }
     label += " : ";
     label += socketTypeName(socket.type);
     return label;
 }
 
-std::string graphNodeDisplayName(const SdfGraphNode* node)
+std::string graphNodeDisplayName(const SdfGraphNode* node, const GraphGroupRegistry& groups)
 {
     if (node == nullptr) {
         return "None";
     }
 
-    std::string label = node->payload.name.empty() ? graphNodeTypeName(node->payload.type) : node->payload.name;
+    const std::string displayName = GraphSystem::displayNameForNode(*node, groups);
+    std::string label = displayName.empty() ? graphNodeTypeName(node->payload.type) : displayName;
     label += " #";
     label += std::to_string(node->id);
     return label;
@@ -76,7 +83,7 @@ const char* secondarySocketFor(SdfNodeType type)
     case SdfNodeType::SmoothUnion:
     case SdfNodeType::Intersect:
     case SdfNodeType::SmoothIntersect:
-        return "right";
+        return "inputs";
     default:
         return nullptr;
     }
@@ -130,8 +137,8 @@ bool drawAddOperandControl(SdfGraph& graph)
         operand->payload = *makeSphereNode("Operand");
         operand->payload.parameters["radius"] = 0.5f;
     }
-    // AGENT: Boolean helper creates a visible editable operand
-    // and links it into the selected operation's secondary input.
+    // AGENT: Boolean helper creates a visible editable operand and links it
+    // into the selected operation's operand input without replacing others.
     graph.link(operandNode, operationNode, secondarySocket);
     graph.setSelectedNode(operandNode);
     if (!activeOutputNodeExists(graph)) {
@@ -154,10 +161,9 @@ std::vector<SdfGraphNodeId> sortedGraphNodeIds(const SdfGraph& graph)
 
 } // namespace
 
-bool SceneOutliner::draw(SceneGraph& sceneGraph)
+bool SceneOutliner::draw(SdfGraph& graph, const GraphGroupRegistry& groups)
 {
     bool sceneDirty = false;
-    SdfGraph& graph = sceneGraph.graph();
 
     if (ImGui::GetCurrentContext() != nullptr) {
         if (drawGraphControls(graph)) {
@@ -187,7 +193,8 @@ bool SceneOutliner::draw(SceneGraph& sceneGraph)
                 continue;
             }
 
-            std::string label = node->payload.name.empty() ? graphNodeTypeName(node->payload.type) : node->payload.name;
+            const std::string displayName = GraphSystem::displayNameForNode(*node, groups);
+            std::string label = displayName.empty() ? graphNodeTypeName(node->payload.type) : displayName;
             if (graph.outputNode() == id) {
                 label += " [Output]";
             }
@@ -249,7 +256,7 @@ bool SceneOutliner::draw(SceneGraph& sceneGraph)
 
         auto drawNodeCombo = [&](const char* label, SdfGraphNodeId& value) {
             const SdfGraphNode* selectedNode = graph.node(value);
-            const std::string preview = graphNodeDisplayName(selectedNode);
+            const std::string preview = graphNodeDisplayName(selectedNode, groups);
             if (ImGui::BeginCombo(label, preview.c_str())) {
                 if (ImGui::Selectable("None", value == 0)) {
                     value = 0;
@@ -259,7 +266,7 @@ bool SceneOutliner::draw(SceneGraph& sceneGraph)
                     if (node == nullptr) {
                         continue;
                     }
-                    const std::string labelText = graphNodeLabel(*node);
+                    const std::string labelText = graphNodeLabel(*node, groups);
                     if (ImGui::Selectable(labelText.c_str(), value == id)) {
                         value = id;
                     }
@@ -316,8 +323,8 @@ bool SceneOutliner::draw(SceneGraph& sceneGraph)
             for (const SdfGraphLink& link : graph.links()) {
                 const SdfGraphNode* from = graph.node(link.fromNode);
                 const SdfGraphNode* to = graph.node(link.toNode);
-                const std::string fromName = graphNodeDisplayName(from);
-                const std::string toName = graphNodeDisplayName(to);
+            const std::string fromName = graphNodeDisplayName(from, groups);
+            const std::string toName = graphNodeDisplayName(to, groups);
                 ImGui::Text("%s.%s -> %s.%s", fromName.c_str(), link.fromSocket.c_str(), toName.c_str(), link.toSocket.c_str());
             }
         }

@@ -15,6 +15,15 @@ namespace sdf3d {
 
 using GroupDefId = uint64_t;
 
+/// Returns a shader/runtime ID scoped to one group definition, or the raw ID for root graph nodes.
+inline uint64_t scopedSdfNodeStableId(GroupDefId groupDefinitionId, uint64_t nodeId)
+{
+    if (groupDefinitionId == 0) {
+        return nodeId;
+    }
+    return (uint64_t{1} << 63) | ((groupDefinitionId & 0x7fffffffu) << 32) | (nodeId & 0xffffffffu);
+}
+
 /// Canonical SDF node taxonomy for Phase 1 and planned Phase 2 extensions.
 enum class SdfNodeType {
     Sphere,

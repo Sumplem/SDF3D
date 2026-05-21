@@ -1,6 +1,7 @@
 #version 460 core
 
-out vec4 outColor;
+layout(location = 0) out vec4 outColor;
+layout(location = 1) out int nodeIdBuffer;
 
 uniform vec2 uResolution;
 uniform vec3 uCameraPosition;
@@ -21,6 +22,7 @@ uniform int uGizmoHoverAxis;
 uniform int uGizmoType;
 uniform int uGizmoRotateStyle;
 uniform int uHighlightNodeId;
+uniform int uHoverNodeId;
 uniform int uRenderQuality;
 
 struct GpuMaterial {
@@ -154,6 +156,11 @@ SdfMaterialSample sceneMaterial(vec3 p)
 float sceneNodeSDF(int nodeId, vec3 p)
 {
     return 1e6;
+}
+
+int scenePickId(vec3 p)
+{
+    return -1;
 }
 // SDF3D_SCENE_END
 
@@ -446,6 +453,18 @@ vec3 pbrDirectLighting(vec3 normal, vec3 viewDirection, vec3 lightDirection, vec
     return (diffuse + specular) * lightColor * nDotL;
 }
 
+vec3 applyNodeTint(vec3 color, int nodeId, vec3 tint, vec3 hitPosition, vec3 normal, vec3 viewDirection, float strength)
+{
+    if (nodeId <= 0) {
+        return color;
+    }
+
+    float distanceToNode = abs(sceneNodeSDF(nodeId, hitPosition));
+    float mask = 1.0 - smoothstep(0.0, 0.06, distanceToNode);
+    float rim = pow(1.0 - max(dot(normal, viewDirection), 0.0), 2.0);
+    return mix(color, tint, mask * strength * (0.45 + 0.55 * rim));
+}
+
 float gridLine(vec2 p)
 {
     vec2 cell = abs(fract(p - 0.5) - 0.5) / fwidth(p);
@@ -488,6 +507,8 @@ vec3 rayDirectionFromCamera(vec2 fragCoord)
 
 void main()
 {
+    nodeIdBuffer = -1;
+
     vec3 rayOrigin = uCameraPosition;
     vec3 rayDirection = rayDirectionFromCamera(gl_FragCoord.xy);
     vec3 sceneHitPosition = vec3(0.0);
@@ -515,6 +536,8 @@ void main()
         return;
     }
 
+    nodeIdBuffer = scenePickId(sceneHitPosition);
+
     vec3 normal = estimateSceneNormal(sceneHitPosition);
     vec3 lightDirection = normalize(vec3(-0.4, 0.7, 0.5));
     vec3 viewDirection = normalize(rayOrigin - sceneHitPosition);
@@ -528,12 +551,9 @@ void main()
     vec3 ambient = baseColor * 0.18 * occlusion * (1.0 - metallic * 0.35);
     vec3 direct = pbrDirectLighting(normal, viewDirection, lightDirection, baseColor, roughness, metallic) * shadow;
     vec3 color = ambient + direct + baseColor * material.emission;
-    if (uHighlightNodeId > 0) {
-        float highlightDistance = abs(sceneNodeSDF(uHighlightNodeId, sceneHitPosition));
-        float highlightMask = 1.0 - smoothstep(0.0, 0.06, highlightDistance);
-        float rim = pow(1.0 - max(dot(normal, viewDirection), 0.0), 2.0);
-        vec3 highlight = vec3(1.0, 0.82, 0.12);
-        color = mix(color, highlight, highlightMask * (0.35 + 0.40 * rim));
+    color = applyNodeTint(color, uHighlightNodeId, vec3(1.0, 0.82, 0.12), sceneHitPosition, normal, viewDirection, 1.0);
+    if (uHoverNodeId != uHighlightNodeId) {
+        color = applyNodeTint(color, uHoverNodeId, vec3(0.35, 0.85, 1.0), sceneHitPosition, normal, viewDirection, 0.75);
     }
 
     outColor = vec4(color, 1.0);

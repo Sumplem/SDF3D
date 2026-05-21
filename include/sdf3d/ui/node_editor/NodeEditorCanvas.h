@@ -47,6 +47,7 @@ struct NodeDrawResult {
     EditorDirtyState dirty;
     SdfGraphNodeId releasedDraggedNode = 0;
     SdfGraphNodeId activeDraggedNode = 0;
+    SdfGraphNodeId requestedGroupEnterNode = 0;
 };
 
 struct LinkDragResult {
@@ -135,6 +136,7 @@ bool drawExistingLinks(SdfGraph& graph, const CanvasFrame& frame, const std::vec
 bool mouseInsideAnyNode(const std::vector<GraphNodeLayout>& layouts, ImVec2 mouse);
 NodeDrawResult drawGraphNodes(
     SdfGraph& graph,
+    GraphGroupRegistry& groups,
     const CanvasFrame& frame,
     const std::vector<GraphNodeLayout>& layouts,
     const std::vector<GraphSocketAnchor>& anchors,
@@ -155,8 +157,8 @@ void openNodeEditorContextPopup(
     bool mouseInsideNode,
     const LinkDragResult& linkDrag,
     NodeEditorPopupState& popup);
-void drawNodeBody(SdfGraph& graph, const GraphNodeLayout& layout, const CanvasFrame& frame);
-bool handleNodeTitleDrag(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNodeId& activeDraggedNode);
+void drawNodeBody(SdfGraph& graph, GraphGroupRegistry& groups, const GraphNodeLayout& layout, const CanvasFrame& frame);
+bool handleNodeTitleDrag(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNodeId& activeDraggedNode, SdfGraphNodeId& requestedGroupEnterNode);
 bool drawInputPins(
     SdfGraph& graph,
     const GraphNodeLayout& layout,
@@ -174,7 +176,7 @@ bool drawInputPins(
     std::string& detachedInputSocket);
 void drawOutputPins(SdfGraph& graph, const GraphNodeLayout& layout, const CanvasFrame& frame, bool& draggingLink, SdfGraphNodeId& dragOutputNode, std::string& dragOutputSocket, bool& dragOutputFromInputDetach);
 bool drawNodeActions(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNodeId& pendingDelete);
-EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, const GraphNodeLayout& layout, const CanvasFrame& frame);
+EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, GraphGroupRegistry& groups, const GraphNodeLayout& layout, const CanvasFrame& frame);
 bool updateActiveLinkDrag(SdfGraph& graph, const CanvasFrame& frame, const std::vector<GraphSocketAnchor>& anchors, bool& draggingLink, SdfGraphNodeId& dragOutputNode, std::string& dragOutputSocket, bool& releasedOnEmpty);
 bool updateActiveInputLinkDrag(SdfGraph& graph, const CanvasFrame& frame, const std::vector<GraphSocketAnchor>& anchors, bool& draggingInputLink, SdfGraphNodeId& dragInputNode, std::string& dragInputSocket, bool& releasedOnEmpty);
 EditorDirtyState updateNodeEditorLinkDrags(

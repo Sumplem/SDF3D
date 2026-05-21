@@ -22,7 +22,7 @@ void drawInactiveNodePreview(
     frame.drawList->AddRect(layout.position, nodeEnd, inactiveColor, scaleValue(frame, 6.0f), 0, scaleValue(frame, 2.0f));
 
     for (const SdfGraphSocket& input : node.inputs) {
-        if (input.type != SdfSocketType::Sdf || GraphSystem::effectiveLinkToInput(graph, layout.id, input.name)) {
+        if (input.type != SdfSocketType::Sdf || !GraphSystem::effectiveLinksToInput(graph, layout.id, input.name).empty()) {
             continue;
         }
 

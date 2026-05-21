@@ -408,8 +408,8 @@ SdfGraphNodeId GraphSystem::placePrimitiveAtWorldPosition(SdfGraph& graph, SdfGr
         }
 
         unlink(graph, existingOutput->fromNode, existingOutput->fromSocket, existingOutput->toNode, existingOutput->toSocket);
-        link(graph, existingOutput->fromNode, existingOutput->fromSocket, unionNode, "left");
-        link(graph, primitiveNode, "sdf", unionNode, "right");
+        link(graph, existingOutput->fromNode, existingOutput->fromSocket, unionNode, "inputs");
+        link(graph, primitiveNode, "sdf", unionNode, "inputs");
         link(graph, unionNode, "sdf", outputNode, "surface");
     }
 

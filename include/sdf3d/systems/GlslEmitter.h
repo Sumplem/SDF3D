@@ -19,6 +19,7 @@ struct GlslSdfHelperBlock {
     std::vector<GlslSdfHelper> helpers;
     std::string rootFunctionName;
     std::unordered_map<const SdfNode*, std::string> functionNameByNode;
+    std::unordered_map<const SdfNode*, uint64_t> nodeIdByNode;
 };
 
 /// Emits per-node GLSL expressions for SDF compiler orchestration.
@@ -32,6 +33,13 @@ public:
 
     /// Emits material lookup logic that reuses SDF helpers and runs after hit detection.
     std::string emitSceneMaterialExpression(
+        const SdfNodePtr& root,
+        const std::string& pointExpr,
+        SdfCompileResult& result,
+        const GlslSdfHelperBlock& sdfHelpers) const;
+
+    /// Emits node-id lookup logic for edit-buffer GPU picking.
+    std::string emitScenePickIdExpression(
         const SdfNodePtr& root,
         const std::string& pointExpr,
         SdfCompileResult& result,

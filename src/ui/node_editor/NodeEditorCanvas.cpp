@@ -2,6 +2,7 @@
 
 #include "sdf3d/scene/SdfNodeDefinition.h"
 #include "sdf3d/scene/SdfNodeTraits.h"
+#include "sdf3d/systems/GraphSystem.h"
 #include "sdf3d/ui/node_editor/NodeEditorProperties.h"
 
 #include <algorithm>
@@ -40,18 +41,22 @@ const char* socketTypeName(SdfSocketType type)
 std::string socketDisplayName(const SdfGraphSocket& socket)
 {
     std::string label = socket.name;
+    if (socket.multiInput) {
+        label += "+";
+    }
     label += " : ";
     label += socketTypeName(socket.type);
     return label;
 }
 
-std::string graphNodeDisplayName(const SdfGraphNode* node)
+std::string graphNodeDisplayName(const SdfGraphNode* node, const GraphGroupRegistry& groups)
 {
     if (node == nullptr) {
         return "None";
     }
 
-    std::string label = node->payload.name.empty() ? graphNodeTypeName(node->payload.type) : node->payload.name;
+    const std::string displayName = GraphSystem::displayNameForNode(*node, groups);
+    std::string label = displayName.empty() ? graphNodeTypeName(node->payload.type) : displayName;
     label += " #";
     label += std::to_string(node->id);
     return label;
@@ -86,6 +91,93 @@ float layoutZoom(const GraphNodeLayout& layout)
     return std::max(0.01f, layout.size.x / NODE_WIDTH);
 }
 
+std::size_t incomingLinkCount(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket)
+{
+    std::size_t count = 0;
+    for (const SdfGraphLink& link : graph.links()) {
+        if (link.toNode == node && link.toSocket == socket) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+float multiInputPillHeight(std::size_t linkCount, bool hovered)
+{
+    const std::size_t visibleCount = std::max<std::size_t>(1, linkCount);
+    return (hovered ? 34.0f : 28.0f) + static_cast<float>(visibleCount - 1) * 8.0f;
+}
+
+float multiInputRowHeight(const SdfGraph& graph, const SdfGraphNode& node, const SdfGraphSocket& socket)
+{
+    if (!socket.multiInput) {
+        return SOCKET_ROW_HEIGHT;
+    }
+    return std::max(SOCKET_ROW_HEIGHT, multiInputPillHeight(incomingLinkCount(graph, node.id, socket.name), false) + 6.0f);
+}
+
+float inputPinYOffset(const SdfGraph& graph, const SdfGraphNode& node, std::size_t inputIndex)
+{
+    float offset = TITLE_HEIGHT + 18.0f;
+    for (std::size_t i = 0; i < inputIndex; ++i) {
+        offset += multiInputRowHeight(graph, node, node.inputs[i]);
+    }
+    return offset;
+}
+
+float inputSocketAreaHeight(const SdfGraph& graph, const SdfGraphNode& node)
+{
+    float height = 0.0f;
+    for (const SdfGraphSocket& input : node.inputs) {
+        height += multiInputRowHeight(graph, node, input);
+    }
+    return height;
+}
+
+std::size_t multiInputLinkIndex(const SdfGraph& graph, const SdfGraphLink& targetLink)
+{
+    std::size_t index = 0;
+    for (const SdfGraphLink& link : graph.links()) {
+        if (link.toNode != targetLink.toNode || link.toSocket != targetLink.toSocket) {
+            continue;
+        }
+        if (link.fromNode == targetLink.fromNode && link.fromSocket == targetLink.fromSocket) {
+            return index;
+        }
+        ++index;
+    }
+    return index;
+}
+
+std::optional<SdfGraphLink> nearestLinkToMultiInput(
+    const SdfGraph& graph,
+    SdfGraphNodeId node,
+    const std::string& socket,
+    float mouseY,
+    float pinY,
+    float zoom)
+{
+    std::optional<SdfGraphLink> nearest;
+    float nearestDistance = 0.0f;
+    const std::size_t count = incomingLinkCount(graph, node, socket);
+    std::size_t index = 0;
+    for (const SdfGraphLink& link : graph.links()) {
+        if (link.toNode != node || link.toSocket != socket) {
+            continue;
+        }
+
+        const float anchorY = pinY + (static_cast<float>(index) - (static_cast<float>(count) - 1.0f) * 0.5f) * 8.0f * zoom;
+        const float distance = std::abs(mouseY - anchorY);
+        if (!nearest || distance < nearestDistance) {
+            nearest = link;
+            nearestDistance = distance;
+        }
+        ++index;
+    }
+
+    return nearest;
+}
+
 void addScaledText(const CanvasFrame& frame, ImVec2 position, ImU32 color, const char* text)
 {
     frame.drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * frame.zoom, position, color, text);
@@ -113,14 +205,16 @@ void buildLayoutsAndAnchors(
             node->editorY = 40.0f + static_cast<float>(index / 3) * 150.0f;
         }
 
-        const size_t socketRows = std::max(node->inputs.size(), node->outputs.size());
-        const float nodeHeight = TITLE_HEIGHT + 34.0f + std::max<size_t>(1, socketRows) * SOCKET_ROW_HEIGHT + static_cast<float>(inlinePropertyRows(*node)) * 24.0f;
+        const float inputHeight = inputSocketAreaHeight(graph, *node);
+        const float outputHeight = static_cast<float>(node->outputs.size()) * SOCKET_ROW_HEIGHT;
+        const float socketAreaHeight = std::max({SOCKET_ROW_HEIGHT, inputHeight, outputHeight});
+        const float nodeHeight = TITLE_HEIGHT + 34.0f + socketAreaHeight + static_cast<float>(inlinePropertyRows(*node)) * 24.0f;
         const ImVec2 nodePosition = graphToScreen(frame, {24.0f + node->editorX, 24.0f + node->editorY});
-        const ImVec2 contentPosition = {nodePosition.x + scaleValue(frame, 10.0f), nodePosition.y + scaleValue(frame, TITLE_HEIGHT + 24.0f + static_cast<float>(socketRows) * SOCKET_ROW_HEIGHT)};
+        const ImVec2 contentPosition = {nodePosition.x + scaleValue(frame, 10.0f), nodePosition.y + scaleValue(frame, TITLE_HEIGHT + 24.0f + socketAreaHeight)};
         layouts.push_back({ids[index], node, nodePosition, {scaleValue(frame, NODE_WIDTH), scaleValue(frame, nodeHeight)}, contentPosition});
 
         for (size_t i = 0; i < node->inputs.size(); ++i) {
-            anchors.push_back({ids[index], node->inputs[i].name, false, {nodePosition.x, nodePosition.y + scaleValue(frame, TITLE_HEIGHT + 18.0f + static_cast<float>(i) * SOCKET_ROW_HEIGHT)}});
+            anchors.push_back({ids[index], node->inputs[i].name, false, {nodePosition.x, nodePosition.y + scaleValue(frame, inputPinYOffset(graph, *node, i))}});
         }
         for (size_t i = 0; i < node->outputs.size(); ++i) {
             anchors.push_back({ids[index], node->outputs[i].name, true, {nodePosition.x + scaleValue(frame, NODE_WIDTH), nodePosition.y + scaleValue(frame, TITLE_HEIGHT + 18.0f + static_cast<float>(i) * SOCKET_ROW_HEIGHT)}});
@@ -133,9 +227,18 @@ bool drawExistingLinks(SdfGraph& graph, const CanvasFrame& frame, const std::vec
     std::optional<SdfGraphLink> pendingRemoval;
     for (const SdfGraphLink& link : graph.links()) {
         const std::optional<ImVec2> from = findSocketAnchor(anchors, link.fromNode, link.fromSocket, true);
-        const std::optional<ImVec2> to = findSocketAnchor(anchors, link.toNode, link.toSocket, false);
+        std::optional<ImVec2> to = findSocketAnchor(anchors, link.toNode, link.toSocket, false);
         if (!from || !to) {
             continue;
+        }
+        if (const SdfGraphNode* target = graph.node(link.toNode)) {
+            if (const SdfGraphSocket* socket = findSocket(target->inputs, link.toSocket, SdfSocketDirection::Input);
+                socket != nullptr && socket->multiInput) {
+                const std::size_t count = incomingLinkCount(graph, link.toNode, link.toSocket);
+                const std::size_t index = multiInputLinkIndex(graph, link);
+                const float offset = (static_cast<float>(index) - (static_cast<float>(count) - 1.0f) * 0.5f) * scaleValue(frame, 8.0f);
+                to->y += offset;
+            }
         }
 
         const float handle = scaleValue(frame, 70.0f);
@@ -168,6 +271,7 @@ bool mouseInsideAnyNode(const std::vector<GraphNodeLayout>& layouts, ImVec2 mous
 
 NodeDrawResult drawGraphNodes(
     SdfGraph& graph,
+    GraphGroupRegistry& groups,
     const CanvasFrame& frame,
     const std::vector<GraphNodeLayout>& layouts,
     const std::vector<GraphSocketAnchor>& anchors,
@@ -176,9 +280,9 @@ NodeDrawResult drawGraphNodes(
 {
     NodeDrawResult result;
     for (const GraphNodeLayout& layout : layouts) {
-        drawNodeBody(graph, layout, frame);
+        drawNodeBody(graph, groups, layout, frame);
         drawInactiveNodePreview(graph, layout, frame, anchors);
-        if (handleNodeTitleDrag(graph, layout, result.activeDraggedNode)) {
+        if (handleNodeTitleDrag(graph, layout, result.activeDraggedNode, result.requestedGroupEnterNode)) {
             result.releasedDraggedNode = layout.id;
         }
         if (drawInputPins(
@@ -214,7 +318,7 @@ NodeDrawResult drawGraphNodes(
                 pendingDelete.push_back(actionDelete);
             }
         }
-        const EditorDirtyState inlineDirty = drawNodeInlineProperties(graph, layout, frame);
+        const EditorDirtyState inlineDirty = drawNodeInlineProperties(graph, groups, layout, frame);
         result.dirty.scene = result.dirty.scene || inlineDirty.scene;
         result.dirty.material = result.dirty.material || inlineDirty.material;
     }
@@ -294,7 +398,7 @@ void openNodeEditorContextPopup(
     }
 }
 
-void drawNodeBody(SdfGraph& graph, const GraphNodeLayout& layout, const CanvasFrame& frame)
+void drawNodeBody(SdfGraph& graph, GraphGroupRegistry& groups, const GraphNodeLayout& layout, const CanvasFrame& frame)
 {
     SdfGraphNode& node = *layout.node;
     const bool selected = graph.isNodeSelected(layout.id);
@@ -307,11 +411,11 @@ void drawNodeBody(SdfGraph& graph, const GraphNodeLayout& layout, const CanvasFr
     frame.drawList->AddRectFilled(layout.position, {nodeEnd.x, layout.position.y + scaleValue(frame, TITLE_HEIGHT)}, titleColor, scaleValue(frame, 6.0f), ImDrawFlags_RoundCornersTop);
     frame.drawList->AddRect(layout.position, nodeEnd, selected ? IM_COL32(120, 170, 255, 255) : IM_COL32(78, 82, 92, 255), scaleValue(frame, 6.0f), 0, scaleValue(frame, selected ? 2.0f : 1.0f));
 
-    const std::string title = graphNodeDisplayName(&node) + (output ? "  [Output]" : "");
+    const std::string title = graphNodeDisplayName(&node, groups) + (output ? "  [Output]" : "");
     addScaledText(frame, {layout.position.x + scaleValue(frame, 10.0f), layout.position.y + scaleValue(frame, 7.0f)}, IM_COL32(235, 238, 242, 255), title.c_str());
 }
 
-bool handleNodeTitleDrag(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNodeId& activeDraggedNode)
+bool handleNodeTitleDrag(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNodeId& activeDraggedNode, SdfGraphNodeId& requestedGroupEnterNode)
 {
     static SdfGraphNodeId draggedNode = 0;
     bool releasedDraggedNode = false;
@@ -326,6 +430,9 @@ bool handleNodeTitleDrag(SdfGraph& graph, const GraphNodeLayout& layout, SdfGrap
             graph.toggleSelectedNode(layout.id);
         } else if (!graph.isNodeSelected(layout.id)) {
             graph.setSelectedNode(layout.id);
+        }
+        if (layout.node->payload.type == SdfNodeType::Group && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+            requestedGroupEnterNode = layout.id;
         }
     }
     if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
@@ -373,17 +480,32 @@ bool drawInputPins(
 
     for (size_t i = 0; i < node.inputs.size(); ++i) {
         const SdfGraphSocket& socket = node.inputs[i];
-        const ImVec2 pin = {layout.position.x, layout.position.y + scaleValue(frame, TITLE_HEIGHT + 18.0f + static_cast<float>(i) * SOCKET_ROW_HEIGHT)};
+        const ImVec2 pin = {layout.position.x, layout.position.y + scaleValue(frame, inputPinYOffset(graph, node, i))};
         const float pinHitRadius = scaleValue(frame, 12.0f);
         const bool dragHover = draggingLink
             && distanceSquared(pin, ImGui::GetIO().MousePos) <= pinHitRadius * pinHitRadius
             && socketsCompatible(graph, dragOutputNode, dragOutputSocket, layout.id, socket.name);
 
-        frame.drawList->AddCircleFilled(pin, scaleValue(frame, dragHover ? 7.0f : 5.0f), dragHover ? IM_COL32(255, 210, 110, 255) : IM_COL32(120, 180, 120, 255));
+        const ImU32 pinColor = dragHover ? IM_COL32(255, 210, 110, 255) : IM_COL32(120, 180, 120, 255);
+        if (socket.multiInput) {
+            const float pillWidth = scaleValue(frame, dragHover ? 10.0f : 8.0f);
+            const float pillHeight = scaleValue(frame, multiInputPillHeight(incomingLinkCount(graph, layout.id, socket.name), dragHover));
+            frame.drawList->AddRectFilled(
+                {pin.x - pillWidth * 0.5f, pin.y - pillHeight * 0.5f},
+                {pin.x + pillWidth * 0.5f, pin.y + pillHeight * 0.5f},
+                pinColor,
+                pillHeight * 0.5f);
+        } else {
+            frame.drawList->AddCircleFilled(pin, scaleValue(frame, dragHover ? 7.0f : 5.0f), pinColor);
+        }
         addScaledText(frame, {pin.x + scaleValue(frame, 10.0f), pin.y - scaleValue(frame, 7.0f)}, IM_COL32(220, 224, 230, 255), socketDisplayName(socket).c_str());
 
-        ImGui::SetCursorScreenPos({pin.x - scaleValue(frame, 8.0f), pin.y - scaleValue(frame, 8.0f)});
-        ImGui::InvisibleButton(("input##" + std::to_string(layout.id) + "-" + socket.name).c_str(), {scaleValue(frame, 16.0f), scaleValue(frame, 16.0f)});
+        const float inputHitWidth = scaleValue(frame, socket.multiInput ? 18.0f : 16.0f);
+        const float inputHitHeight = socket.multiInput
+            ? scaleValue(frame, multiInputPillHeight(incomingLinkCount(graph, layout.id, socket.name), dragHover) + 8.0f)
+            : scaleValue(frame, 16.0f);
+        ImGui::SetCursorScreenPos({pin.x - inputHitWidth * 0.5f, pin.y - inputHitHeight * 0.5f});
+        ImGui::InvisibleButton(("input##" + std::to_string(layout.id) + "-" + socket.name).c_str(), {inputHitWidth, inputHitHeight});
         if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
             inputDragCandidateNode = layout.id;
             inputDragCandidateSocket = socket.name;
@@ -394,7 +516,10 @@ bool drawInputPins(
             && !draggingLink
             && inputDragCandidateNode == layout.id
             && inputDragCandidateSocket == socket.name) {
-            if (const std::optional<SdfGraphLink> existing = linkToInput(graph, layout.id, socket.name)) {
+            const std::optional<SdfGraphLink> existing = socket.multiInput
+                ? nearestLinkToMultiInput(graph, layout.id, socket.name, ImGui::GetIO().MousePos.y, pin.y, frame.zoom)
+                : linkToInput(graph, layout.id, socket.name);
+            if (existing) {
                 if (graph.unlink(existing->fromNode, existing->fromSocket, existing->toNode, existing->toSocket)) {
                     draggingLink = true;
                     dragOutputNode = existing->fromNode;
@@ -406,7 +531,7 @@ bool drawInputPins(
                 }
             } else {
                 // AGENT: Dragging from an empty input creates a reverse link
-                // request; dragging an occupied input only detaches/reconnects.
+                // request; multi-input sockets keep existing wires until a wire is removed directly.
                 draggingInputLink = true;
                 dragInputNode = layout.id;
                 dragInputSocket = socket.name;

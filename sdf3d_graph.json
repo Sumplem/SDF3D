@@ -5,161 +5,349 @@
         "links": [
           {
             "from": {
-              "node": 7,
+              "node": 16,
               "socket": "sdf"
             },
             "to": {
-              "node": 9,
+              "node": 15,
+              "socket": "left"
+            }
+          },
+          {
+            "from": {
+              "node": 17,
+              "socket": "sdf"
+            },
+            "to": {
+              "node": 19,
               "socket": "child"
             }
           },
           {
             "from": {
-              "node": 9,
+              "node": 19,
               "socket": "sdf"
             },
             "to": {
-              "node": 12,
-              "socket": "sdf"
+              "node": 15,
+              "socket": "right"
             }
           },
           {
             "from": {
-              "node": 13,
-              "socket": "material"
+              "node": 15,
+              "socket": "sdf"
             },
             "to": {
-              "node": 12,
-              "socket": "material"
+              "node": 21,
+              "socket": "left"
             }
           },
           {
             "from": {
-              "node": 12,
+              "node": 20,
               "socket": "sdf"
             },
             "to": {
-              "node": 14,
+              "node": 22,
+              "socket": "child"
+            }
+          },
+          {
+            "from": {
+              "node": 22,
+              "socket": "sdf"
+            },
+            "to": {
+              "node": 21,
+              "socket": "right"
+            }
+          },
+          {
+            "from": {
+              "node": 21,
+              "socket": "sdf"
+            },
+            "to": {
+              "node": 24,
+              "socket": "left"
+            }
+          },
+          {
+            "from": {
+              "node": 23,
+              "socket": "sdf"
+            },
+            "to": {
+              "node": 25,
+              "socket": "child"
+            }
+          },
+          {
+            "from": {
+              "node": 25,
+              "socket": "sdf"
+            },
+            "to": {
+              "node": 24,
+              "socket": "right"
+            }
+          },
+          {
+            "from": {
+              "node": 24,
+              "socket": "sdf"
+            },
+            "to": {
+              "node": 27,
+              "socket": "left"
+            }
+          },
+          {
+            "from": {
+              "node": 27,
+              "socket": "sdf"
+            },
+            "to": {
+              "node": 18,
               "socket": "surface"
+            }
+          },
+          {
+            "from": {
+              "node": 26,
+              "socket": "sdf"
+            },
+            "to": {
+              "node": 28,
+              "socket": "child"
+            }
+          },
+          {
+            "from": {
+              "node": 28,
+              "socket": "sdf"
+            },
+            "to": {
+              "node": 27,
+              "socket": "right"
             }
           }
         ],
         "materials": {
-          "items": [
-            {
-              "id": 4,
-              "material": {
-                "albedo": [
-                  1.0,
-                  1.0,
-                  1.0
-                ],
-                "emission": 0.0,
-                "metallic": 1.0,
-                "patternScale": 4.0,
-                "roughness": 0.6800000071525574,
-                "secondaryAlbedo": [
-                  0.07999999821186066,
-                  0.07999999821186066,
-                  0.07999999821186066
-                ],
-                "type": 0
-              },
-              "name": "Solid Material"
-            }
-          ],
+          "items": [],
           "nextId": 5
         },
-        "nextId": 15,
+        "nextId": 29,
         "nodes": [
           {
             "editor": {
               "propertiesCollapsed": false,
-              "x": -32.34112548828125,
-              "y": 178.76019287109375
+              "x": 200.5703125,
+              "y": 174.81869506835938
             },
-            "id": 7,
+            "id": 15,
+            "name": "Smooth Union",
+            "parameters": {
+              "smoothness": 0.25
+            },
+            "stableId": 15,
+            "type": "SmoothUnion"
+          },
+          {
+            "editor": {
+              "propertiesCollapsed": false,
+              "x": -159.4296875,
+              "y": 174.81869506835938
+            },
+            "id": 16,
             "name": "Box",
             "parameters": {
               "x": 1.0,
               "y": 1.0,
               "z": 1.0
             },
-            "stableId": 7,
+            "stableId": 16,
             "type": "Box"
           },
           {
             "editor": {
               "propertiesCollapsed": false,
-              "x": 327.65887451171875,
-              "y": 178.76019287109375
+              "x": -519.4296875,
+              "y": -29.181304931640625
             },
-            "id": 9,
+            "id": 17,
+            "name": "Sphere",
+            "parameters": {
+              "radius": 1.0
+            },
+            "stableId": 17,
+            "type": "Sphere"
+          },
+          {
+            "editor": {
+              "propertiesCollapsed": false,
+              "x": 560.5703125,
+              "y": 174.81869506835938
+            },
+            "id": 18,
+            "name": "Output",
+            "parameters": {},
+            "stableId": 18,
+            "type": "Output"
+          },
+          {
+            "editor": {
+              "propertiesCollapsed": false,
+              "x": -159.4296875,
+              "y": -29.181304931640625
+            },
+            "id": 19,
             "name": "Translate",
             "parameters": {
-              "x": 0.4287413954734802,
-              "y": 0.0,
-              "z": -1.1833796501159668
+              "x": 0.0,
+              "y": 1.0836493968963623,
+              "z": 0.0
             },
-            "stableId": 9,
+            "stableId": 19,
             "type": "Translate"
           },
           {
             "editor": {
               "propertiesCollapsed": false,
-              "x": 687.6588745117188,
-              "y": 178.76019287109375
+              "x": 560.0,
+              "y": 190.0
             },
-            "id": 12,
-            "materialId": 4,
-            "name": "Material Override",
-            "parameters": {},
-            "stableId": 12,
-            "type": "MaterialOverride"
+            "id": 20,
+            "name": "Sphere",
+            "parameters": {
+              "radius": 1.0
+            },
+            "stableId": 20,
+            "type": "Sphere"
           },
           {
             "editor": {
               "propertiesCollapsed": false,
-              "x": 327.65887451171875,
-              "y": 406.76019287109375
+              "x": 520.0,
+              "y": 0.0
             },
-            "id": 13,
-            "materialId": 4,
-            "name": "Solid Material",
+            "id": 21,
+            "name": "Union",
             "parameters": {},
-            "stableId": 13,
-            "type": "SolidMaterial"
+            "stableId": 21,
+            "type": "Union"
           },
           {
             "editor": {
               "propertiesCollapsed": false,
-              "x": 1047.658935546875,
-              "y": 178.76019287109375
+              "x": 260.0,
+              "y": 0.0
             },
-            "id": 14,
-            "name": "Output",
+            "id": 22,
+            "name": "Translate",
+            "parameters": {
+              "x": -1.3810023069381714,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "stableId": 22,
+            "type": "Translate"
+          },
+          {
+            "editor": {
+              "propertiesCollapsed": false,
+              "x": 560.0,
+              "y": 340.0
+            },
+            "id": 23,
+            "name": "Cylinder",
+            "parameters": {
+              "halfHeight": 1.0,
+              "radius": 1.0
+            },
+            "stableId": 23,
+            "type": "Cylinder"
+          },
+          {
+            "editor": {
+              "propertiesCollapsed": false,
+              "x": 520.0,
+              "y": 0.0
+            },
+            "id": 24,
+            "name": "Union",
             "parameters": {},
-            "stableId": 14,
-            "type": "Output"
+            "stableId": 24,
+            "type": "Union"
+          },
+          {
+            "editor": {
+              "propertiesCollapsed": false,
+              "x": 260.0,
+              "y": 0.0
+            },
+            "id": 25,
+            "name": "Translate",
+            "parameters": {
+              "x": 1.0583209991455078,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "stableId": 25,
+            "type": "Translate"
+          },
+          {
+            "editor": {
+              "propertiesCollapsed": false,
+              "x": 560.0,
+              "y": 490.0
+            },
+            "id": 26,
+            "name": "Torus",
+            "parameters": {
+              "majorRadius": 1.0,
+              "minorRadius": 0.25
+            },
+            "stableId": 26,
+            "type": "Torus"
+          },
+          {
+            "editor": {
+              "propertiesCollapsed": false,
+              "x": 520.0,
+              "y": 0.0
+            },
+            "id": 27,
+            "name": "Union",
+            "parameters": {},
+            "stableId": 27,
+            "type": "Union"
+          },
+          {
+            "editor": {
+              "propertiesCollapsed": false,
+              "x": 260.0,
+              "y": 0.0
+            },
+            "id": 28,
+            "name": "Translate",
+            "parameters": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.8514358997344971
+            },
+            "stableId": 28,
+            "type": "Translate"
           }
         ],
-        "outputNode": 14
+        "outputNode": 18
       },
-      "id": 1,
-      "name": "Group"
+      "id": 2,
+      "name": "Group 1"
     }
   ],
   "links": [
-    {
-      "from": {
-        "node": 8,
-        "socket": "sdf"
-      },
-      "to": {
-        "node": 1,
-        "socket": "surface"
-      }
-    },
     {
       "from": {
         "node": 2,
@@ -202,11 +390,61 @@
     },
     {
       "from": {
-        "node": 14,
+        "node": 18,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 19,
+        "socket": "child"
+      }
+    },
+    {
+      "from": {
+        "node": 19,
         "socket": "sdf"
       },
       "to": {
         "node": 8,
+        "socket": "right"
+      }
+    },
+    {
+      "from": {
+        "node": 8,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 21,
+        "socket": "left"
+      }
+    },
+    {
+      "from": {
+        "node": 21,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 1,
+        "socket": "surface"
+      }
+    },
+    {
+      "from": {
+        "node": 20,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 22,
+        "socket": "child"
+      }
+    },
+    {
+      "from": {
+        "node": 22,
+        "socket": "sdf"
+      },
+      "to": {
+        "node": 21,
         "socket": "right"
       }
     }
@@ -237,14 +475,14 @@
     ],
     "nextId": 5
   },
-  "nextDefinitionId": 2,
-  "nextId": 15,
+  "nextDefinitionId": 3,
+  "nextId": 23,
   "nodes": [
     {
       "editor": {
         "propertiesCollapsed": false,
-        "x": 1000.350830078125,
-        "y": 142.76748657226563
+        "x": 739.81103515625,
+        "y": -169.74737548828125
       },
       "id": 1,
       "name": "Output",
@@ -255,8 +493,8 @@
     {
       "editor": {
         "propertiesCollapsed": false,
-        "x": -439.649169921875,
-        "y": 142.76748657226563
+        "x": -700.18896484375,
+        "y": -169.74737548828125
       },
       "id": 2,
       "name": "Sphere",
@@ -269,8 +507,8 @@
     {
       "editor": {
         "propertiesCollapsed": false,
-        "x": 280.350830078125,
-        "y": 142.76748657226563
+        "x": 19.81103515625,
+        "y": -169.74737548828125
       },
       "id": 6,
       "name": "Translate",
@@ -285,8 +523,8 @@
     {
       "editor": {
         "propertiesCollapsed": false,
-        "x": 640.350830078125,
-        "y": 142.76748657226563
+        "x": 379.81103515625,
+        "y": -169.74737548828125
       },
       "id": 8,
       "name": "Union",
@@ -297,8 +535,8 @@
     {
       "editor": {
         "propertiesCollapsed": false,
-        "x": -79.649169921875,
-        "y": 142.76748657226563
+        "x": -340.18896484375,
+        "y": -169.74737548828125
       },
       "id": 10,
       "materialId": 3,
@@ -310,8 +548,8 @@
     {
       "editor": {
         "propertiesCollapsed": false,
-        "x": -439.649169921875,
-        "y": 370.7674865722656
+        "x": -700.18896484375,
+        "y": 58.25262451171875
       },
       "id": 11,
       "materialId": 3,
@@ -321,17 +559,76 @@
       "type": "SolidMaterial"
     },
     {
-      "definitionId": 1,
+      "definitionId": 2,
       "editor": {
         "propertiesCollapsed": false,
-        "x": 280.350830078125,
-        "y": 370.7674865722656
+        "x": -340.18896484375,
+        "y": 58.25262451171875
       },
-      "id": 14,
-      "name": "Group",
+      "id": 18,
+      "name": "Group 1",
       "parameters": {},
-      "stableId": 14,
+      "stableId": 18,
       "type": "Group"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 19.81103515625,
+        "y": 58.25262451171875
+      },
+      "id": 19,
+      "name": "Translate",
+      "parameters": {
+        "x": 0.5955924987792969,
+        "y": 0.21543967723846436,
+        "z": 0.0
+      },
+      "stableId": 19,
+      "type": "Translate"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 560.0,
+        "y": 340.0
+      },
+      "id": 20,
+      "name": "Cylinder",
+      "parameters": {
+        "halfHeight": 1.0,
+        "radius": 1.0
+      },
+      "stableId": 20,
+      "type": "Cylinder"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 520.0,
+        "y": 0.0
+      },
+      "id": 21,
+      "name": "Union",
+      "parameters": {},
+      "stableId": 21,
+      "type": "Union"
+    },
+    {
+      "editor": {
+        "propertiesCollapsed": false,
+        "x": 260.0,
+        "y": 0.0
+      },
+      "id": 22,
+      "name": "Translate",
+      "parameters": {
+        "x": -1.3695257902145386,
+        "y": 0.0,
+        "z": 1.0342439413070679
+      },
+      "stableId": 22,
+      "type": "Translate"
     }
   ],
   "outputNode": 1,

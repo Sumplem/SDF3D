@@ -3,7 +3,7 @@
 ## State
 
 - Edit shader `raymarch_edit.frag` active always during editing; `raymarch_scene.frag` for export only
-- Translate/Rotate/Scale gizmos live; edit gizmos/highlight force direct preview even when path-trace mode is selected
+- Translate/Rotate/Scale gizmos live; edit gizmos/selection highlight/GPU hover highlight force direct preview even when path-trace mode is selected
 - Canonical branch order: Scale -> Rotate -> Translate; ensure-wrapper reuses existing nodes in chain
 - `SdfNodeTraits.h` centralizes node taxonomy; `GraphSystemTransforms.cpp` owns transform wrapper logic
 - `GlslEmitter` consolidated to 8 files by engineering concern: dispatch, primitives, booleans, domain, materials, scene assembly, math, formatting
@@ -11,21 +11,27 @@
 - MaterialRegistry owns reusable graph materials; SolidMaterial/CheckerMaterial nodes hold stable `materialId`
 - MaterialOverride consumes `sdf` + `material`; inline material fallback remains legacy-only
 - Node groups exist: App-owned `GraphGroupRegistry`, `SdfNodeType::Group`, root JSON `definitions`, Ctrl+G grouping shortcut
-- Node editor supports group navigation: Tab enters selected group, Shift+Tab exits, breadcrumb switches active graph
-- Entered group subgraph is active editor/viewport/compiler target; viewport picking/gizmos/Add use active graph
-- Group compile resolves definitions through `CompilerSystem`/`MaterialSystem`; missing definition is safe no-hit with diagnostics
+- Node editor supports group navigation: Tab or double-click enters selected/group node, Shift+Tab exits, breadcrumb switches active graph, clears transient editor state, and marks scene dirty
+- Entered group subgraph is active editor/viewport/compiler/UI Add/SceneOutliner/Properties target; viewport picking/gizmos/Add use active graph
+- Group node rename syncs its registry definition name; Group display names resolve through the definition for titles, outliner, properties, breadcrumbs, and scope labels
+- Group compile resolves definitions through `CompilerSystem`/`MaterialSystem`; reachable group transform params are uploaded for runtime edits
+- Group-internal lowered nodes use scoped runtime IDs so helper names and `sceneNodeSDF` switch labels cannot collide with root graph IDs
+- Viewport picking uses GPU node-id buffer (`GL_R32I`) and single-pixel reads; CPU graph raymarch picking is removed
+- `scenePickId(vec3 p)` is compiler-emitted with scene GLSL; groups pick as root Group instance IDs
+- Viewport hover highlight reads the GPU node-id buffer on mouse move, then maps picked node through the same highlight target logic as selection
 - Group definitions have one sdf output only; exposed params, library sharing, and Make Unique remain deferred
+- Save JSON writes only group definitions reachable from root group instances; nested reachable definitions are regression-covered
+- Load Graph commits root graph and group registry atomically, then resets NodeEditor active graph navigation to root before recompiling loaded scene
+- Union/SmoothUnion/Intersect/SmoothIntersect use one vertical pill-shaped `inputs` multi-input SDF socket; pill grows with incoming wire count, each wire gets a separate anchor, and dragging from pill detaches nearest wire
 - Path-trace shader has stochastic GI bounces, cosine hemisphere sampling, direct light shadow checks, emissive contribution, and progressive accumulation
-- Save/load JSON uses `GraphSerializer` interface and `JsonGraphSerializer`; nlohmann/json pinned
-- Shared graph validity lives in `GraphSystemValidity.cpp`; compiler and UI consume GraphSystem queries
-- Properties panel has Material Palette with swatch, rename, and safe delete for orphan registry materials
-- JSON graph serialization is clean: stableId assigned/restored, materialId preserved, sockets/material blobs/selection omitted
-- Deleting unreferenced material source nodes removes their registry entries; MaterialOverride references keep registry entries alive
-- Build/tests: full Debug build pass; all test executables pass; GUI smoke pass
+- Shared graph validity lives in `GraphSystemValidity.cpp`; compiler and UI consume GraphSystem queries; no remaining local UI bypass rules found
+- README reflects current editor/compiler/renderer/test state
+- Viewport camera supports Shift+right-click drag pan; right-click drag orbit and right-click release Add popup remain intact
+- Build/tests: full Debug build pass; all test executables pass; GUI smoke not rerun for multi-input slice
 
 ## Active
 
-Node group active-graph slice complete: entering a group compiles/renders only that group subgraph, and viewport selection/gizmos/Add target the active graph. Review gate open.
+Multi-input socket complete: boolean merge nodes now use one vertical pill-shaped `inputs` multi-input socket, UI can add/unplug multiple wires without replacing existing ones, the pill grows per wire with separate anchors, and old `left`/`right` JSON links migrate on load. Review gate open.
 
 ## Decisions
 
@@ -64,6 +70,26 @@ Node group active-graph slice complete: entering a group compiles/renders only t
 - 2026-05 - Group compilation resolves definitions through compiler/material-system overloads, keeping renderer unaware of graph/group data
 - 2026-05 - NodeEditor active graph can be root or group subgraph; Add menu targets the active graph, while viewport Add remains root graph
 - 2026-05 - When inside a group, renderer compile/material collection and viewport picking use the active group subgraph instead of root graph
+- 2026-05 - Main menu Add, SceneOutliner, Properties panel, viewport picking, viewport Add, duplicate, compile, and material refresh all target the NodeEditor active graph
+- 2026-05 - Group instance rename updates its registry definition name because breadcrumbs and active scope labels read definition names
+- 2026-05 - Group node display labels resolve through `GraphGroupDefinition::name`; local node payload name is not authoritative for visible Group names
+- 2026-05 - Double-clicking a Group node title is an editor navigation shortcut equivalent to selecting it and pressing Tab
+- 2026-05 - Group definitions are serialized only when reachable from the saved root graph; orphan definitions stay runtime-only until referenced again
+- 2026-05 - Loading a scene resets NodeEditor active graph navigation to root because group definition IDs are scene-local
+- 2026-05 - Breadcrumb graph navigation clears transient NodeEditor state because node and socket IDs are graph-local
+- 2026-05 - Grouped scene load commits root graph and group registry atomically because definitions and graph instances are one serialized unit
+- 2026-05 - Nested group definitions are part of the reachable scene closure and must round-trip with the root graph
+- 2026-05 - Group selection rejects multiple external outputs because one Group node exposes one sdf output only
+- 2026-05 - Viewport picking resolves group definitions but returns the root Group instance so root graph selection stays editable
+- 2026-05 - Group graph compile collects reachable definition transform params because runtime node params must match emitted GLSL helper IDs
+- 2026-05 - Group-internal lowered node IDs are scoped by definition ID because subgraph node IDs can collide with root graph node IDs
+- 2026-05 - Viewport hover highlight is renderer uniform state separate from graph selection because hover preview must not mutate selected nodes
+- 2026-05 - Viewport boolean-branch picking evaluates every branch and selects smallest ray distance because viewport selection must be depth-ordered
+- 2026-05 - Hover highlight is click-scoped viewport state because mouse-move raymarching is too expensive for editor interaction
+- 2026-05 - GPU node-id picking replaces CPU graph raymarch picking; `scenePickId` owns branch winner ids and the edit FBO owns `GL_R32I` node-id readback
+- 2026-05 - Hover node-id readback maps through `GraphSystem::highlightNodeForNode` because raw pick ids may be leaf nodes behind visible transform wrappers
+- 2026-05 - Viewport pan is UI-owned camera behavior: Shift+right-click drag moves the orbit target in camera plane without changing orbit angles or distance
+- 2026-05 - Boolean merge nodes use one `inputs` multi-input SDF socket because graph cardinality belongs to socket metadata, not duplicated `left`/`right` UI sockets
 
 ## Constraints
 
@@ -92,4 +118,4 @@ Node group active-graph slice complete: entering a group compiles/renders only t
 
 ## Next
 
-Review node group active-graph behavior, then choose next group UX slice.
+After multi-input socket review, choose next backlog/design item.

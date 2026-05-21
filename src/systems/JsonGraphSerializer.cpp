@@ -63,6 +63,31 @@ void synchronizeMaterialInputLinks(
     }
 }
 
+void migrateLegacyBooleanInputLink(
+    const std::unordered_map<SdfGraphNodeId, SdfGraphNode>& nodes,
+    SdfGraphLink& link)
+{
+    if (link.toSocket != "left" && link.toSocket != "right") {
+        return;
+    }
+
+    const auto toIt = nodes.find(link.toNode);
+    if (toIt == nodes.end()) {
+        return;
+    }
+
+    switch (toIt->second.payload.type) {
+    case SdfNodeType::Union:
+    case SdfNodeType::SmoothUnion:
+    case SdfNodeType::Intersect:
+    case SdfNodeType::SmoothIntersect:
+        link.toSocket = "inputs";
+        break;
+    default:
+        break;
+    }
+}
+
 json graphDataToJson(const SdfGraph& graph)
 {
     std::vector<SdfGraphNodeId> ids;
@@ -104,6 +129,29 @@ json graphDataToJson(const SdfGraph& graph)
         {"links", links},
     };
     return root;
+}
+
+void collectReferencedGroupDefinitions(
+    const SdfGraph& graph,
+    const GraphGroupRegistry& groups,
+    std::unordered_set<GroupDefId>& referenced,
+    std::unordered_set<GroupDefId>& visiting)
+{
+    for (const auto& [id, node] : graph.nodes()) {
+        (void)id;
+        if (node.payload.type != SdfNodeType::Group || node.payload.groupDefinitionId == 0) {
+            continue;
+        }
+
+        const GroupDefId definitionId = node.payload.groupDefinitionId;
+        if (referenced.insert(definitionId).second) {
+            const GraphGroupDefinition* definition = groups.definition(definitionId);
+            if (definition != nullptr && visiting.insert(definitionId).second) {
+                collectReferencedGroupDefinitions(definition->subgraph, groups, referenced, visiting);
+                visiting.erase(definitionId);
+            }
+        }
+    }
 }
 
 bool loadGraphData(SdfGraph& graph, const json& root, std::string& error)
@@ -149,7 +197,9 @@ bool loadGraphData(SdfGraph& graph, const json& root, std::string& error)
 
         std::vector<SdfGraphLink> links;
         for (const json& linkValue : root.at("links")) {
-            links.push_back(json_graph_serializer::linkFromJson(linkValue));
+            SdfGraphLink link = json_graph_serializer::linkFromJson(linkValue);
+            migrateLegacyBooleanInputLink(nodes, link);
+            links.push_back(std::move(link));
         }
         synchronizeMaterialInputLinks(nodes, materials, links);
 
@@ -174,10 +224,17 @@ bool loadGraphData(SdfGraph& graph, const json& root, std::string& error)
         return true;
 }
 
-json definitionsToJson(const GraphGroupRegistry& groups)
+json definitionsToJson(const SdfGraph& graph, const GraphGroupRegistry& groups)
 {
+    std::unordered_set<GroupDefId> referenced;
+    std::unordered_set<GroupDefId> visiting;
+    collectReferencedGroupDefinitions(graph, groups, referenced, visiting);
+
     json definitions = json::array();
     for (const GraphGroupDefinition& definition : groups.definitions()) {
+        if (referenced.find(definition.id) == referenced.end()) {
+            continue;
+        }
         definitions.push_back({
             {"id", definition.id},
             {"name", definition.name},
@@ -245,7 +302,7 @@ bool JsonGraphSerializer::save(const SdfGraph& graph, const GraphGroupRegistry& 
     root["schema"] = GRAPH_SCHEMA;
     root["version"] = GRAPH_SCHEMA_VERSION;
     root["nextDefinitionId"] = groups.nextDefinitionIdForSerialization();
-    root["definitions"] = definitionsToJson(groups);
+    root["definitions"] = definitionsToJson(graph, groups);
 
     std::ofstream output(path);
     if (!output) {
@@ -306,11 +363,15 @@ bool JsonGraphSerializer::load(SdfGraph& graph, GraphGroupRegistry& groups, cons
         }
 
         std::string error;
-        if (!loadDefinitions(groups, root, error) || !loadGraphData(graph, root, error)) {
+        GraphGroupRegistry loadedGroups;
+        SdfGraph loadedGraph;
+        if (!loadDefinitions(loadedGroups, root, error) || !loadGraphData(loadedGraph, root, error)) {
             setLastError(error);
             return false;
         }
 
+        graph = std::move(loadedGraph);
+        groups = std::move(loadedGroups);
         return true;
     } catch (const std::exception& error) {
         setLastError(std::string("Failed to load graph JSON: ") + error.what());

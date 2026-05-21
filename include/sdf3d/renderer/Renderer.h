@@ -58,6 +58,9 @@ public:
     /// Returns the color texture containing the most recent viewport render.
     unsigned int outputTexture() const;
 
+    /// Reads a node id from the most recent edit picking attachment.
+    int readNodeIdPixel(int x, int y) const;
+
     /// Returns progressive path-trace samples accumulated for current frame key.
     uint32_t pathTraceSampleCount() const;
 

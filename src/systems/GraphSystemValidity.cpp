@@ -20,7 +20,7 @@ bool isBypassInput(SdfNodeType type, const std::string& socket)
     case SdfNodeType::SmoothUnion:
     case SdfNodeType::Intersect:
     case SdfNodeType::SmoothIntersect:
-        return socket == "left" || socket == "right";
+        return socket == "inputs";
     case SdfNodeType::Subtract:
     case SdfNodeType::SmoothSubtract:
         return socket == "base";
@@ -38,6 +38,18 @@ std::optional<SdfGraphLink> linkToInput(const SdfGraph& graph, SdfGraphNodeId no
     }
 
     return std::nullopt;
+}
+
+std::vector<SdfGraphLink> linksToInput(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket)
+{
+    std::vector<SdfGraphLink> links;
+    for (const SdfGraphLink& link : graph.links()) {
+        if (link.toNode == node && link.toSocket == socket) {
+            links.push_back(link);
+        }
+    }
+
+    return links;
 }
 
 bool producesValidSdfRecursive(const SdfGraph& graph, SdfGraphNodeId id, std::unordered_set<SdfGraphNodeId>& visiting)
@@ -61,10 +73,11 @@ bool producesValidSdfRecursive(const SdfGraph& graph, SdfGraphNodeId id, std::un
         if (input.type != SdfSocketType::Sdf) {
             continue;
         }
-        const std::optional<SdfGraphLink> link = linkToInput(graph, id, input.name);
-        if (link && producesValidSdfRecursive(graph, link->fromNode, visiting)) {
-            validSockets.push_back(input.name);
-            ++childCount;
+        for (const SdfGraphLink& link : linksToInput(graph, id, input.name)) {
+            if (producesValidSdfRecursive(graph, link.fromNode, visiting)) {
+                validSockets.push_back(input.name);
+                ++childCount;
+            }
         }
     }
 
@@ -125,6 +138,18 @@ std::optional<SdfGraphLink> GraphSystem::effectiveLinkToInput(const SdfGraph& gr
     return producesValidSdf(graph, link->fromNode) ? link : std::nullopt;
 }
 
+std::vector<SdfGraphLink> GraphSystem::effectiveLinksToInput(const SdfGraph& graph, SdfGraphNodeId id, const std::string& socket)
+{
+    std::vector<SdfGraphLink> links;
+    for (const SdfGraphLink& link : linksToInput(graph, id, socket)) {
+        if (producesValidSdf(graph, link.fromNode)) {
+            links.push_back(link);
+        }
+    }
+
+    return links;
+}
+
 bool GraphSystem::nodeHasMissingRequiredInput(const SdfGraph& graph, const SdfGraphNode& node)
 {
     if (isSdfPrimitiveNode(node.payload.type)) {
@@ -135,7 +160,9 @@ bool GraphSystem::nodeHasMissingRequiredInput(const SdfGraph& graph, const SdfGr
         if (input.type != SdfSocketType::Sdf) {
             continue;
         }
-        if (!effectiveLinkToInput(graph, node.id, input.name)) {
+        const std::vector<SdfGraphLink> declaredLinks = linksToInput(graph, node.id, input.name);
+        const std::vector<SdfGraphLink> effectiveLinks = effectiveLinksToInput(graph, node.id, input.name);
+        if (effectiveLinks.empty() || effectiveLinks.size() != declaredLinks.size()) {
             return true;
         }
     }
@@ -154,8 +181,9 @@ std::optional<SdfGraphLink> GraphSystem::effectiveBypassSourceLink(const SdfGrap
             continue;
         }
 
-        if (const std::optional<SdfGraphLink> link = effectiveLinkToInput(graph, node.id, input.name)) {
-            return link;
+        std::vector<SdfGraphLink> links = effectiveLinksToInput(graph, node.id, input.name);
+        if (!links.empty()) {
+            return links.front();
         }
     }
 

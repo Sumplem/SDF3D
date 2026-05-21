@@ -40,6 +40,19 @@ const char* NodeEditor::activeGroupName(const GraphGroupRegistry& groups) const
     return definition == nullptr ? "missing" : definition->name.c_str();
 }
 
+void NodeEditor::resetActiveGraph()
+{
+    m_groupPath.clear();
+    clearTransientState();
+}
+
+void NodeEditor::clearTransientState()
+{
+    m_drag = {};
+    m_popup = {};
+    m_selectionRect = {};
+}
+
 bool NodeEditor::enterSelectedGroup(SdfGraph& graph, GraphGroupRegistry& groups)
 {
     const SdfGraphNode* selected = graph.node(graph.selectedNode());
@@ -51,10 +64,14 @@ bool NodeEditor::enterSelectedGroup(SdfGraph& graph, GraphGroupRegistry& groups)
     }
 
     m_groupPath.push_back(selected->payload.groupDefinitionId);
-    m_drag = {};
-    m_popup = {};
-    m_selectionRect = {};
+    clearTransientState();
     return true;
+}
+
+bool NodeEditor::enterGroupNode(SdfGraph& graph, GraphGroupRegistry& groups, SdfGraphNodeId nodeId)
+{
+    graph.setSelectedNode(nodeId);
+    return enterSelectedGroup(graph, groups);
 }
 
 bool NodeEditor::exitGroup()
@@ -64,9 +81,7 @@ bool NodeEditor::exitGroup()
     }
 
     m_groupPath.pop_back();
-    m_drag = {};
-    m_popup = {};
-    m_selectionRect = {};
+    clearTransientState();
     return true;
 }
 
@@ -76,6 +91,9 @@ bool NodeEditor::drawBreadcrumb(GraphGroupRegistry& groups)
     if (ImGui::SmallButton("root")) {
         changed = !m_groupPath.empty();
         m_groupPath.clear();
+        if (changed) {
+            clearTransientState();
+        }
     }
     for (std::size_t i = 0; i < m_groupPath.size(); ++i) {
         ImGui::SameLine();
@@ -84,8 +102,11 @@ bool NodeEditor::drawBreadcrumb(GraphGroupRegistry& groups)
         const GraphGroupDefinition* definition = groups.definition(m_groupPath[i]);
         const std::string label = std::string(definition == nullptr ? "missing" : definition->name) + "##group-breadcrumb-" + std::to_string(i);
         if (ImGui::SmallButton(label.c_str())) {
-            m_groupPath.resize(i + 1);
-            changed = true;
+            if (m_groupPath.size() != i + 1) {
+                m_groupPath.resize(i + 1);
+                clearTransientState();
+                changed = true;
+            }
         }
     }
     ImGui::SameLine();
@@ -118,7 +139,7 @@ EditorDirtyState NodeEditor::draw(SceneGraph& sceneGraph, GraphGroupRegistry& gr
 {
     EditorDirtyState dirty;
     SdfGraph& graph = activeGraph(sceneGraph, groups);
-    (void)drawBreadcrumb(groups);
+    dirty.scene = drawBreadcrumb(groups) || dirty.scene;
 
     node_editor::CanvasFrame frame = node_editor::beginCanvas(m_canvasPanX, m_canvasPanY, m_canvasZoom);
     node_editor::updateCanvasView(frame, m_canvasPanX, m_canvasPanY, m_canvasZoom);
@@ -143,6 +164,7 @@ EditorDirtyState NodeEditor::draw(SceneGraph& sceneGraph, GraphGroupRegistry& gr
 
     const node_editor::NodeDrawResult nodeDraw = node_editor::drawGraphNodes(
         graph,
+        groups,
         frame,
         layouts,
         anchors,
@@ -150,6 +172,9 @@ EditorDirtyState NodeEditor::draw(SceneGraph& sceneGraph, GraphGroupRegistry& gr
         pendingDelete);
     dirty.scene = dirty.scene || nodeDraw.dirty.scene;
     dirty.material = dirty.material || nodeDraw.dirty.material;
+    if (nodeDraw.requestedGroupEnterNode != 0) {
+        dirty.scene = enterGroupNode(graph, groups, nodeDraw.requestedGroupEnterNode) || dirty.scene;
+    }
 
     if (node_editor::drawNodeDragInsertion(graph, frame, layouts, anchors, nodeDraw.activeDraggedNode, nodeDraw.releasedDraggedNode)) {
         dirty.scene = true;

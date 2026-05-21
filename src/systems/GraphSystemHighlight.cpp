@@ -57,17 +57,22 @@ SdfGraphNodeId singlePassThroughParent(const SdfGraph& graph, SdfGraphNodeId id)
 
 SdfGraphNodeId GraphSystem::highlightNodeForSelection(const SdfGraph& graph)
 {
-    SdfGraphNodeId currentId = graph.selectedNode();
-    if (currentId == 0 || currentId == graph.outputNode() || !producesValidSdf(graph, currentId)) {
+    return highlightNodeForNode(graph, graph.selectedNode());
+}
+
+SdfGraphNodeId GraphSystem::highlightNodeForNode(const SdfGraph& graph, SdfGraphNodeId id)
+{
+    if (id == 0 || id == graph.outputNode() || !producesValidSdf(graph, id)) {
         return 0;
     }
 
-    const SdfGraphNode* selected = graph.node(currentId);
-    if (selected != nullptr && isSdfTransformNode(selected->payload.type)) {
-        return currentId;
+    const SdfGraphNode* node = graph.node(id);
+    if (node != nullptr && isSdfTransformNode(node->payload.type)) {
+        return id;
     }
 
     std::vector<SdfGraphNodeId> visited;
+    SdfGraphNodeId currentId = id;
     SdfGraphNodeId highlightId = currentId;
     while (currentId != 0 && std::find(visited.begin(), visited.end(), currentId) == visited.end()) {
         visited.push_back(currentId);

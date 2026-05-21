@@ -31,6 +31,12 @@ public:
     /// Duplicates selected nodes and preserves links wholly inside the selection.
     static std::vector<SdfGraphNodeId> duplicateSelection(SdfGraph& graph, const std::vector<SdfGraphNodeId>& ids, EventBus& eventBus);
 
+    /// Renames one graph node and syncs linked registry-owned labels.
+    static bool renameNode(SdfGraph& graph, GraphGroupRegistry& groups, SdfGraphNodeId id, std::string name);
+
+    /// Returns node display name, resolving registry-backed labels.
+    static std::string displayNameForNode(const SdfGraphNode& node, const GraphGroupRegistry& groups);
+
     /// Creates a group definition from selected self-contained nodes and replaces them with one Group instance.
     static SdfGraphNodeId groupSelection(
         SdfGraph& graph,
@@ -88,6 +94,9 @@ public:
     /// Returns an input link only if its upstream node emits an effective SDF.
     static std::optional<SdfGraphLink> effectiveLinkToInput(const SdfGraph& graph, SdfGraphNodeId id, const std::string& socket);
 
+    /// Returns input links only if their upstream nodes emit effective SDF.
+    static std::vector<SdfGraphLink> effectiveLinksToInput(const SdfGraph& graph, SdfGraphNodeId id, const std::string& socket);
+
     /// Returns true when a node is missing an effective required SDF input.
     static bool nodeHasMissingRequiredInput(const SdfGraph& graph, const SdfGraphNode& node);
 
@@ -97,14 +106,17 @@ public:
     /// Returns true when lowered children satisfy graph validity rules.
     static bool loweredNodeHasRequiredInputs(SdfNodeType type, const std::vector<std::string>& validSockets, std::size_t childCount);
 
-    /// CPU-raymarches the effective graph SDF and returns the hit graph node ID, or 0.
-    static SdfGraphNodeId pickNodeByRay(const SdfGraph& graph, glm::vec3 rayOrigin, glm::vec3 rayDirection);
-
     /// Packs graph node parameters for renderer-side fast param updates.
     static std::vector<SdfCompiledNodeParam> collectNodeParams(const SdfGraph& graph);
 
+    /// Packs graph node parameters from the graph plus reachable group definitions.
+    static std::vector<SdfCompiledNodeParam> collectNodeParams(const SdfGraph& graph, const GraphGroupRegistry& groups);
+
     /// Returns the SDF helper node ID that should be highlighted for current selection.
     static SdfGraphNodeId highlightNodeForSelection(const SdfGraph& graph);
+
+    /// Returns the SDF helper node ID that should be highlighted for a picked node.
+    static SdfGraphNodeId highlightNodeForNode(const SdfGraph& graph, SdfGraphNodeId id);
 
     /// Returns direct Translate parent connected to node's `sdf` output, or 0.
     static SdfGraphNodeId findDirectTranslateParent(const SdfGraph& graph, SdfGraphNodeId id);

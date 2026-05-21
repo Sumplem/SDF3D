@@ -1,5 +1,6 @@
 #include "sdf3d/renderer/FboRenderer.h"
 
+#include <algorithm>
 #include <iostream>
 
 #include <glad/gl.h>
@@ -20,6 +21,11 @@ void FboRenderer::init()
 
 void FboRenderer::shutdown()
 {
+    if (m_nodeIdTexture != 0) {
+        glDeleteTextures(1, &m_nodeIdTexture);
+        m_nodeIdTexture = 0;
+    }
+
     if (m_colorTexture != 0) {
         glDeleteTextures(1, &m_colorTexture);
         m_colorTexture = 0;
@@ -58,7 +64,13 @@ bool FboRenderer::begin()
     glBindFramebuffer(GL_FRAMEBUFFER, m_framebuffer);
     glViewport(0, 0, m_width, m_height);
     glClearColor(0.08f, 0.09f, 0.10f, 1.0f);
+    const GLenum colorOnly[] = {GL_COLOR_ATTACHMENT0};
+    glDrawBuffers(1, colorOnly);
     glClear(GL_COLOR_BUFFER_BIT);
+    const GLint noNode = -1;
+    glClearBufferiv(GL_COLOR, 1, &noNode);
+    const GLenum drawBuffers[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+    glDrawBuffers(2, drawBuffers);
     return true;
 }
 
@@ -77,6 +89,28 @@ void FboRenderer::end()
 unsigned int FboRenderer::outputTexture() const
 {
     return m_colorTexture;
+}
+
+unsigned int FboRenderer::nodeIdTexture() const
+{
+    return m_nodeIdTexture;
+}
+
+int FboRenderer::readNodeIdPixel(int x, int y) const
+{
+    if (m_framebuffer == 0 || m_nodeIdTexture == 0) {
+        return -1;
+    }
+
+    const int clampedX = std::clamp(x, 0, m_width - 1);
+    const int clampedY = std::clamp(y, 0, m_height - 1);
+    GLint nodeId = -1;
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, m_framebuffer);
+    glReadBuffer(GL_COLOR_ATTACHMENT1);
+    glReadPixels(clampedX, clampedY, 1, 1, GL_RED_INTEGER, GL_INT, &nodeId);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    return static_cast<int>(nodeId);
 }
 
 int FboRenderer::width() const
@@ -103,6 +137,9 @@ void FboRenderer::resizeFramebuffer()
     if (m_colorTexture == 0) {
         glGenTextures(1, &m_colorTexture);
     }
+    if (m_nodeIdTexture == 0) {
+        glGenTextures(1, &m_nodeIdTexture);
+    }
 
     glBindTexture(GL_TEXTURE_2D, m_colorTexture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -111,10 +148,20 @@ void FboRenderer::resizeFramebuffer()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, m_width, m_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
+    glBindTexture(GL_TEXTURE_2D, m_nodeIdTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32I, m_width, m_height, 0, GL_RED_INTEGER, GL_INT, nullptr);
+
     glBindFramebuffer(GL_FRAMEBUFFER, m_framebuffer);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_colorTexture, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, m_nodeIdTexture, 0);
+    const GLenum drawBuffers[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+    glDrawBuffers(2, drawBuffers);
 
-    // AGENT: The raymarch pass writes color only; depth storage is unnecessary
+    // AGENT: The edit raymarch pass writes color plus integer node id; depth storage is unnecessary
     // until viewport mixes rasterized overlays or gizmos into the same FBO.
     const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {

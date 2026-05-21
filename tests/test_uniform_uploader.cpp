@@ -84,6 +84,8 @@ void testRenderGizmoDefaults(std::vector<TestFailure>& failures)
     expect(gizmo.hoverAxis == -1, testName, "Expected no hover axis by default.", failures);
     expect(gizmo.type == 0, testName, "Expected translate gizmo type default.", failures);
     expect(gizmo.rotateStyle == sdf3d::GizmoRotateStyle::Rings, testName, "Expected rotate rings style default.", failures);
+    expect(gizmo.highlightNodeId == 0, testName, "Expected no highlight node by default.", failures);
+    expect(gizmo.hoverNodeId == -1, testName, "Expected no hover node by default.", failures);
     expect(gizmo.arrowLength == 1.0f, testName, "Expected default arrow length.", failures);
     expect(gizmo.arrowRadius > 0.0f, testName, "Expected positive arrow radius.", failures);
     expect(gizmo.ringRadius > 0.0f, testName, "Expected positive ring radius.", failures);

@@ -120,6 +120,7 @@ bool App::init()
             std::cerr << "[SDF3D][GraphSerializer] " << m_graphSerializer.lastError() << '\n';
             return;
         }
+        m_ui.resetActiveGraph();
         m_eventBus.emit(SceneDirtyEvent{});
     });
 
@@ -188,7 +189,7 @@ void App::beginFrame()
 
 void App::drawMainMenu()
 {
-    m_ui.drawMainMenu(m_sceneGraph);
+    m_ui.drawMainMenu(m_sceneGraph, m_groupRegistry);
 }
 
 void App::drawDockspace()
@@ -220,7 +221,7 @@ void App::drawDockspace()
 void App::drawPanels()
 {
     m_ui.drawPanels(m_sceneGraph, m_groupRegistry, m_diagnostics.typedEntries());
-    const EditorDirtyState viewportDirty = m_viewport.draw(m_renderer, m_ui.activeGraph(m_sceneGraph, m_groupRegistry));
+    const EditorDirtyState viewportDirty = m_viewport.draw(m_renderer, m_ui.activeGraph(m_sceneGraph, m_groupRegistry), m_groupRegistry);
     if (viewportDirty.scene) {
         m_eventBus.emit(SceneDirtyEvent{});
     }

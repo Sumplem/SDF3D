@@ -42,7 +42,6 @@ add_executable(sdf3d
     src/systems/GraphSystem.cpp
     src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
-    src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
     src/systems/GraphSystemSerialization.cpp
     src/systems/JsonGraphSerializer.cpp
@@ -107,7 +106,6 @@ add_executable(sdf3d_tests
     src/systems/GraphSystem.cpp
     src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
-    src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
     src/systems/MaterialSystem.cpp
     src/systems/SelectionSystem.cpp
@@ -136,7 +134,6 @@ add_executable(sdf3d_graph_tests
     src/systems/GraphSystem.cpp
     src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
-    src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
     src/systems/SelectionSystem.cpp
     src/ui/node_editor/NodeEditorLayout.cpp
@@ -178,7 +175,6 @@ add_executable(sdf3d_graph_compiler_tests
     src/systems/GraphSystem.cpp
     src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
-    src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
     src/systems/MaterialSystem.cpp
     src/systems/SelectionSystem.cpp
@@ -330,7 +326,6 @@ add_executable(sdf3d_selection_tests
     src/systems/GraphSystem.cpp
     src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
-    src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
     src/systems/SelectionSystem.cpp
 )
@@ -359,7 +354,6 @@ add_executable(sdf3d_graph_system_tests
     src/systems/GraphSystem.cpp
     src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
-    src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
     src/systems/SelectionSystem.cpp
 )
@@ -386,7 +380,6 @@ add_executable(sdf3d_graph_serializer_tests
     src/systems/GraphSystem.cpp
     src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
-    src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
     src/systems/GraphSystemSerialization.cpp
     src/systems/JsonGraphSerializer.cpp
@@ -443,7 +436,6 @@ add_executable(sdf3d_glsl_emitter_tests
     src/systems/GraphSystem.cpp
     src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
-    src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
     src/systems/MaterialSystem.cpp
     src/systems/SelectionSystem.cpp
@@ -483,7 +475,6 @@ add_executable(sdf3d_compiler_system_tests
     src/systems/GraphSystem.cpp
     src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
-    src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
     src/systems/MaterialSystem.cpp
     src/systems/SelectionSystem.cpp
@@ -514,7 +505,6 @@ add_executable(sdf3d_material_system_tests
     src/systems/GraphSystem.cpp
     src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
-    src/systems/GraphSystemPicking.cpp
     src/systems/GraphSystemValidity.cpp
     src/systems/MaterialSystem.cpp
     src/systems/SelectionSystem.cpp

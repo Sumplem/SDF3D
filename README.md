@@ -1,29 +1,32 @@
-# SDF3D (Vibe Code Project)
+# SDF3D
 
-SDF3D is a native desktop 3D modeling application prototype where geometry is represented as Signed Distance Functions instead of polygon meshes. The current codebase has the M1 skeleton and M2 first raymarch working, with the M3 scene graph/compiler foundation in progress.
+SDF3D is a native desktop SDF modeling prototype. Geometry is authored as a node graph, compiled into GLSL, and rendered with GPU raymarching in an ImGui editor.
 
 ## Current Status
 
--   CMake project using C++17
--   GLFW window and OpenGL 4.6 core context
--   Dear ImGui docking layout with Scene, Viewport, and Properties panels
--   FetchContent dependencies for GLFW, Dear ImGui, GLM, and GLAD
--   Runtime `assets/` copy next to the executable
--   Cross-platform executable directory helper
--   ResourceManager singleton with fallback magenta shader and checkerboard texture
--   Raymarched sphere rendered into an ImGui viewport texture
--   Basic orbit camera and mouse wheel zoom
--   SDF node AST, empty scene graph support, and deterministic GLSL compiler
--   Minimal dependency-free compiler tests through `sdf3d_tests`
+- C++17 CMake project
+- GLFW window, OpenGL 4.6 core through GLAD, Dear ImGui docking UI
+- Runtime `assets/` copy next to the executable
+- Node editor with primitives, transforms, booleans, materials, output node, selection, duplicate/delete, drag links, auto-insert preview, and incomplete-node bypass preview
+- Active graph navigation for root graph and group subgraphs
+- Node groups: `Ctrl+G`, Tab enter, Shift+Tab exit, breadcrumbs, JSON `definitions[]`, one `sdf` output
+- GPU raymarch viewport with orbit camera, zoom, gizmos, selection highlight, hover highlight, and GPU node-id picking through an integer FBO attachment
+- Translate, Rotate, and Scale gizmos with CPU-side hit testing and runtime node parameter updates
+- `GlslEmitter` split by concern: dispatch, primitives, booleans, domain, materials, scene assembly, math, formatting
+- Deferred material evaluation with `MaterialRegistry`, `SolidMaterial`, `CheckerMaterial`, and `MaterialOverride`
+- Progressive path tracing mode with stochastic GI, direct light shadows, roughness-aware sampling, and shader-local denoise
+- Clean JSON save/load through `JsonGraphSerializer`; sockets, selection, and legacy material blobs are not serialized
+- Shared graph validity in `GraphSystemValidity.cpp`; compiler and UI consume the same validity/bypass queries
+- Test coverage split across graph, compiler, renderer support, serializer, material, selection, and system targets
 
 ## Requirements
 
--   CMake 3.21 or newer
--   C++17 compiler
--   Windows: Visual Studio 2022 Build Tools or newer
--   Python 3 for GLAD source generation
+- CMake 3.21 or newer
+- C++17 compiler
+- Windows primary path: Visual Studio 2022 Build Tools or newer
+- Python 3 for GLAD source generation
 
-GLAD's generator requires the Python packages listed in its fetched `requirements.txt`. If the build fails with `No module named 'jinja2'`, install it after configure:
+GLAD generation needs Python packages from its fetched requirements file. If configure/build fails with `No module named 'jinja2'`, install them after configure:
 
 ```powershell
 python -m pip install -r build\_deps\glad-src\requirements.txt
@@ -35,16 +38,22 @@ From the repository root:
 
 ```powershell
 cmake -S . -B build
+cmake --build build --config Debug
+```
+
+Build only the app:
+
+```powershell
 cmake --build build --config Debug --target sdf3d
 ```
 
-The executable is generated at:
+Executable:
 
 ```text
 build\Debug\sdf3d.exe
 ```
 
-Runtime assets are copied to:
+Runtime assets:
 
 ```text
 build\Debug\assets
@@ -56,49 +65,91 @@ build\Debug\assets
 .\build\Debug\sdf3d.exe
 ```
 
-The application opens a dockable editor window with an empty scene. Use the `Add` menu to create geometry.
-
 Viewport controls:
 
--   Right mouse drag: orbit camera
--   Mouse wheel: zoom
+- Right mouse drag: orbit camera
+- Mouse wheel: zoom
+- Left click geometry: select node using GPU node-id picking
+- Hover geometry: preview highlight when viewport hover toggle is enabled
 
-Scene editing:
+Node editor controls:
 
--   `Add > Sphere/Box/Cylinder/Torus/Plane`: create primitives
--   `Add > Transform`: wrap the selected node in Translate, Rotate, or Scale
--   `Add > Boolean`: combine the selected node with a temporary default operand
--   Scene panel: select, duplicate, delete, and reorder nodes
--   Properties panel: edit selected node name and float parameters
+- Add menu: create primitives, transforms, booleans, materials, groups, and output wiring
+- Drag links between sockets to wire graph nodes
+- Shift-click or drag rectangle: multi-select
+- `Ctrl+D`: duplicate selection
+- Delete: delete selected nodes
+- `F`: frame selection
+- `P`: preview selected node
+- `Ctrl+G`: group selected nodes
+- Tab: enter selected group
+- Shift+Tab: exit group
+- Breadcrumb click: jump to group scope
 
-## Test
+## Tests
+
+Run one target:
 
 ```powershell
-cmake --build build --config Debug --target sdf3d_tests
-.\build\Debug\sdf3d_tests.exe
+cmake --build build --config Debug --target sdf3d_graph_system_tests
+.\build\Debug\sdf3d_graph_system_tests.exe
 ```
+
+Run all test executables after building:
+
+```powershell
+Get-ChildItem build\Debug -Filter sdf3d*_tests.exe | ForEach-Object { & $_.FullName }
+```
+
+Current test targets:
+
+- `sdf3d_tests`
+- `sdf3d_graph_tests`
+- `sdf3d_graph_compiler_tests`
+- `sdf3d_uniform_uploader_tests`
+- `sdf3d_fbo_renderer_tests`
+- `sdf3d_path_trace_accumulation_tests`
+- `sdf3d_shader_manager_tests`
+- `sdf3d_diagnostics_tests`
+- `sdf3d_event_bus_tests`
+- `sdf3d_selection_tests`
+- `sdf3d_graph_system_tests`
+- `sdf3d_graph_serializer_tests`
+- `sdf3d_glsl_emitter_tests`
+- `sdf3d_compiler_system_tests`
+- `sdf3d_material_system_tests`
 
 ## Project Layout
 
 ```text
-include/sdf3d/          Public and internal headers
-src/                    C++ implementation files
-assets/                 Runtime assets copied beside the executable
-cmake/                  Dependency setup
+include/sdf3d/          Headers and public contracts
+src/app/                Application wiring
+src/core/               Event bus and resource helpers
+src/renderer/           OpenGL renderer, shaders, FBOs, uniforms
+src/scene/              Graph, node metadata, graph lowering
+src/systems/            Graph logic, compiler, serializer, materials, diagnostics
+src/ui/                 ImGui editor panels and node editor
+assets/shaders/         Runtime GLSL shader assets
+tests/                  Dependency-light executable tests
+cmake/                  FetchContent dependency setup
 build/                  Local generated build output
 ```
 
-## Development Notes
+## Architecture Notes
 
--   Internal includes use the full namespaced path, for example `#include "sdf3d/app/App.h"`.
--   Dependencies are managed through CMake FetchContent.
--   Do not hardcode absolute asset paths; resolve runtime assets relative to the executable.
--   Scene and Properties panels are still placeholders.
--   M3/M4 currently compile the editable scene into GLSL and reload the viewport shader after scene edits.
+- Components stay data-only.
+- Systems own logic and do not call OpenGL.
+- Renderer owns OpenGL and does not include scene graph headers.
+- App wires systems, renderer, UI, and events.
+- Runtime shaders are asset files under `assets/shaders`.
+- `raymarch_edit.frag` is the editor shader; `raymarch.frag` is scene/export preview; `raymarch_pathtrace.frag` is progressive path tracing.
+- GPU picking is editor-only: `raymarch_edit.frag` writes node ids to a `GL_R32I` FBO attachment, and the viewport reads one pixel.
+- `raymarch.frag` and `raymarch_pathtrace.frag` stay free of picking outputs.
 
-## Known UX Debt
+## Deferred Work
 
--   The Scene panel tree is a temporary editor for validating scene graph operations.
--   Move Up / Move Down controls should be revisited when node graph editing exists.
--   Boolean menu actions currently auto-create a translated sphere operand so the operation is immediately visible.
--   A node graph editor should eventually replace or supplement the tree for boolean/domain composition.
+- Node group exposed parameters
+- Group Make Unique
+- Group library or cross-scene sharing
+- More procedural material source nodes
+- Animation/keyframes

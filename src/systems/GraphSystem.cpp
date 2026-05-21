@@ -98,6 +98,79 @@ bool nodeHasSdfOutput(const SdfGraphNode& node)
     return findSocket(node.outputs, "sdf", SdfSocketDirection::Output) != nullptr;
 }
 
+void appendTransformNodeParams(
+    const SdfGraph& graph,
+    std::vector<SdfCompiledNodeParam>& params,
+    std::unordered_set<SdfGraphNodeId>& packedIds,
+    GroupDefId stableIdScope)
+{
+    for (const auto& [id, node] : graph.nodes()) {
+        SdfCompiledNodeParam param;
+        (void)id;
+        param.nodeId = scopedSdfNodeStableId(stableIdScope, node.payload.stableId != 0 ? node.payload.stableId : node.id);
+        switch (node.payload.type) {
+        case SdfNodeType::Translate:
+            param.data0 = {
+                parameterOr(node.payload, "x", 0.0f),
+                parameterOr(node.payload, "y", 0.0f),
+                parameterOr(node.payload, "z", 0.0f),
+                0.0f,
+            };
+            break;
+        case SdfNodeType::Rotate:
+        {
+            const glm::vec4 q = rotationQuaternionForNode(node.payload);
+            param.data0 = {
+                q.x,
+                q.y,
+                q.z,
+                q.w,
+            };
+            break;
+        }
+        case SdfNodeType::Scale: {
+            const float uniformScale = parameterOr(node.payload, "scale", 1.0f);
+            const float x = std::max(parameterOr(node.payload, "x", uniformScale), 0.0001f);
+            const float y = std::max(parameterOr(node.payload, "y", uniformScale), 0.0001f);
+            const float z = std::max(parameterOr(node.payload, "z", uniformScale), 0.0001f);
+            param.data0 = {x, y, z, std::min({x, y, z})};
+            break;
+        }
+        default:
+            continue;
+        }
+
+        if (packedIds.insert(param.nodeId).second) {
+            params.push_back(param);
+        }
+    }
+}
+
+void appendReachableGroupNodeParams(
+    const SdfGraph& graph,
+    const GraphGroupRegistry& groups,
+    std::vector<SdfCompiledNodeParam>& params,
+    std::unordered_set<SdfGraphNodeId>& packedIds,
+    std::unordered_set<GroupDefId>& visitedDefinitions)
+{
+    for (const auto& [id, node] : graph.nodes()) {
+        (void)id;
+        if (node.payload.type != SdfNodeType::Group || node.payload.groupDefinitionId == 0) {
+            continue;
+        }
+        if (!visitedDefinitions.insert(node.payload.groupDefinitionId).second) {
+            continue;
+        }
+
+        const GraphGroupDefinition* definition = groups.definition(node.payload.groupDefinitionId);
+        if (definition == nullptr) {
+            continue;
+        }
+        appendTransformNodeParams(definition->subgraph, params, packedIds, node.payload.groupDefinitionId);
+        appendReachableGroupNodeParams(definition->subgraph, groups, params, packedIds, visitedDefinitions);
+    }
+}
+
 } // namespace
 
 void GraphSystem::initialize(SdfGraph& graph)
@@ -217,6 +290,34 @@ std::vector<SdfGraphNodeId> GraphSystem::duplicateSelection(SdfGraph& graph, con
     return duplicateIds;
 }
 
+bool GraphSystem::renameNode(SdfGraph& graph, GraphGroupRegistry& groups, SdfGraphNodeId id, std::string name)
+{
+    SdfGraphNode* node = graph.node(id);
+    if (node == nullptr) {
+        return false;
+    }
+
+    node->payload.name = std::move(name);
+    if (node->payload.type == SdfNodeType::Group && node->payload.groupDefinitionId != 0) {
+        if (GraphGroupDefinition* definition = groups.definition(node->payload.groupDefinitionId)) {
+            // AGENT: Group definitions own breadcrumb labels, so renaming a
+            // Group instance keeps editor navigation text in sync.
+            definition->name = node->payload.name.empty() ? "Group" : node->payload.name;
+        }
+    }
+    return true;
+}
+
+std::string GraphSystem::displayNameForNode(const SdfGraphNode& node, const GraphGroupRegistry& groups)
+{
+    if (node.payload.type == SdfNodeType::Group && node.payload.groupDefinitionId != 0) {
+        if (const GraphGroupDefinition* definition = groups.definition(node.payload.groupDefinitionId)) {
+            return definition->name;
+        }
+    }
+    return node.payload.name;
+}
+
 SdfGraphNodeId GraphSystem::groupSelection(
     SdfGraph& graph,
     GraphGroupRegistry& groups,
@@ -274,6 +375,13 @@ SdfGraphNodeId GraphSystem::groupSelection(
     }
     if (groupRoot == 0) {
         return 0;
+    }
+    for (const SdfGraphLink& link : graph.m_links) {
+        const bool fromSelected = sourceSet.find(link.fromNode) != sourceSet.end();
+        const bool toSelected = sourceSet.find(link.toNode) != sourceSet.end();
+        if (fromSelected && !toSelected && (link.fromSocket != "sdf" || link.fromNode != groupRoot)) {
+            return 0;
+        }
     }
 
     std::unordered_map<SdfGraphNodeId, SdfGraphNode> groupNodes;
@@ -453,6 +561,17 @@ bool GraphSystem::link(SdfGraph& graph, SdfGraphNodeId fromNode, std::string fro
         return false;
     }
 
+    const auto existing = std::find_if(graph.m_links.begin(), graph.m_links.end(),
+        [fromNode, &fromSocket, toNode, &toSocket](const SdfGraphLink& link) {
+            return link.fromNode == fromNode
+                && link.fromSocket == fromSocket
+                && link.toNode == toNode
+                && link.toSocket == toSocket;
+        });
+    if (existing != graph.m_links.end()) {
+        return false;
+    }
+
     if (!input->multiInput) {
         unlinkInput(graph, toNode, toSocket);
     }
@@ -533,45 +652,20 @@ std::vector<SdfCompiledNodeParam> GraphSystem::collectNodeParams(const SdfGraph&
 {
     std::vector<SdfCompiledNodeParam> params;
     params.reserve(graph.nodes().size());
-    for (const auto& [id, node] : graph.nodes()) {
-        SdfCompiledNodeParam param;
-        param.nodeId = id;
-        switch (node.payload.type) {
-        case SdfNodeType::Translate:
-            param.data0 = {
-                parameterOr(node.payload, "x", 0.0f),
-                parameterOr(node.payload, "y", 0.0f),
-                parameterOr(node.payload, "z", 0.0f),
-                0.0f,
-            };
-            params.push_back(param);
-            break;
-        case SdfNodeType::Rotate:
-        {
-            const glm::vec4 q = rotationQuaternionForNode(node.payload);
-            param.data0 = {
-                q.x,
-                q.y,
-                q.z,
-                q.w,
-            };
-            params.push_back(param);
-            break;
-        }
-        case SdfNodeType::Scale: {
-            const float uniformScale = parameterOr(node.payload, "scale", 1.0f);
-            const float x = std::max(parameterOr(node.payload, "x", uniformScale), 0.0001f);
-            const float y = std::max(parameterOr(node.payload, "y", uniformScale), 0.0001f);
-            const float z = std::max(parameterOr(node.payload, "z", uniformScale), 0.0001f);
-            param.data0 = {x, y, z, std::min({x, y, z})};
-            params.push_back(param);
-            break;
-        }
-        default:
-            break;
-        }
-    }
+    std::unordered_set<SdfGraphNodeId> packedIds;
+    appendTransformNodeParams(graph, params, packedIds, 0);
 
+    return params;
+}
+
+std::vector<SdfCompiledNodeParam> GraphSystem::collectNodeParams(const SdfGraph& graph, const GraphGroupRegistry& groups)
+{
+    std::vector<SdfCompiledNodeParam> params;
+    params.reserve(graph.nodes().size());
+    std::unordered_set<SdfGraphNodeId> packedIds;
+    std::unordered_set<GroupDefId> visitedDefinitions;
+    appendTransformNodeParams(graph, params, packedIds, 0);
+    appendReachableGroupNodeParams(graph, groups, params, packedIds, visitedDefinitions);
     return params;
 }
 

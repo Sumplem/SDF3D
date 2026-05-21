@@ -27,6 +27,15 @@ void testNormalizedDimension(std::vector<TestFailure>& failures)
     expect(sdf3d::FboRenderer::normalizedDimension(-5) == 1, testName, "Expected negative dimension clamped.", failures);
 }
 
+void testNodeIdAttachmentDefaults(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "node id attachment defaults";
+    const sdf3d::FboRenderer renderer;
+
+    expect(renderer.nodeIdTexture() == 0, testName, "Expected node id texture absent before init.", failures);
+    expect(renderer.readNodeIdPixel(0, 0) == -1, testName, "Expected node id read to return no-hit before init.", failures);
+}
+
 } // namespace
 
 int main()
@@ -34,6 +43,7 @@ int main()
     std::vector<TestFailure> failures;
 
     testNormalizedDimension(failures);
+    testNodeIdAttachmentDefaults(failures);
 
     if (!failures.empty()) {
         for (const TestFailure& failure : failures) {

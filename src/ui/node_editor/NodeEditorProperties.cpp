@@ -3,6 +3,7 @@
 #include "sdf3d/scene/SdfNodeDefinition.h"
 #include "sdf3d/scene/SdfRotationParams.h"
 #include "sdf3d/scene/SdfNodeTraits.h"
+#include "sdf3d/systems/GraphSystem.h"
 #include "sdf3d/ui/node_editor/NodeEditorProperties.h"
 
 #include <algorithm>
@@ -128,7 +129,7 @@ void drawLabel(const CanvasFrame& frame, ImVec2 position, const char* label)
 
 } // namespace
 
-EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, const GraphNodeLayout& layout, const CanvasFrame& frame)
+EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, GraphGroupRegistry& groups, const GraphNodeLayout& layout, const CanvasFrame& frame)
 {
     if (layout.node->editorPropertiesCollapsed) {
         return {};
@@ -150,7 +151,7 @@ EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, const GraphNodeLayout
     ImGui::SetCursorScreenPos({fieldX, y});
     ImGui::SetNextItemWidth(fieldWidth);
     if (ImGui::InputText(("##node-name-" + std::to_string(layout.id)).c_str(), nameBuffer, sizeof(nameBuffer))) {
-        node.name = nameBuffer;
+        (void)GraphSystem::renameNode(graph, groups, layout.id, nameBuffer);
         dirty.scene = true;
     }
     y += rowHeight;

@@ -34,6 +34,36 @@ bool linkValidForNodes(const std::unordered_map<SdfGraphNodeId, SdfGraphNode>& n
     return output != nullptr && input != nullptr && output->type == input->type;
 }
 
+bool targetInputIsMulti(const std::unordered_map<SdfGraphNodeId, SdfGraphNode>& nodes, const SdfGraphLink& link)
+{
+    const auto toIt = nodes.find(link.toNode);
+    if (toIt == nodes.end()) {
+        return false;
+    }
+
+    const SdfGraphSocket* input = findSocket(toIt->second.inputs, link.toSocket, SdfSocketDirection::Input);
+    return input != nullptr && input->multiInput;
+}
+
+bool linksRespectInputCardinality(const std::unordered_map<SdfGraphNodeId, SdfGraphNode>& nodes, const std::vector<SdfGraphLink>& links)
+{
+    for (std::size_t i = 0; i < links.size(); ++i) {
+        for (std::size_t j = i + 1; j < links.size(); ++j) {
+            const bool sameTarget = links[i].toNode == links[j].toNode && links[i].toSocket == links[j].toSocket;
+            if (!sameTarget) {
+                continue;
+            }
+
+            const bool sameExactLink = links[i].fromNode == links[j].fromNode && links[i].fromSocket == links[j].fromSocket;
+            if (sameExactLink || !targetInputIsMulti(nodes, links[i])) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 } // namespace
 
 bool GraphSystem::replaceGraphData(
@@ -82,6 +112,9 @@ bool GraphSystem::replaceGraphData(
         if (!linkValidForNodes(nodes, linkToValidate)) {
             return false;
         }
+    }
+    if (!linksRespectInputCardinality(nodes, links)) {
+        return false;
     }
 
     graph.m_nextId = nextId;

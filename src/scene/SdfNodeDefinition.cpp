@@ -56,12 +56,12 @@ const std::vector<SdfNodeDefinition>& definitions()
         {SdfNodeType::Torus, SdfNodeCategory::Primitive, "Torus", {floatParameter("majorRadius", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("minorRadius", 0.25f, 0.001f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
         {SdfNodeType::Plane, SdfNodeCategory::Primitive, "Plane", {floatParameter("normalX", 0.0f, -1.0f, 1.0f, 0.01f), floatParameter("normalY", 1.0f, -1.0f, 1.0f, 0.01f), floatParameter("normalZ", 0.0f, -1.0f, 1.0f, 0.01f), floatParameter("offset", 0.0f, -100.0f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
 
-        {SdfNodeType::Union, SdfNodeCategory::Boolean, "Union", {}, {inputSocket("left"), inputSocket("right")}, {outputSocket("sdf")}},
+        {SdfNodeType::Union, SdfNodeCategory::Boolean, "Union", {}, {inputSocket("inputs", SdfSocketType::Sdf, true)}, {outputSocket("sdf")}},
         {SdfNodeType::Subtract, SdfNodeCategory::Boolean, "Subtract", {}, {inputSocket("base"), inputSocket("cutter")}, {outputSocket("sdf")}},
-        {SdfNodeType::Intersect, SdfNodeCategory::Boolean, "Intersect", {}, {inputSocket("left"), inputSocket("right")}, {outputSocket("sdf")}},
-        {SdfNodeType::SmoothUnion, SdfNodeCategory::Boolean, "Smooth Union", {floatParameter("smoothness", 0.25f, 0.001f, 100.0f, 0.01f)}, {inputSocket("left"), inputSocket("right")}, {outputSocket("sdf")}},
+        {SdfNodeType::Intersect, SdfNodeCategory::Boolean, "Intersect", {}, {inputSocket("inputs", SdfSocketType::Sdf, true)}, {outputSocket("sdf")}},
+        {SdfNodeType::SmoothUnion, SdfNodeCategory::Boolean, "Smooth Union", {floatParameter("smoothness", 0.25f, 0.001f, 100.0f, 0.01f)}, {inputSocket("inputs", SdfSocketType::Sdf, true)}, {outputSocket("sdf")}},
         {SdfNodeType::SmoothSubtract, SdfNodeCategory::Boolean, "Smooth Subtract", {floatParameter("smoothness", 0.25f, 0.001f, 100.0f, 0.01f)}, {inputSocket("base"), inputSocket("cutter")}, {outputSocket("sdf")}},
-        {SdfNodeType::SmoothIntersect, SdfNodeCategory::Boolean, "Smooth Intersect", {floatParameter("smoothness", 0.25f, 0.001f, 100.0f, 0.01f)}, {inputSocket("left"), inputSocket("right")}, {outputSocket("sdf")}},
+        {SdfNodeType::SmoothIntersect, SdfNodeCategory::Boolean, "Smooth Intersect", {floatParameter("smoothness", 0.25f, 0.001f, 100.0f, 0.01f)}, {inputSocket("inputs", SdfSocketType::Sdf, true)}, {outputSocket("sdf")}},
 
         {SdfNodeType::Translate, SdfNodeCategory::Transform, "Translate", {floatParameter("x", 0.0f, -100.0f, 100.0f, 0.01f), floatParameter("y", 0.0f, -100.0f, 100.0f, 0.01f), floatParameter("z", 0.0f, -100.0f, 100.0f, 0.01f)}, {inputSocket("child")}, {outputSocket("sdf")}},
         {SdfNodeType::Rotate, SdfNodeCategory::Transform, "Rotate", {

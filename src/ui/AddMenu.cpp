@@ -55,6 +55,15 @@ bool inputHasLink(const SdfGraph& graph, SdfGraphNodeId node, const std::string&
     return false;
 }
 
+bool inputAcceptsAutoLink(const SdfGraph& graph, SdfGraphNodeId node, const SdfGraphSocket& input)
+{
+    if (input.type != SdfSocketType::Sdf) {
+        return false;
+    }
+
+    return input.multiInput || !inputHasLink(graph, node, input.name);
+}
+
 bool tryLinkNewNodeToSelectedInput(SdfGraph& graph, SdfGraphNodeId newNode, SdfGraphNodeId selectedNode)
 {
     const SdfGraphNode* selected = graph.node(selectedNode);
@@ -63,7 +72,7 @@ bool tryLinkNewNodeToSelectedInput(SdfGraph& graph, SdfGraphNodeId newNode, SdfG
     }
 
     for (const SdfGraphSocket& input : selected->inputs) {
-        if (input.type == SdfSocketType::Sdf && !inputHasLink(graph, selectedNode, input.name)) {
+        if (inputAcceptsAutoLink(graph, selectedNode, input)) {
             return graph.link(newNode, "sdf", selectedNode, input.name);
         }
     }
@@ -296,7 +305,7 @@ bool AddMenu::drawItems(SdfGraph& graph)
                 continue;
             }
 
-            const char* inputSocket = (type == SdfNodeType::Subtract || type == SdfNodeType::SmoothSubtract) ? "base" : "left";
+            const char* inputSocket = (type == SdfNodeType::Subtract || type == SdfNodeType::SmoothSubtract) ? "base" : "inputs";
             if (ImGui::MenuItem(definition->displayName.c_str())) {
                 addAndLinkSelected(makeSdfNodeFromDefinition(type), inputSocket);
             }

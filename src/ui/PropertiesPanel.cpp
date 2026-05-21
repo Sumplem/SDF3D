@@ -130,27 +130,25 @@ EditorDirtyState drawMaterialPalette(SdfGraph& graph)
 
 } // namespace
 
-EditorDirtyState PropertiesPanel::draw(SceneGraph& sceneGraph)
+EditorDirtyState PropertiesPanel::draw(SdfGraph& graph, GraphGroupRegistry& groups)
 {
     EditorDirtyState dirty;
 
     ImGui::Begin("Properties");
-    const EditorDirtyState paletteDirty = drawMaterialPalette(sceneGraph.graph());
+    const EditorDirtyState paletteDirty = drawMaterialPalette(graph);
     dirty.scene = dirty.scene || paletteDirty.scene;
     dirty.material = dirty.material || paletteDirty.material;
 
     SdfNode* selected = nullptr;
-    if (sceneGraph.graph().selectedNodes().size() > 1) {
-        ImGui::Text("Multiple nodes selected: %d", static_cast<int>(sceneGraph.graph().selectedNodes().size()));
+    if (graph.selectedNodes().size() > 1) {
+        ImGui::Text("Multiple nodes selected: %d", static_cast<int>(graph.selectedNodes().size()));
         ImGui::End();
         return dirty;
     }
 
-    SdfGraphNode* selectedGraphNode = sceneGraph.graph().node(sceneGraph.graph().selectedNode());
+    SdfGraphNode* selectedGraphNode = graph.node(graph.selectedNode());
     if (selectedGraphNode != nullptr) {
         selected = &selectedGraphNode->payload;
-    } else if (sceneGraph.selectedNode()) {
-        selected = sceneGraph.selectedNode().get();
     }
 
     if (selected == nullptr) {
@@ -160,19 +158,19 @@ EditorDirtyState PropertiesPanel::draw(SceneGraph& sceneGraph)
     }
 
     char nameBuffer[128] = {};
-    const std::string& currentName = selected->name;
+    const std::string currentName = GraphSystem::displayNameForNode(*selectedGraphNode, groups);
     const size_t copyLength = std::min(currentName.size(), sizeof(nameBuffer) - 1);
     std::copy_n(currentName.data(), copyLength, nameBuffer);
 
     if (ImGui::InputText("Name", nameBuffer, sizeof(nameBuffer))) {
-        selected->name = nameBuffer;
+        (void)GraphSystem::renameNode(graph, groups, selectedGraphNode->id, nameBuffer);
         dirty.scene = true;
     }
 
     if (isSdfMaterialNode(selected->type)) {
         SdfMaterial* material = &selected->material;
         if (selectedGraphNode != nullptr && selected->materialId != 0) {
-            if (MaterialDefinition* definition = sceneGraph.graph().materials().material(selected->materialId)) {
+            if (MaterialDefinition* definition = graph.materials().material(selected->materialId)) {
                 material = &definition->material;
             }
         }

@@ -11,13 +11,15 @@
 
 namespace sdf3d {
 
+class GraphGroupRegistry;
+
 /// ImGui viewport panel with a basic orbit camera for M2.
 class Viewport {
 public:
     Viewport() = default;
 
     /// Draws the viewport panel and renders the raymarched scene into it.
-    EditorDirtyState draw(Renderer& renderer, SdfGraph& graph);
+    EditorDirtyState draw(Renderer& renderer, SdfGraph& graph, const GraphGroupRegistry& groups);
 
     /// Returns the current camera values for rendering.
     RenderCamera camera() const;
@@ -25,6 +27,7 @@ public:
 private:
     void handleInput(bool hovered, const glm::vec2& panelSize);
     void orbit(const glm::vec2& mouseDelta);
+    void pan(const glm::vec2& mouseDelta, const glm::vec2& panelSize);
     void zoom(float wheelDelta);
     void updateCameraPosition();
 
@@ -40,8 +43,10 @@ private:
     TranslateGizmo m_translateGizmo;
     AddMenu m_viewportAddMenu;
     glm::vec3 m_pendingAddWorldPosition = {0.0f, 0.0f, 0.0f};
+    int m_hoverNodeId = -1;
     bool m_dragging = false;
     bool m_rightMouseMoved = false;
+    bool m_showHoverHighlight = true;
 };
 
 } // namespace sdf3d

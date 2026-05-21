@@ -22,12 +22,19 @@ public:
     /// Returns graph currently visible in node editor: root or entered group subgraph.
     SdfGraph& activeGraph(SceneGraph& sceneGraph, GraphGroupRegistry& groups);
 
-private:
+    /// Returns display name for the active editor graph.
     const char* activeGroupName(const GraphGroupRegistry& groups) const;
+
+    /// Clears group navigation state and returns to root graph.
+    void resetActiveGraph();
+
+private:
     bool enterSelectedGroup(SdfGraph& graph, GraphGroupRegistry& groups);
+    bool enterGroupNode(SdfGraph& graph, GraphGroupRegistry& groups, SdfGraphNodeId nodeId);
     bool exitGroup();
     bool drawBreadcrumb(GraphGroupRegistry& groups);
     bool drawAddPopup(SdfGraph& graph);
+    void clearTransientState();
 
     EventBus* m_eventBus = nullptr;
     std::vector<GroupDefId> m_groupPath;

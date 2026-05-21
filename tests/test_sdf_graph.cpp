@@ -434,8 +434,8 @@ void testGraphSystemAccumulatedTranslateStopsAtBranch(std::vector<TestFailure>& 
     graph.node(first)->payload.parameters["x"] = 2.0f;
     graph.node(second)->payload.parameters["z"] = 4.0f;
     graph.link(sphere, "sdf", first, "child");
-    graph.link(first, "sdf", join, "left");
-    graph.link(box, "sdf", join, "right");
+    graph.link(first, "sdf", join, "inputs");
+    graph.link(box, "sdf", join, "inputs");
     graph.link(join, "sdf", second, "child");
 
     expectVec3(sdf3d::GraphSystem::accumulatedTranslatePosition(graph, second), {0.0f, 0.0f, 4.0f}, testName, "Expected accumulation to stop at multi-input branch.", failures);
@@ -488,13 +488,13 @@ void testGraphSystemPlacePrimitiveUnionsExistingOutput(std::vector<TestFailure>&
     bool unionFeedsOutput = false;
     bool oldStillFeedsOutput = false;
     for (const sdf3d::SdfGraphLink& link : graph.links()) {
-        oldFeedsUnion = oldFeedsUnion || (link.fromNode == oldSphere && link.toNode == unionNode && link.toSocket == "left");
-        translateFeedsUnion = translateFeedsUnion || (link.fromNode == translate && link.toNode == unionNode && link.toSocket == "right");
+        oldFeedsUnion = oldFeedsUnion || (link.fromNode == oldSphere && link.toNode == unionNode && link.toSocket == "inputs");
+        translateFeedsUnion = translateFeedsUnion || (link.fromNode == translate && link.toNode == unionNode && link.toSocket == "inputs");
         unionFeedsOutput = unionFeedsOutput || (link.fromNode == unionNode && link.toNode == graph.outputNode() && link.toSocket == "surface");
         oldStillFeedsOutput = oldStillFeedsOutput || (link.fromNode == oldSphere && link.toNode == graph.outputNode());
     }
-    expect(oldFeedsUnion, testName, "Expected old root linked to Union.left.", failures);
-    expect(translateFeedsUnion, testName, "Expected new Translate linked to Union.right.", failures);
+    expect(oldFeedsUnion, testName, "Expected old root linked to Union.inputs.", failures);
+    expect(translateFeedsUnion, testName, "Expected new Translate linked to Union.inputs.", failures);
     expect(unionFeedsOutput, testName, "Expected Union linked to Output.", failures);
     expect(!oldStillFeedsOutput, testName, "Expected old direct Output link removed.", failures);
     expect(graph.selectedNode() == translate, testName, "Expected new Translate selected.", failures);
@@ -690,8 +690,8 @@ void testNodeEditorAutoLayoutPreservesEmptyRowSlots(std::vector<TestFailure>& fa
     graph.link(source, "sdf", upper, "child");
     graph.link(source, "sdf", lower, "child");
     graph.link(lower, "sdf", lowerNext, "child");
-    graph.link(upper, "sdf", join, "left");
-    graph.link(lowerNext, "sdf", join, "right");
+    graph.link(upper, "sdf", join, "inputs");
+    graph.link(lowerNext, "sdf", join, "inputs");
     graph.setSelectedNodes({source, upper, lower, lowerNext, join}, join);
 
     sdf3d::node_editor::CanvasFrame frame;

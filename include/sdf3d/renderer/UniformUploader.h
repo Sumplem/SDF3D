@@ -48,6 +48,7 @@ struct RenderGizmo {
     int type = 0;
     GizmoRotateStyle rotateStyle = GizmoRotateStyle::Rings;
     int highlightNodeId = 0;
+    int hoverNodeId = -1;
 };
 
 /// Uploads camera, viewport, and material uniforms to the active shader.

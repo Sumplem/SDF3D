@@ -24,7 +24,7 @@ SdfCompileResult CompilerSystem::compile(const SdfGraph& graph, const GraphGroup
     const SdfGraphLowerResult lowered = lowerSdfGraphToTree(graph, groups);
     SdfCompileResult result = compile(lowered.root);
     result.errors.insert(result.errors.begin(), lowered.errors.begin(), lowered.errors.end());
-    result.nodeParams = GraphSystem::collectNodeParams(graph);
+    result.nodeParams = GraphSystem::collectNodeParams(graph, groups);
     return result;
 }
 
@@ -48,6 +48,10 @@ SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root) const
             "float sceneNodeSDF(int nodeId, vec3 p)\n"
             "{\n"
             "    return 1e6;\n"
+            "}\n\n"
+            "int scenePickId(vec3 p)\n"
+            "{\n"
+            "    return -1;\n"
             "}\n";
         return result;
     }
@@ -55,6 +59,7 @@ SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root) const
     const GlslEmitter emitter;
     const GlslSdfHelperBlock sdfHelpers = emitter.emitSdfHelpers(root, result);
     const std::string materialExpression = emitter.emitSceneMaterialExpression(root, "p", result, sdfHelpers);
+    const std::string pickIdExpression = emitter.emitScenePickIdExpression(root, "p", result, sdfHelpers);
 
     std::ostringstream glsl;
     glsl << "struct SdfNodeParam\n";
@@ -122,6 +127,11 @@ SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root) const
     }
     glsl << "    default: return 1e6;\n";
     glsl << "    }\n";
+    glsl << "}\n\n";
+
+    glsl << "int scenePickId(vec3 p)\n";
+    glsl << "{\n";
+    glsl << "    return " << pickIdExpression << ";\n";
     glsl << "}\n\n";
 
     glsl << "SdfMaterialSample sceneMaterial(vec3 p)\n";

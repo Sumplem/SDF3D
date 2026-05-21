@@ -1,5 +1,6 @@
 #include "sdf3d/systems/CompilerSystem.h"
 
+#include "sdf3d/scene/GraphGroupRegistry.h"
 #include "sdf3d/scene/SdfGraphCompiler.h"
 #include "sdf3d/systems/GlslEmitter.h"
 
@@ -96,6 +97,46 @@ void testGraphLoweringPreservesStableIdsForHelpers(std::vector<TestFailure>& fai
     expect(!contains(compiled.glsl, "sceneSDFWithMaterial"), testName, "Expected legacy material entry point removed.", failures);
 }
 
+void testScenePickIdSelectsNearestUnionBranch(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "scenePickId selects nearest union branch";
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId firstSphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "First Sphere");
+    const sdf3d::SdfGraphNodeId secondSphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Second Sphere");
+    const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
+    expect(graph.link(firstSphere, "sdf", unionNode, "inputs"), testName, "Expected first sphere linked.", failures);
+    expect(graph.link(secondSphere, "sdf", unionNode, "inputs"), testName, "Expected second sphere linked.", failures);
+    expect(graph.link(unionNode, "sdf", graph.outputNode(), "surface"), testName, "Expected union output linked.", failures);
+
+    const sdf3d::SdfCompileResult compiled = sdf3d::CompilerSystem{}.compile(graph);
+    expect(compiled.errors.empty(), testName, "Expected graph compile errors to stay empty.", failures);
+    expect(contains(compiled.glsl, "int scenePickId(vec3 p)"), testName, "Expected pick-id entry point.", failures);
+    expect(contains(compiled.glsl, "sdf_node_" + std::to_string(firstSphere) + "(p) < sdf_node_" + std::to_string(secondSphere) + "(p)"), testName, "Expected union pick to compare child distances.", failures);
+    expect(contains(compiled.glsl, "? " + std::to_string(firstSphere) + " : " + std::to_string(secondSphere)), testName, "Expected pick-id branch ids.", failures);
+}
+
+void testScenePickIdReturnsGroupInstanceId(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "scenePickId returns group instance id";
+    sdf3d::SdfGraph groupGraph;
+    const sdf3d::SdfGraphNodeId sphere = groupGraph.createNode(sdf3d::SdfNodeType::Sphere, "Group Sphere");
+    expect(groupGraph.link(sphere, "sdf", groupGraph.outputNode(), "surface"), testName, "Expected group sphere linked.", failures);
+
+    sdf3d::GraphGroupRegistry groups;
+    const sdf3d::GroupDefId definitionId = groups.createDefinition("Group", groupGraph);
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId group = graph.createNode(sdf3d::SdfNodeType::Group, "Group");
+    if (sdf3d::SdfGraphNode* node = graph.node(group)) {
+        node->payload.groupDefinitionId = definitionId;
+    }
+    expect(graph.link(group, "sdf", graph.outputNode(), "surface"), testName, "Expected group output linked.", failures);
+
+    const sdf3d::SdfCompileResult compiled = sdf3d::CompilerSystem{}.compile(graph, groups);
+    expect(compiled.errors.empty(), testName, "Expected group compile errors to stay empty.", failures);
+    expect(contains(compiled.glsl, "int scenePickId(vec3 p)"), testName, "Expected pick-id entry point.", failures);
+    expect(contains(compiled.glsl, "return " + std::to_string(group) + ";"), testName, "Expected group instance id returned for picking.", failures);
+}
+
 } // namespace
 
 int main()
@@ -106,6 +147,8 @@ int main()
     testCompileMaterialOverride(failures);
     testCompileEmpty(failures);
     testGraphLoweringPreservesStableIdsForHelpers(failures);
+    testScenePickIdSelectsNearestUnionBranch(failures);
+    testScenePickIdReturnsGroupInstanceId(failures);
 
     if (!failures.empty()) {
         for (const TestFailure& failure : failures) {

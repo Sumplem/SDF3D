@@ -32,6 +32,12 @@ public:
     /// Returns the color texture containing latest output.
     unsigned int outputTexture() const;
 
+    /// Returns the integer node-id texture containing latest edit pick output.
+    unsigned int nodeIdTexture() const;
+
+    /// Reads one node id from the integer pick attachment.
+    int readNodeIdPixel(int x, int y) const;
+
     /// Returns current output width.
     int width() const;
 
@@ -47,6 +53,7 @@ private:
     unsigned int m_vertexArray = 0;
     unsigned int m_framebuffer = 0;
     unsigned int m_colorTexture = 0;
+    unsigned int m_nodeIdTexture = 0;
     int m_width = 1;
     int m_height = 1;
 };

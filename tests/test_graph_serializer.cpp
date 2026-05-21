@@ -343,6 +343,95 @@ void testJsonGraphGroupDefinitionsRoundTrip(std::vector<TestFailure>& failures)
     std::filesystem::remove(path);
 }
 
+void testJsonGraphPrunesUnreferencedGroupDefinitions(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "json graph prunes unreferenced group definitions";
+    const std::filesystem::path path = testPath("sdf3d_graph_groups_pruned.json");
+    sdf3d::JsonGraphSerializer serializer;
+
+    sdf3d::SdfGraph usedGraph;
+    const sdf3d::SdfGraphNodeId usedSphere = usedGraph.createNode(sdf3d::SdfNodeType::Sphere, "Used Sphere");
+    expect(usedGraph.link(usedSphere, "sdf", usedGraph.outputNode(), "surface"), testName, "Expected used group output link.", failures);
+
+    sdf3d::SdfGraph orphanGraph;
+    const sdf3d::SdfGraphNodeId orphanSphere = orphanGraph.createNode(sdf3d::SdfNodeType::Sphere, "Orphan Sphere");
+    expect(orphanGraph.link(orphanSphere, "sdf", orphanGraph.outputNode(), "surface"), testName, "Expected orphan group output link.", failures);
+
+    sdf3d::GraphGroupRegistry groups;
+    const sdf3d::GroupDefId usedDefinitionId = groups.createDefinition("Used Group", usedGraph);
+    const sdf3d::GroupDefId orphanDefinitionId = groups.createDefinition("Orphan Group", orphanGraph);
+
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId groupInstance = graph.createNode(sdf3d::SdfNodeType::Group, "Used Instance");
+    if (sdf3d::SdfGraphNode* node = graph.node(groupInstance)) {
+        node->payload.groupDefinitionId = usedDefinitionId;
+    }
+    expect(graph.link(groupInstance, "sdf", graph.outputNode(), "surface"), testName, "Expected group instance output link.", failures);
+
+    expect(serializer.save(graph, groups, path), testName, "Expected save success: " + serializer.lastError(), failures);
+    nlohmann::json saved;
+    {
+        std::ifstream input(path);
+        input >> saved;
+    }
+
+    expect(saved.at("definitions").size() == 1, testName, "Expected only referenced group definition saved.", failures);
+    if (saved.at("definitions").size() == 1) {
+        expect(saved.at("definitions").front().at("id").get<sdf3d::GroupDefId>() == usedDefinitionId, testName, "Expected used definition saved.", failures);
+        expect(saved.at("definitions").front().at("id").get<sdf3d::GroupDefId>() != orphanDefinitionId, testName, "Expected orphan definition omitted.", failures);
+    }
+
+    std::filesystem::remove(path);
+}
+
+void testJsonGraphSavesNestedReachableGroupDefinitions(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "json graph saves nested reachable group definitions";
+    const std::filesystem::path path = testPath("sdf3d_graph_nested_groups.json");
+    sdf3d::JsonGraphSerializer serializer;
+
+    sdf3d::SdfGraph leafGraph;
+    const sdf3d::SdfGraphNodeId leafSphere = leafGraph.createNode(sdf3d::SdfNodeType::Sphere, "Leaf Sphere");
+    expect(leafGraph.link(leafSphere, "sdf", leafGraph.outputNode(), "surface"), testName, "Expected leaf group output link.", failures);
+
+    sdf3d::GraphGroupRegistry groups;
+    const sdf3d::GroupDefId leafDefinitionId = groups.createDefinition("Leaf Group", leafGraph);
+
+    sdf3d::SdfGraph parentGraph;
+    const sdf3d::SdfGraphNodeId nestedInstance = parentGraph.createNode(sdf3d::SdfNodeType::Group, "Nested Leaf");
+    if (sdf3d::SdfGraphNode* node = parentGraph.node(nestedInstance)) {
+        node->payload.groupDefinitionId = leafDefinitionId;
+    }
+    expect(parentGraph.link(nestedInstance, "sdf", parentGraph.outputNode(), "surface"), testName, "Expected parent group output link.", failures);
+    const sdf3d::GroupDefId parentDefinitionId = groups.createDefinition("Parent Group", parentGraph);
+
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId parentInstance = graph.createNode(sdf3d::SdfNodeType::Group, "Parent Instance");
+    if (sdf3d::SdfGraphNode* node = graph.node(parentInstance)) {
+        node->payload.groupDefinitionId = parentDefinitionId;
+    }
+    expect(graph.link(parentInstance, "sdf", graph.outputNode(), "surface"), testName, "Expected root group output link.", failures);
+
+    expect(serializer.save(graph, groups, path), testName, "Expected save success: " + serializer.lastError(), failures);
+    nlohmann::json saved;
+    {
+        std::ifstream input(path);
+        input >> saved;
+    }
+    expect(saved.at("definitions").size() == 2, testName, "Expected parent and nested group definitions saved.", failures);
+
+    sdf3d::SdfGraph loadedGraph;
+    sdf3d::GraphGroupRegistry loadedGroups;
+    expect(serializer.load(loadedGraph, loadedGroups, path), testName, "Expected load success: " + serializer.lastError(), failures);
+    expect(loadedGroups.definition(parentDefinitionId) != nullptr, testName, "Expected parent definition loaded.", failures);
+    expect(loadedGroups.definition(leafDefinitionId) != nullptr, testName, "Expected nested definition loaded.", failures);
+
+    const sdf3d::SdfCompileResult compileResult = sdf3d::SdfCompiler{}.compile(loadedGraph, loadedGroups);
+    expect(compileResult.errors.empty(), testName, "Expected loaded nested groups to compile without errors.", failures);
+
+    std::filesystem::remove(path);
+}
+
 void testJsonGraphLoadFailureKeepsGraph(std::vector<TestFailure>& failures)
 {
     const std::string testName = "json graph load failure keeps graph";
@@ -364,6 +453,97 @@ void testJsonGraphLoadFailureKeepsGraph(std::vector<TestFailure>& failures)
     std::filesystem::remove(path);
 }
 
+void testJsonGraphMigratesLegacyBooleanSockets(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "json graph migrates legacy boolean sockets";
+    const std::filesystem::path path = testPath("sdf3d_legacy_boolean_sockets.json");
+    sdf3d::SdfGraph graph;
+
+    {
+        std::ofstream output(path);
+        output
+            << "{\n"
+            << "  \"schema\": \"sdf3d.graph\",\n"
+            << "  \"version\": 1,\n"
+            << "  \"nextId\": 5,\n"
+            << "  \"outputNode\": 1,\n"
+            << "  \"nodes\": [\n"
+            << "    {\"id\": 1, \"type\": \"Output\", \"stableId\": 1, \"name\": \"Output\", \"editor\": {\"x\": 0, \"y\": 0, \"propertiesCollapsed\": false}, \"parameters\": {}},\n"
+            << "    {\"id\": 2, \"type\": \"Sphere\", \"stableId\": 2, \"name\": \"Sphere\", \"editor\": {\"x\": 0, \"y\": 0, \"propertiesCollapsed\": false}, \"parameters\": {\"radius\": 1.0}},\n"
+            << "    {\"id\": 3, \"type\": \"Box\", \"stableId\": 3, \"name\": \"Box\", \"editor\": {\"x\": 0, \"y\": 0, \"propertiesCollapsed\": false}, \"parameters\": {\"x\": 1.0, \"y\": 1.0, \"z\": 1.0}},\n"
+            << "    {\"id\": 4, \"type\": \"Union\", \"stableId\": 4, \"name\": \"Union\", \"editor\": {\"x\": 0, \"y\": 0, \"propertiesCollapsed\": false}, \"parameters\": {}}\n"
+            << "  ],\n"
+            << "  \"links\": [\n"
+            << "    {\"from\": {\"node\": 2, \"socket\": \"sdf\"}, \"to\": {\"node\": 4, \"socket\": \"left\"}},\n"
+            << "    {\"from\": {\"node\": 3, \"socket\": \"sdf\"}, \"to\": {\"node\": 4, \"socket\": \"right\"}},\n"
+            << "    {\"from\": {\"node\": 4, \"socket\": \"sdf\"}, \"to\": {\"node\": 1, \"socket\": \"surface\"}}\n"
+            << "  ]\n"
+            << "}\n";
+    }
+
+    sdf3d::JsonGraphSerializer serializer;
+    expect(serializer.load(graph, path), testName, "Expected load success: " + serializer.lastError(), failures);
+    expect(hasLink(graph, 2, "sdf", 4, "inputs"), testName, "Expected legacy left migrated to inputs.", failures);
+    expect(hasLink(graph, 3, "sdf", 4, "inputs"), testName, "Expected legacy right migrated to inputs.", failures);
+    expect(graph.node(4) != nullptr && graph.node(4)->inputs.size() == 1 && graph.node(4)->inputs[0].multiInput, testName, "Expected Union multi-input socket reconstructed.", failures);
+
+    std::filesystem::remove(path);
+}
+
+void testJsonGraphGroupLoadFailureKeepsGraphAndGroups(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "json graph group load failure keeps graph and groups";
+    const std::filesystem::path path = testPath("sdf3d_graph_invalid_groups.json");
+
+    sdf3d::SdfGraph originalSubgraph;
+    const sdf3d::SdfGraphNodeId originalSphere = originalSubgraph.createNode(sdf3d::SdfNodeType::Sphere, "Original Sphere");
+    expect(originalSubgraph.link(originalSphere, "sdf", originalSubgraph.outputNode(), "surface"), testName, "Expected original group output link.", failures);
+
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId originalOutput = graph.outputNode();
+    sdf3d::GraphGroupRegistry groups;
+    const sdf3d::GroupDefId originalDefinitionId = groups.createDefinition("Original Group", originalSubgraph);
+
+    {
+        std::ofstream output(path);
+        output
+            << "{\n"
+            << "  \"schema\": \"sdf3d.graph\",\n"
+            << "  \"version\": 1,\n"
+            << "  \"nextId\": 1,\n"
+            << "  \"outputNode\": 999,\n"
+            << "  \"materials\": {\"nextId\": 1, \"items\": []},\n"
+            << "  \"nodes\": [],\n"
+            << "  \"links\": [],\n"
+            << "  \"nextDefinitionId\": 3,\n"
+            << "  \"definitions\": [{\n"
+            << "    \"id\": 2,\n"
+            << "    \"name\": \"Loaded Group\",\n"
+            << "    \"graph\": {\n"
+            << "      \"nextId\": 3,\n"
+            << "      \"outputNode\": 1,\n"
+            << "      \"materials\": {\"nextId\": 1, \"items\": []},\n"
+            << "      \"nodes\": [\n"
+            << "        {\"id\": 1, \"type\": \"Output\", \"stableId\": 1, \"name\": \"Output\", \"editor\": {\"x\": 0, \"y\": 0, \"propertiesCollapsed\": false}, \"parameters\": {}},\n"
+            << "        {\"id\": 2, \"type\": \"Sphere\", \"stableId\": 2, \"name\": \"Loaded Sphere\", \"editor\": {\"x\": 0, \"y\": 0, \"propertiesCollapsed\": false}, \"parameters\": {\"radius\": 1.0}}\n"
+            << "      ],\n"
+            << "      \"links\": [{\"from\": {\"node\": 2, \"socket\": \"sdf\"}, \"to\": {\"node\": 1, \"socket\": \"surface\"}}]\n"
+            << "    }\n"
+            << "  }]\n"
+            << "}\n";
+    }
+
+    sdf3d::JsonGraphSerializer serializer;
+    expect(!serializer.load(graph, groups, path), testName, "Expected invalid grouped load to fail.", failures);
+    expect(!serializer.lastError().empty(), testName, "Expected load error.", failures);
+    expect(graph.outputNode() == originalOutput, testName, "Expected graph output unchanged.", failures);
+    const sdf3d::GraphGroupDefinition* originalDefinition = groups.definition(originalDefinitionId);
+    expect(originalDefinition != nullptr && originalDefinition->name == "Original Group", testName, "Expected original group registry unchanged.", failures);
+    expect(groups.definition(2) == nullptr, testName, "Expected loaded group not committed on root graph failure.", failures);
+
+    std::filesystem::remove(path);
+}
+
 } // namespace
 
 int main()
@@ -375,7 +555,11 @@ int main()
     testJsonGraphMigratesSourceMaterialNode(failures);
     testJsonGraphLoadRepairsLinkedOverrideMaterialId(failures);
     testJsonGraphGroupDefinitionsRoundTrip(failures);
+    testJsonGraphPrunesUnreferencedGroupDefinitions(failures);
+    testJsonGraphSavesNestedReachableGroupDefinitions(failures);
     testJsonGraphLoadFailureKeepsGraph(failures);
+    testJsonGraphMigratesLegacyBooleanSockets(failures);
+    testJsonGraphGroupLoadFailureKeepsGraphAndGroups(failures);
 
     if (!failures.empty()) {
         for (const TestFailure& failure : failures) {

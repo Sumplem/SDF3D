@@ -17,7 +17,7 @@ void UI::setEventBus(EventBus* eventBus)
     m_nodeEditor.setEventBus(eventBus);
 }
 
-void UI::drawMainMenu(SceneGraph& sceneGraph)
+void UI::drawMainMenu(SceneGraph& sceneGraph, GraphGroupRegistry& groups)
 {
     if (!ImGui::BeginMainMenuBar()) {
         return;
@@ -43,7 +43,7 @@ void UI::drawMainMenu(SceneGraph& sceneGraph)
         ImGui::EndMenu();
     }
 
-    if (m_addMenu.draw(sceneGraph)) {
+    if (m_addMenu.draw(activeGraph(sceneGraph, groups))) {
         markSceneDirty();
     }
 
@@ -94,7 +94,7 @@ void UI::drawPanels(SceneGraph& sceneGraph, GraphGroupRegistry& groups, const st
 {
     drawScenePanel(sceneGraph, groups);
     drawDiagnosticsPanel(runtimeErrors);
-    const EditorDirtyState propertiesDirty = m_propertiesPanel.draw(sceneGraph);
+    const EditorDirtyState propertiesDirty = m_propertiesPanel.draw(activeGraph(sceneGraph, groups), groups);
     if (propertiesDirty.scene) {
         markSceneDirty();
     }
@@ -106,6 +106,11 @@ void UI::drawPanels(SceneGraph& sceneGraph, GraphGroupRegistry& groups, const st
 SdfGraph& UI::activeGraph(SceneGraph& sceneGraph, GraphGroupRegistry& groups)
 {
     return m_nodeEditor.activeGraph(sceneGraph, groups);
+}
+
+void UI::resetActiveGraph()
+{
+    m_nodeEditor.resetActiveGraph();
 }
 
 bool UI::consumeSceneDirty()
@@ -121,9 +126,11 @@ bool UI::consumeMaterialDirty()
 void UI::drawScenePanel(SceneGraph& sceneGraph, GraphGroupRegistry& groups)
 {
     ImGui::Begin("Scene");
+    SdfGraph& graph = activeGraph(sceneGraph, groups);
+    ImGui::TextDisabled("Scope: %s", m_nodeEditor.activeGroupName(groups));
 
     if (ImGui::GetCurrentContext() != nullptr) {
-        if (m_sceneOutliner.draw(sceneGraph)) {
+        if (m_sceneOutliner.draw(graph, groups)) {
             markSceneDirty();
         }
 
@@ -141,7 +148,7 @@ void UI::drawScenePanel(SceneGraph& sceneGraph, GraphGroupRegistry& groups)
         return;
     }
 
-    if (m_sceneOutliner.draw(sceneGraph)) {
+    if (m_sceneOutliner.draw(graph, groups)) {
         markSceneDirty();
     }
 

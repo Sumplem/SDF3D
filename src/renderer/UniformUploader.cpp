@@ -66,6 +66,7 @@ void UniformUploader::upload(
     glUniform1i(glGetUniformLocation(program, "uGizmoType"), gizmo.type);
     glUniform1i(glGetUniformLocation(program, "uGizmoRotateStyle"), static_cast<GLint>(gizmo.rotateStyle));
     glUniform1i(glGetUniformLocation(program, "uHighlightNodeId"), static_cast<GLint>(gizmo.highlightNodeId));
+    glUniform1i(glGetUniformLocation(program, "uHoverNodeId"), static_cast<GLint>(gizmo.hoverNodeId));
     glUniform1i(glGetUniformLocation(program, "uRenderQuality"), static_cast<GLint>(quality));
     glUniform1i(glGetUniformLocation(program, "uPathTraceMaxBounces"), pathTraceMaxBouncesForQuality(quality));
 

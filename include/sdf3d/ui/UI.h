@@ -21,14 +21,17 @@ class UI {
 public:
     void setEventBus(EventBus* eventBus);
 
-    /// Draws menu entries that can mutate the scene.
-    void drawMainMenu(SceneGraph& sceneGraph);
+    /// Draws menu entries that can mutate the active graph.
+    void drawMainMenu(SceneGraph& sceneGraph, GraphGroupRegistry& groups);
 
     /// Draws the scene outliner and properties panel.
     void drawPanels(SceneGraph& sceneGraph, GraphGroupRegistry& groups, const std::vector<DiagnosticEntry>& runtimeErrors = {});
 
     /// Returns graph currently edited by graph UI.
     SdfGraph& activeGraph(SceneGraph& sceneGraph, GraphGroupRegistry& groups);
+
+    /// Resets graph UI navigation to root graph.
+    void resetActiveGraph();
 
     /// Returns true once when a scene edit requires shader recompilation.
     bool consumeSceneDirty();

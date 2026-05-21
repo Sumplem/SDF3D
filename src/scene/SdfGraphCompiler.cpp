@@ -19,6 +19,9 @@ int socketOrder(const std::string& socket)
     if (socket == "sdf") {
         return 0;
     }
+    if (socket == "inputs") {
+        return 0;
+    }
     if (socket == "material") {
         return 1;
     }
@@ -36,7 +39,8 @@ SdfGraphLowerResult lowerSdfGraphToTreeInternal(
     const SdfGraph& graph,
     const GraphGroupRegistry* groups,
     std::unordered_map<GroupDefId, SdfNodePtr>* loweredGroups,
-    std::unordered_set<GroupDefId>* visitingGroups)
+    std::unordered_set<GroupDefId>* visitingGroups,
+    GroupDefId stableIdScope)
 {
     SdfGraphLowerResult result;
     if (graph.outputNode() == 0) {
@@ -84,7 +88,8 @@ SdfGraphLowerResult lowerSdfGraphToTreeInternal(
         visiting.insert(id);
 
         SdfNodePtr node = makeSdfNode(graphNode->payload.type, graphNode->payload.name);
-        node->stableId = graphNode->payload.stableId != 0 ? graphNode->payload.stableId : graphNode->id;
+        const uint64_t rawStableId = graphNode->payload.stableId != 0 ? graphNode->payload.stableId : graphNode->id;
+        node->stableId = scopedSdfNodeStableId(stableIdScope, rawStableId);
         node->parameters = graphNode->payload.parameters;
         node->materialId = graphNode->payload.materialId;
         node->groupDefinitionId = graphNode->payload.groupDefinitionId;
@@ -130,7 +135,7 @@ SdfGraphLowerResult lowerSdfGraphToTreeInternal(
                         result.errors.push_back("Group node references a missing definition.");
                     } else {
                         visitingGroups->insert(node->groupDefinitionId);
-                        SdfGraphLowerResult lowered = lowerSdfGraphToTreeInternal(definition->subgraph, groups, loweredGroups, visitingGroups);
+                        SdfGraphLowerResult lowered = lowerSdfGraphToTreeInternal(definition->subgraph, groups, loweredGroups, visitingGroups, node->groupDefinitionId);
                         visitingGroups->erase(node->groupDefinitionId);
                         result.errors.insert(result.errors.end(), lowered.errors.begin(), lowered.errors.end());
                         loweredGroup = loweredGroups->emplace(node->groupDefinitionId, lowered.root).first;
@@ -167,14 +172,14 @@ SdfGraphLowerResult lowerSdfGraphToTreeInternal(
 
 SdfGraphLowerResult lowerSdfGraphToTree(const SdfGraph& graph)
 {
-    return lowerSdfGraphToTreeInternal(graph, nullptr, nullptr, nullptr);
+    return lowerSdfGraphToTreeInternal(graph, nullptr, nullptr, nullptr, 0);
 }
 
 SdfGraphLowerResult lowerSdfGraphToTree(const SdfGraph& graph, const GraphGroupRegistry& groups)
 {
     std::unordered_map<GroupDefId, SdfNodePtr> loweredGroups;
     std::unordered_set<GroupDefId> visitingGroups;
-    return lowerSdfGraphToTreeInternal(graph, &groups, &loweredGroups, &visitingGroups);
+    return lowerSdfGraphToTreeInternal(graph, &groups, &loweredGroups, &visitingGroups, 0);
 }
 
 } // namespace sdf3d
