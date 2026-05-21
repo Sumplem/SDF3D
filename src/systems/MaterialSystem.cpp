@@ -23,6 +23,7 @@ void collectNodeMaterials(const SdfNodePtr& node, SdfCompileResult& result, cons
 
     case SdfNodeType::SolidMaterial:
     case SdfNodeType::CheckerMaterial:
+    case SdfNodeType::ValueNoiseMaterial:
         materialSystem.appendMaterial(result, node->material);
         return;
 

@@ -95,6 +95,11 @@ void SelectionSystem::markMaterialDirty()
     m_materialDirty = true;
 }
 
+void SelectionSystem::markParamDirty()
+{
+    m_paramDirty = true;
+}
+
 bool SelectionSystem::consumeDirty()
 {
     const bool dirty = m_dirty;
@@ -106,6 +111,13 @@ bool SelectionSystem::consumeMaterialDirty()
 {
     const bool dirty = m_materialDirty;
     m_materialDirty = false;
+    return dirty;
+}
+
+bool SelectionSystem::consumeParamDirty()
+{
+    const bool dirty = m_paramDirty;
+    m_paramDirty = false;
     return dirty;
 }
 

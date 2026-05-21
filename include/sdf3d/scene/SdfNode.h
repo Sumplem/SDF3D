@@ -49,6 +49,7 @@ enum class SdfNodeType {
     Bend,
     SolidMaterial,
     CheckerMaterial,
+    ValueNoiseMaterial,
     MaterialOverride,
     Group,
     Output,

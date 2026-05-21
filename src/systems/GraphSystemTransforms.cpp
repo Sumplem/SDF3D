@@ -66,6 +66,16 @@ std::optional<SdfGraphLink> outputSurfaceLink(const SdfGraph& graph)
     return std::nullopt;
 }
 
+bool nodeHasMultiSdfInput(const SdfGraphNode& node, const std::string& socket)
+{
+    for (const SdfGraphSocket& input : node.inputs) {
+        if (input.name == socket && input.type == SdfSocketType::Sdf && input.multiInput) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::optional<SdfGraphLink> singleIncomingSdfLink(const SdfGraph& graph, SdfGraphNodeId node)
 {
     std::optional<SdfGraphLink> result;
@@ -399,18 +409,25 @@ SdfGraphNodeId GraphSystem::placePrimitiveAtWorldPosition(SdfGraph& graph, SdfGr
     if (!existingOutput) {
         link(graph, primitiveNode, "sdf", outputNode, "surface");
     } else {
-        const float editorX = primitive->editorX;
-        const float editorY = primitive->editorY;
-        const SdfGraphNodeId unionNode = createNode(graph, SdfNodeType::Union, "Union");
-        if (SdfGraphNode* node = graph.node(unionNode)) {
-            node->editorX = editorX + 520.0f;
-            node->editorY = editorY;
-        }
+        const SdfGraphNode* outputRoot = graph.node(existingOutput->fromNode);
+        if (outputRoot != nullptr
+            && (outputRoot->payload.type == SdfNodeType::Union || outputRoot->payload.type == SdfNodeType::SmoothUnion)
+            && nodeHasMultiSdfInput(*outputRoot, "inputs")) {
+            link(graph, primitiveNode, "sdf", existingOutput->fromNode, "inputs");
+        } else {
+            const float editorX = primitive->editorX;
+            const float editorY = primitive->editorY;
+            const SdfGraphNodeId unionNode = createNode(graph, SdfNodeType::Union, "Union");
+            if (SdfGraphNode* node = graph.node(unionNode)) {
+                node->editorX = editorX + 520.0f;
+                node->editorY = editorY;
+            }
 
-        unlink(graph, existingOutput->fromNode, existingOutput->fromSocket, existingOutput->toNode, existingOutput->toSocket);
-        link(graph, existingOutput->fromNode, existingOutput->fromSocket, unionNode, "inputs");
-        link(graph, primitiveNode, "sdf", unionNode, "inputs");
-        link(graph, unionNode, "sdf", outputNode, "surface");
+            unlink(graph, existingOutput->fromNode, existingOutput->fromSocket, existingOutput->toNode, existingOutput->toSocket);
+            link(graph, existingOutput->fromNode, existingOutput->fromSocket, unionNode, "inputs");
+            link(graph, primitiveNode, "sdf", unionNode, "inputs");
+            link(graph, unionNode, "sdf", outputNode, "surface");
+        }
     }
 
     const SdfGraphNodeId translateId = ensureTranslateWrapperForNode(graph, primitiveNode);

@@ -159,6 +159,41 @@ void testJsonGraphRoundTrip(std::vector<TestFailure>& failures)
     std::filesystem::remove(path);
 }
 
+void testJsonGraphValueNoiseMaterialRoundTrip(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "json value noise material round trip";
+    const std::filesystem::path path = testPath("sdf3d_value_noise_material_round_trip.json");
+    sdf3d::JsonGraphSerializer serializer;
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::ValueNoiseMaterial, "Cloud Paint");
+    if (sdf3d::SdfGraphNode* materialNode = graph.node(material)) {
+        if (sdf3d::MaterialDefinition* definition = graph.materials().material(materialNode->payload.materialId)) {
+            definition->material.albedo = {0.2f, 0.3f, 0.4f};
+            definition->material.secondaryAlbedo = {0.8f, 0.7f, 0.6f};
+            definition->material.patternScale = 15.0f;
+        }
+    }
+
+    expect(serializer.save(graph, path), testName, "Expected save success: " + serializer.lastError(), failures);
+    sdf3d::SdfGraph loaded;
+    expect(serializer.load(loaded, path), testName, "Expected load success: " + serializer.lastError(), failures);
+
+    const sdf3d::SdfGraphNode* loadedMaterial = loaded.node(material);
+    expect(loadedMaterial != nullptr && loadedMaterial->payload.type == sdf3d::SdfNodeType::ValueNoiseMaterial, testName, "Expected value-noise node type loaded.", failures);
+    if (loadedMaterial != nullptr) {
+        const sdf3d::MaterialDefinition* definition = loaded.materials().material(loadedMaterial->payload.materialId);
+        expect(definition != nullptr, testName, "Expected value-noise registry material loaded.", failures);
+        if (definition != nullptr) {
+            expect(definition->material.type == sdf3d::SdfMaterialType::ValueNoise, testName, "Expected value-noise material type preserved.", failures);
+            expect(definition->material.secondaryAlbedo.x == 0.8f, testName, "Expected secondary albedo preserved.", failures);
+            expect(definition->material.patternScale == 15.0f, testName, "Expected pattern scale preserved.", failures);
+        }
+    }
+
+    std::filesystem::remove(path);
+}
+
 void testJsonGraphMigratesInlineMaterial(std::vector<TestFailure>& failures)
 {
     const std::string testName = "json graph migrates inline material";
@@ -551,6 +586,7 @@ int main()
     std::vector<TestFailure> failures;
 
     testJsonGraphRoundTrip(failures);
+    testJsonGraphValueNoiseMaterialRoundTrip(failures);
     testJsonGraphMigratesInlineMaterial(failures);
     testJsonGraphMigratesSourceMaterialNode(failures);
     testJsonGraphLoadRepairsLinkedOverrideMaterialId(failures);

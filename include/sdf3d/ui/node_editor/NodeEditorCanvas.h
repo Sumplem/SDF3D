@@ -68,9 +68,12 @@ struct NodeEditorDragState {
     std::string detachedInputSocket;
     SdfGraphNodeId inputDragCandidateNode = 0;
     std::string inputDragCandidateSocket;
+    bool inputDragCandidateEmptyMultiSlot = false;
+    float inputDragCandidateMouseY = 0.0f;
     bool draggingInputLink = false;
     SdfGraphNodeId dragInputNode = 0;
     std::string dragInputSocket;
+    float dragInputAnchorOffsetY = 0.0f;
 };
 
 struct NodeEditorPopupState {
@@ -168,9 +171,12 @@ bool drawInputPins(
     std::string& dragOutputSocket,
     SdfGraphNodeId& inputDragCandidateNode,
     std::string& inputDragCandidateSocket,
+    bool& inputDragCandidateEmptyMultiSlot,
+    float& inputDragCandidateMouseY,
     bool& draggingInputLink,
     SdfGraphNodeId& dragInputNode,
     std::string& dragInputSocket,
+    float& dragInputAnchorOffsetY,
     bool& dragOutputFromInputDetach,
     SdfGraphNodeId& detachedInputNode,
     std::string& detachedInputSocket);
@@ -178,7 +184,15 @@ void drawOutputPins(SdfGraph& graph, const GraphNodeLayout& layout, const Canvas
 bool drawNodeActions(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNodeId& pendingDelete);
 EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, GraphGroupRegistry& groups, const GraphNodeLayout& layout, const CanvasFrame& frame);
 bool updateActiveLinkDrag(SdfGraph& graph, const CanvasFrame& frame, const std::vector<GraphSocketAnchor>& anchors, bool& draggingLink, SdfGraphNodeId& dragOutputNode, std::string& dragOutputSocket, bool& releasedOnEmpty);
-bool updateActiveInputLinkDrag(SdfGraph& graph, const CanvasFrame& frame, const std::vector<GraphSocketAnchor>& anchors, bool& draggingInputLink, SdfGraphNodeId& dragInputNode, std::string& dragInputSocket, bool& releasedOnEmpty);
+bool updateActiveInputLinkDrag(
+    SdfGraph& graph,
+    const CanvasFrame& frame,
+    const std::vector<GraphSocketAnchor>& anchors,
+    bool& draggingInputLink,
+    SdfGraphNodeId& dragInputNode,
+    std::string& dragInputSocket,
+    float& dragInputAnchorOffsetY,
+    bool& releasedOnEmpty);
 EditorDirtyState updateNodeEditorLinkDrags(
     SdfGraph& graph,
     const CanvasFrame& frame,

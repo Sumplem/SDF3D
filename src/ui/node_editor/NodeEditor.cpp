@@ -172,6 +172,7 @@ EditorDirtyState NodeEditor::draw(SceneGraph& sceneGraph, GraphGroupRegistry& gr
         pendingDelete);
     dirty.scene = dirty.scene || nodeDraw.dirty.scene;
     dirty.material = dirty.material || nodeDraw.dirty.material;
+    dirty.params = dirty.params || nodeDraw.dirty.params;
     if (nodeDraw.requestedGroupEnterNode != 0) {
         dirty.scene = enterGroupNode(graph, groups, nodeDraw.requestedGroupEnterNode) || dirty.scene;
     }

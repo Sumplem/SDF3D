@@ -289,7 +289,15 @@ EditorDirtyState updateNodeEditorLinkDrags(
         }
     }
 
-    if (updateActiveInputLinkDrag(graph, frame, anchors, drag.draggingInputLink, drag.dragInputNode, drag.dragInputSocket, result.releasedInputLinkOnEmpty)) {
+    if (updateActiveInputLinkDrag(
+            graph,
+            frame,
+            anchors,
+            drag.draggingInputLink,
+            drag.dragInputNode,
+            drag.dragInputSocket,
+            drag.dragInputAnchorOffsetY,
+            result.releasedInputLinkOnEmpty)) {
         dirty.scene = true;
     }
 

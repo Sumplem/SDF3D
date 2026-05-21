@@ -63,6 +63,28 @@ struct SdfMaterialSample {
     float emission;
 };
 
+float sdf3d_hash13(vec3 p)
+{
+    p = fract(p * 0.1031);
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+float sdf3d_valueNoise3d(vec3 p)
+{
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+
+    float x00 = mix(sdf3d_hash13(i + vec3(0.0, 0.0, 0.0)), sdf3d_hash13(i + vec3(1.0, 0.0, 0.0)), f.x);
+    float x10 = mix(sdf3d_hash13(i + vec3(0.0, 1.0, 0.0)), sdf3d_hash13(i + vec3(1.0, 1.0, 0.0)), f.x);
+    float x01 = mix(sdf3d_hash13(i + vec3(0.0, 0.0, 1.0)), sdf3d_hash13(i + vec3(1.0, 0.0, 1.0)), f.x);
+    float x11 = mix(sdf3d_hash13(i + vec3(0.0, 1.0, 1.0)), sdf3d_hash13(i + vec3(1.0, 1.0, 1.0)), f.x);
+    float y0 = mix(x00, x10, f.y);
+    float y1 = mix(x01, x11, f.y);
+    return mix(y0, y1, f.z);
+}
+
 SdfMaterialSample sampleMaterial(int materialId, vec3 p)
 {
     SdfMaterialSample material;
@@ -76,11 +98,16 @@ SdfMaterialSample sampleMaterial(int materialId, vec3 p)
 
     GpuMaterial gpuMaterial = uMaterials[materialId];
     material.albedo = gpuMaterial.albedoRoughness.rgb;
-    if (int(gpuMaterial.metallicEmissionType.z + 0.5) == 1) {
+    int materialType = int(gpuMaterial.metallicEmissionType.z + 0.5);
+    if (materialType == 1) {
         float scale = max(gpuMaterial.secondaryAlbedoScale.w, 0.0001);
         vec3 cell = floor(p * scale);
         float checker = mod(cell.x + cell.y + cell.z, 2.0);
         material.albedo = mix(gpuMaterial.albedoRoughness.rgb, gpuMaterial.secondaryAlbedoScale.rgb, checker);
+    } else if (materialType == 2) {
+        float scale = max(gpuMaterial.secondaryAlbedoScale.w, 0.0001);
+        float noise = sdf3d_valueNoise3d(p * scale);
+        material.albedo = mix(gpuMaterial.albedoRoughness.rgb, gpuMaterial.secondaryAlbedoScale.rgb, noise);
     }
     material.roughness = clamp(gpuMaterial.albedoRoughness.a, 0.02, 1.0);
     material.metallic = clamp(gpuMaterial.metallicEmissionType.x, 0.0, 1.0);
@@ -161,6 +188,11 @@ float sceneNodeSDF(int nodeId, vec3 p)
 int scenePickId(vec3 p)
 {
     return -1;
+}
+
+bool sceneNodeContains(int nodeId, int visibleNodeId)
+{
+    return nodeId == visibleNodeId;
 }
 // SDF3D_SCENE_END
 
@@ -453,14 +485,18 @@ vec3 pbrDirectLighting(vec3 normal, vec3 viewDirection, vec3 lightDirection, vec
     return (diffuse + specular) * lightColor * nDotL;
 }
 
-vec3 applyNodeTint(vec3 color, int nodeId, vec3 tint, vec3 hitPosition, vec3 normal, vec3 viewDirection, float strength)
+vec3 applyNodeTint(vec3 color, int nodeId, int visibleNodeId, vec3 tint, vec3 hitPosition, vec3 normal, vec3 viewDirection, float strength)
 {
-    if (nodeId <= 0) {
+    if (nodeId <= 0 || !sceneNodeContains(nodeId, visibleNodeId)) {
         return color;
     }
 
-    float distanceToNode = abs(sceneNodeSDF(nodeId, hitPosition));
-    float mask = 1.0 - smoothstep(0.0, 0.06, distanceToNode);
+    float distanceToNode = abs(sceneNodeSDF(visibleNodeId, hitPosition));
+    // AGENT: Scaled round primitives can report a non-zero helper distance at
+    // the final scene hit because non-uniform scale is a conservative distance
+    // estimator, not an exact SDF. Use a wider screen-stable band for tint.
+    float maskWidth = max(0.12, fwidth(distanceToNode) * 2.0);
+    float mask = 1.0 - smoothstep(0.0, maskWidth, distanceToNode);
     float rim = pow(1.0 - max(dot(normal, viewDirection), 0.0), 2.0);
     return mix(color, tint, mask * strength * (0.45 + 0.55 * rim));
 }
@@ -551,9 +587,10 @@ void main()
     vec3 ambient = baseColor * 0.18 * occlusion * (1.0 - metallic * 0.35);
     vec3 direct = pbrDirectLighting(normal, viewDirection, lightDirection, baseColor, roughness, metallic) * shadow;
     vec3 color = ambient + direct + baseColor * material.emission;
-    color = applyNodeTint(color, uHighlightNodeId, vec3(1.0, 0.82, 0.12), sceneHitPosition, normal, viewDirection, 1.0);
+    int visibleNodeId = nodeIdBuffer;
+    color = applyNodeTint(color, uHighlightNodeId, visibleNodeId, vec3(1.0, 0.82, 0.12), sceneHitPosition, normal, viewDirection, 1.0);
     if (uHoverNodeId != uHighlightNodeId) {
-        color = applyNodeTint(color, uHoverNodeId, vec3(0.35, 0.85, 1.0), sceneHitPosition, normal, viewDirection, 0.75);
+        color = applyNodeTint(color, uHoverNodeId, visibleNodeId, vec3(0.35, 0.85, 1.0), sceneHitPosition, normal, viewDirection, 0.75);
     }
 
     outColor = vec4(color, 1.0);

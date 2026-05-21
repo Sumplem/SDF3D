@@ -123,6 +123,11 @@ bool UI::consumeMaterialDirty()
     return m_selectionSystem.consumeMaterialDirty();
 }
 
+bool UI::consumeParamDirty()
+{
+    return m_selectionSystem.consumeParamDirty();
+}
+
 void UI::drawScenePanel(SceneGraph& sceneGraph, GraphGroupRegistry& groups)
 {
     ImGui::Begin("Scene");
@@ -140,6 +145,9 @@ void UI::drawScenePanel(SceneGraph& sceneGraph, GraphGroupRegistry& groups)
         }
         if (nodeEditorDirty.material) {
             markMaterialDirty();
+        }
+        if (nodeEditorDirty.params) {
+            markParamDirty();
         }
 
         // AGENT: Runtime branch keeps old text-list graph UI compiled as
@@ -207,6 +215,11 @@ void UI::markSceneDirty()
 void UI::markMaterialDirty()
 {
     m_selectionSystem.markMaterialDirty();
+}
+
+void UI::markParamDirty()
+{
+    m_selectionSystem.markParamDirty();
 }
 
 } // namespace sdf3d

@@ -123,36 +123,15 @@ std::string emitDomainPickIdFor(
 
     switch (node->type) {
     case SdfNodeType::Translate: {
-        const uint64_t nodeId = helperNodeIdFor(node, result, sdfHelpers);
-        const float x = parameterOr(*node, "x", 0.0f);
-        const float y = parameterOr(*node, "y", 0.0f);
-        const float z = parameterOr(*node, "z", 0.0f);
-        const std::string translate = node->stableId != 0
-            ? glslNodeParam0(nodeId, glslVec4(x, y, z, 0.0f)) + ".xyz"
-            : glslVec3(x, y, z);
-        return emitPickIdFor(node->children.front(), "(" + pointExpr + " - " + translate + ")", result, sdfHelpers);
+        // AGENT: Pick IDs identify the visible transform wrapper so shader
+        // highlight can gate tint by the winning object instead of distance.
+        return nodePickIdLiteral(node, result, sdfHelpers);
     }
     case SdfNodeType::Rotate: {
-        const uint64_t nodeId = helperNodeIdFor(node, result, sdfHelpers);
-        const glm::vec4 fallback = rotationQuaternionForNode(*node);
-        const std::string rotation = node->stableId != 0
-            ? glslNodeParam0(nodeId, glslVec4(fallback.x, fallback.y, fallback.z, fallback.w))
-            : glslVec4(fallback.x, fallback.y, fallback.z, fallback.w);
-        const std::string rotatedPoint = "(transpose(sdf3d_rotationQuat(" + rotation + ")) * " + pointExpr + ")";
-        return emitPickIdFor(node->children.front(), rotatedPoint, result, sdfHelpers);
+        return nodePickIdLiteral(node, result, sdfHelpers);
     }
     case SdfNodeType::Scale: {
-        const uint64_t nodeId = helperNodeIdFor(node, result, sdfHelpers);
-        const float uniformScale = parameterOr(*node, "scale", 1.0f);
-        const float x = std::max(parameterOr(*node, "x", uniformScale), 0.0001f);
-        const float y = std::max(parameterOr(*node, "y", uniformScale), 0.0001f);
-        const float z = std::max(parameterOr(*node, "z", uniformScale), 0.0001f);
-        const float distanceScale = std::min({x, y, z});
-        const std::string scaleParam = node->stableId != 0
-            ? glslNodeParam0(nodeId, glslVec4(x, y, z, distanceScale))
-            : glslVec4(x, y, z, distanceScale);
-        const std::string scale = node->stableId != 0 ? "(" + scaleParam + ".xyz)" : glslVec3(x, y, z);
-        return emitPickIdFor(node->children.front(), "(" + pointExpr + " / " + scale + ")", result, sdfHelpers);
+        return nodePickIdLiteral(node, result, sdfHelpers);
     }
     case SdfNodeType::Repeat:
         return emitPickIdFor(node->children.front(), repeatedPointFor(*node, pointExpr), result, sdfHelpers);

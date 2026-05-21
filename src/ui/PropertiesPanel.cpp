@@ -59,19 +59,27 @@ bool drawEnumParameter(const std::string& key, const SdfParameterDefinition& def
 
 bool drawMaterialTypeCombo(SdfMaterial& material)
 {
-    const char* labels[] = {"Solid", "Checker"};
+    const char* labels[] = {"Solid", "Checker", "Value Noise"};
     int type = static_cast<int>(material.type);
-    if (!ImGui::Combo("Type", &type, labels, 2)) {
+    if (!ImGui::Combo("Type", &type, labels, 3)) {
         return false;
     }
 
-    material.type = type == 1 ? SdfMaterialType::Checker : SdfMaterialType::Solid;
+    material.type = static_cast<SdfMaterialType>(type);
     return true;
 }
 
 const char* materialTypeName(SdfMaterialType type)
 {
-    return type == SdfMaterialType::Checker ? "Checker" : "Solid";
+    switch (type) {
+    case SdfMaterialType::Checker:
+        return "Checker";
+    case SdfMaterialType::ValueNoise:
+        return "Value Noise";
+    case SdfMaterialType::Solid:
+        return "Solid";
+    }
+    return "Solid";
 }
 
 EditorDirtyState drawMaterialPalette(SdfGraph& graph)
@@ -177,12 +185,12 @@ EditorDirtyState PropertiesPanel::draw(SdfGraph& graph, GraphGroupRegistry& grou
 
         ImGui::SeparatorText("Material");
 
-        material->type = selected->type == SdfNodeType::CheckerMaterial ? SdfMaterialType::Checker : SdfMaterialType::Solid;
+        material->type = sdfMaterialTypeForNode(selected->type);
         if (ImGui::ColorEdit3("Albedo", &material->albedo.x)) {
             selected->material = *material;
             dirty.material = true;
         }
-        if (material->type == SdfMaterialType::Checker) {
+        if (isSdfPatternMaterialNode(selected->type)) {
             if (ImGui::ColorEdit3("Secondary", &material->secondaryAlbedo.x)) {
                 selected->material = *material;
                 dirty.material = true;

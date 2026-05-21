@@ -172,7 +172,7 @@ bool loadGraphData(SdfGraph& graph, const json& root, std::string& error)
         for (const json& nodeValue : root.at("nodes")) {
             SdfGraphNode node = json_graph_serializer::nodeFromJson(nodeValue);
             if (isSdfMaterialNode(node.payload.type)) {
-                node.payload.material.type = node.payload.type == SdfNodeType::CheckerMaterial ? SdfMaterialType::Checker : SdfMaterialType::Solid;
+                node.payload.material.type = sdfMaterialTypeForNode(node.payload.type);
                 if (node.payload.materialId == 0 || materials.material(node.payload.materialId) == nullptr) {
                     node.payload.materialId = materials.createMaterial(node.payload.name.empty() ? "Material" : node.payload.name, node.payload.material);
                 } else if (const MaterialDefinition* material = materials.material(node.payload.materialId)) {

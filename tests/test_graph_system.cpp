@@ -175,6 +175,37 @@ void testLoweredRequiredInputRules(std::vector<TestFailure>& failures)
     expect(!sdf3d::GraphSystem::loweredNodeHasRequiredInputs(sdf3d::SdfNodeType::MaterialOverride, {}, 0), testName, "Expected material override without sdf invalid.", failures);
 }
 
+void testChangeMultiInputBooleanTypePreservesLinks(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "change multi-input boolean type preserves links";
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId box = graph.createNode(sdf3d::SdfNodeType::Box, "Box");
+    const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Merge");
+    expect(graph.link(sphere, "sdf", unionNode, "inputs"), testName, "Expected first input link.", failures);
+    expect(graph.link(box, "sdf", unionNode, "inputs"), testName, "Expected second input link.", failures);
+
+    expect(sdf3d::GraphSystem::changeNodeType(graph, unionNode, sdf3d::SdfNodeType::SmoothIntersect), testName, "Expected compatible type change.", failures);
+    const sdf3d::SdfGraphNode* node = graph.node(unionNode);
+    expect(node != nullptr && node->payload.type == sdf3d::SdfNodeType::SmoothIntersect, testName, "Expected SmoothIntersect type.", failures);
+    expect(node != nullptr && node->payload.name == "Merge", testName, "Expected name preserved.", failures);
+    expect(node != nullptr && node->payload.parameters.find("smoothness") != node->payload.parameters.end(), testName, "Expected smoothness param.", failures);
+
+    std::size_t inputLinks = 0;
+    for (const sdf3d::SdfGraphLink& link : graph.links()) {
+        if (link.toNode == unionNode && link.toSocket == "inputs") {
+            ++inputLinks;
+        }
+    }
+    expect(inputLinks == 2, testName, "Expected input links preserved.", failures);
+
+    expect(sdf3d::GraphSystem::changeNodeType(graph, unionNode, sdf3d::SdfNodeType::Intersect), testName, "Expected compatible non-smooth change.", failures);
+    node = graph.node(unionNode);
+    expect(node != nullptr && node->payload.type == sdf3d::SdfNodeType::Intersect, testName, "Expected Intersect type.", failures);
+    expect(node != nullptr && node->payload.parameters.find("smoothness") == node->payload.parameters.end(), testName, "Expected smoothness removed.", failures);
+    expect(!sdf3d::GraphSystem::changeNodeType(graph, unionNode, sdf3d::SdfNodeType::Subtract), testName, "Expected incompatible socket family rejected.", failures);
+}
+
 void testMaterialRegistryRenameAndSafeDelete(std::vector<TestFailure>& failures)
 {
     const std::string testName = "material registry rename and safe delete";
@@ -627,6 +658,7 @@ int main()
     testEffectiveValidityDropsInvalidUpstream(failures);
     testMultiInputSocketKeepsMultipleLinks(failures);
     testLoweredRequiredInputRules(failures);
+    testChangeMultiInputBooleanTypePreservesLinks(failures);
     testMaterialRegistryRenameAndSafeDelete(failures);
     testMaterialSourceDeleteCleansUnreferencedRegistryEntry(failures);
     testMaterialSourceDeleteKeepsRegistryEntryReferencedByOverride(failures);

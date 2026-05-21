@@ -39,11 +39,15 @@ public:
     /// Returns true once when a material edit requires uniform upload.
     bool consumeMaterialDirty();
 
+    /// Returns true once when a transform edit requires node-param upload.
+    bool consumeParamDirty();
+
 private:
     void drawScenePanel(SceneGraph& sceneGraph, GraphGroupRegistry& groups);
     void drawDiagnosticsPanel(const std::vector<DiagnosticEntry>& runtimeErrors);
     void markSceneDirty();
     void markMaterialDirty();
+    void markParamDirty();
 
     EventBus* m_eventBus = nullptr;
     SelectionSystem m_selectionSystem;

@@ -137,6 +137,39 @@ void testScenePickIdReturnsGroupInstanceId(std::vector<TestFailure>& failures)
     expect(contains(compiled.glsl, "return " + std::to_string(group) + ";"), testName, "Expected group instance id returned for picking.", failures);
 }
 
+void testScenePickIdReturnsTransformWrapperId(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "scenePickId returns transform wrapper id";
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId scale = graph.createNode(sdf3d::SdfNodeType::Scale, "Scale");
+    expect(graph.link(sphere, "sdf", scale, "child"), testName, "Expected sphere linked into scale.", failures);
+    expect(graph.link(scale, "sdf", graph.outputNode(), "surface"), testName, "Expected scale output linked.", failures);
+
+    const sdf3d::SdfCompileResult compiled = sdf3d::CompilerSystem{}.compile(graph);
+    expect(compiled.errors.empty(), testName, "Expected graph compile errors to stay empty.", failures);
+    expect(contains(compiled.glsl, "return " + std::to_string(scale) + ";"), testName, "Expected transform wrapper id returned for picking.", failures);
+}
+
+void testSceneNodeContainsNestedTransform(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "sceneNodeContains nested transform";
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId rotate = graph.createNode(sdf3d::SdfNodeType::Rotate, "Rotate");
+    const sdf3d::SdfGraphNodeId scale = graph.createNode(sdf3d::SdfNodeType::Scale, "Scale");
+    expect(graph.link(sphere, "sdf", rotate, "child"), testName, "Expected sphere linked into rotate.", failures);
+    expect(graph.link(rotate, "sdf", scale, "child"), testName, "Expected rotate linked into scale.", failures);
+    expect(graph.link(scale, "sdf", graph.outputNode(), "surface"), testName, "Expected scale output linked.", failures);
+
+    const sdf3d::SdfCompileResult compiled = sdf3d::CompilerSystem{}.compile(graph);
+    expect(compiled.errors.empty(), testName, "Expected graph compile errors to stay empty.", failures);
+    expect(contains(compiled.glsl, "bool sceneNodeContains(int nodeId, int visibleNodeId)"), testName, "Expected containment entry point.", failures);
+    expect(contains(compiled.glsl, "case " + std::to_string(scale) + ": return"), testName, "Expected scale containment case.", failures);
+    expect(contains(compiled.glsl, "nodeId == " + std::to_string(sphere)), testName, "Expected containment cases to include sphere.", failures);
+    expect(contains(compiled.glsl, "nodeId == " + std::to_string(rotate)), testName, "Expected scale containment case to include rotate.", failures);
+}
+
 } // namespace
 
 int main()
@@ -149,6 +182,8 @@ int main()
     testGraphLoweringPreservesStableIdsForHelpers(failures);
     testScenePickIdSelectsNearestUnionBranch(failures);
     testScenePickIdReturnsGroupInstanceId(failures);
+    testScenePickIdReturnsTransformWrapperId(failures);
+    testSceneNodeContainsNestedTransform(failures);
 
     if (!failures.empty()) {
         for (const TestFailure& failure : failures) {

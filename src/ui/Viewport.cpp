@@ -123,6 +123,11 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SdfGraph& graph, const Graph
         : -1;
     gizmo.hoverNodeId = m_hoverNodeId;
 
+    if (gizmoDirty.params) {
+        renderer.setNodeParams(GraphSystem::collectNodeParams(graph, groups));
+        dirty.params = true;
+    }
+
     renderer.setGizmo(gizmo);
     renderer.setQuality(m_quality);
     renderer.setRenderMode(m_renderMode);
@@ -174,10 +179,6 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SdfGraph& graph, const Graph
         dirty.scene = true;
     }
 
-    if (gizmoDirty.params) {
-        renderer.setNodeParams(GraphSystem::collectNodeParams(graph, groups));
-        dirty.params = true;
-    }
     dirty.scene = dirty.scene || gizmoDirty.scene;
     ImGui::End();
     return dirty;

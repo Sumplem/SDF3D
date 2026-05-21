@@ -56,6 +56,22 @@ void testPackedMaterialLayout(std::vector<TestFailure>& failures)
     }
 }
 
+void testPackedValueNoiseMaterialType(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "packed value noise material type";
+    std::vector<sdf3d::SdfCompiledMaterial> materials(1);
+    materials[0].material.type = sdf3d::SdfMaterialType::ValueNoise;
+    materials[0].material.patternScale = 13.0f;
+
+    const std::vector<sdf3d::UniformUploader::GpuMaterial> packed = sdf3d::UniformUploader::packMaterials(materials);
+
+    expect(packed.size() == 1, testName, "Expected one material packed.", failures);
+    if (packed.size() == 1) {
+        expect(packed[0].metallicEmissionType.z == 2.0f, testName, "Expected value-noise material type packed.", failures);
+        expect(packed[0].secondaryAlbedoScale.w == 13.0f, testName, "Expected value-noise scale packed.", failures);
+    }
+}
+
 void testPackedNodeParamLayout(std::vector<TestFailure>& failures)
 {
     const std::string testName = "packed node param layout";
@@ -126,6 +142,7 @@ int main()
 
     testMaterialCountForShader(failures);
     testPackedMaterialLayout(failures);
+    testPackedValueNoiseMaterialType(failures);
     testPackedNodeParamLayout(failures);
     testRenderGizmoDefaults(failures);
     testRenderQualityValues(failures);

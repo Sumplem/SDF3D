@@ -1,7 +1,9 @@
 #include "sdf3d/ui/node_editor/NodeEditorCanvas.h"
 #include "sdf3d/ui/node_editor/NodeEditorLayout.h"
 
+#include "sdf3d/scene/SdfNodeDefinition.h"
 #include "sdf3d/scene/SdfNodeTraits.h"
+#include "sdf3d/systems/GraphSystem.h"
 
 #include <algorithm>
 #include <vector>
@@ -93,6 +95,43 @@ void frameSelectedNodes(
     const ImVec2 canvasSize = {frame.end.x - frame.origin.x, frame.end.y - frame.origin.y};
     canvasPanX = canvasSize.x * 0.5f - center.x * frame.zoom;
     canvasPanY = canvasSize.y * 0.5f - center.y * frame.zoom;
+}
+
+bool isMultiInputBooleanActionType(SdfNodeType type)
+{
+    return type == SdfNodeType::Union
+        || type == SdfNodeType::SmoothUnion
+        || type == SdfNodeType::Intersect
+        || type == SdfNodeType::SmoothIntersect;
+}
+
+bool drawChangeBooleanTypeMenu(SdfGraph& graph, const GraphNodeLayout& layout)
+{
+    if (!isMultiInputBooleanActionType(layout.node->payload.type)) {
+        return false;
+    }
+
+    bool sceneDirty = false;
+    if (ImGui::BeginMenu("Change Type")) {
+        const SdfNodeType types[] = {
+            SdfNodeType::Union,
+            SdfNodeType::SmoothUnion,
+            SdfNodeType::Intersect,
+            SdfNodeType::SmoothIntersect,
+        };
+        for (const SdfNodeType type : types) {
+            const SdfNodeDefinition* definition = sdfNodeDefinition(type);
+            if (definition == nullptr) {
+                continue;
+            }
+            const bool selected = layout.node->payload.type == type;
+            if (ImGui::MenuItem(definition->displayName.c_str(), nullptr, selected, !selected)) {
+                sceneDirty = GraphSystem::changeNodeType(graph, layout.id, type) || sceneDirty;
+            }
+        }
+        ImGui::EndMenu();
+    }
+    return sceneDirty;
 }
 
 } // namespace
@@ -189,7 +228,7 @@ bool drawNodeActions(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNod
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     const ImVec2 nodeEnd = {layout.position.x + layout.size.x, layout.position.y + layout.size.y};
     const bool mouseInsideNode = mouse.x >= layout.position.x && mouse.x <= nodeEnd.x && mouse.y >= layout.position.y && mouse.y <= nodeEnd.y;
-    if (isSdfPrimitiveNode(layout.node->payload.type)
+    if ((isSdfPrimitiveNode(layout.node->payload.type) || isMultiInputBooleanActionType(layout.node->payload.type))
         && mouseInsideNode
         && ImGui::IsWindowHovered()
         && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
@@ -198,9 +237,10 @@ bool drawNodeActions(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNod
     }
 
     if (ImGui::BeginPopup(popupId.c_str())) {
-        if (ImGui::MenuItem("Wrap in Material Override")) {
+        if (isSdfPrimitiveNode(layout.node->payload.type) && ImGui::MenuItem("Wrap in Material Override")) {
             sceneDirty = wrapInMaterialOverride(graph, layout);
         }
+        sceneDirty = drawChangeBooleanTypeMenu(graph, layout) || sceneDirty;
         ImGui::EndPopup();
     }
 

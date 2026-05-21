@@ -34,6 +34,9 @@ public:
     /// Renames one graph node and syncs linked registry-owned labels.
     static bool renameNode(SdfGraph& graph, GraphGroupRegistry& groups, SdfGraphNodeId id, std::string name);
 
+    /// Changes a compatible graph node type while preserving id, links, and editor state.
+    static bool changeNodeType(SdfGraph& graph, SdfGraphNodeId id, SdfNodeType type);
+
     /// Returns node display name, resolving registry-backed labels.
     static std::string displayNameForNode(const SdfGraphNode& node, const GraphGroupRegistry& groups);
 

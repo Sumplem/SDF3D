@@ -7,8 +7,51 @@
 #include "glsl_emitter/GlslEmitterMath.h"
 
 #include <sstream>
+#include <vector>
 
 namespace sdf3d {
+namespace {
+
+void collectDescendantHelperIds(const SdfNodePtr& node, const GlslSdfHelperBlock& sdfHelpers, std::vector<uint64_t>& ids)
+{
+    if (!node) {
+        return;
+    }
+    const auto it = sdfHelpers.nodeIdByNode.find(node.get());
+    if (it != sdfHelpers.nodeIdByNode.end()) {
+        ids.push_back(it->second);
+    }
+    for (const SdfNodePtr& child : node->children) {
+        collectDescendantHelperIds(child, sdfHelpers, ids);
+    }
+}
+
+void emitSceneNodeContainsCase(std::ostringstream& glsl, const SdfNodePtr& node, const GlslSdfHelperBlock& sdfHelpers)
+{
+    if (!node) {
+        return;
+    }
+
+    const auto nodeIt = sdfHelpers.nodeIdByNode.find(node.get());
+    if (nodeIt != sdfHelpers.nodeIdByNode.end()) {
+        std::vector<uint64_t> ids;
+        collectDescendantHelperIds(node, sdfHelpers, ids);
+        glsl << "    case " << nodeIt->second << ": return ";
+        for (std::size_t i = 0; i < ids.size(); ++i) {
+            if (i != 0) {
+                glsl << " || ";
+            }
+            glsl << "nodeId == " << ids[i];
+        }
+        glsl << ";\n";
+    }
+
+    for (const SdfNodePtr& child : node->children) {
+        emitSceneNodeContainsCase(glsl, child, sdfHelpers);
+    }
+}
+
+} // namespace
 
 SdfCompileResult CompilerSystem::compile(const SdfGraph& graph) const
 {
@@ -52,6 +95,10 @@ SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root) const
             "int scenePickId(vec3 p)\n"
             "{\n"
             "    return -1;\n"
+            "}\n\n"
+            "bool sceneNodeContains(int nodeId, int visibleNodeId)\n"
+            "{\n"
+            "    return nodeId == visibleNodeId;\n"
             "}\n";
         return result;
     }
@@ -132,6 +179,14 @@ SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root) const
     glsl << "int scenePickId(vec3 p)\n";
     glsl << "{\n";
     glsl << "    return " << pickIdExpression << ";\n";
+    glsl << "}\n\n";
+
+    glsl << "bool sceneNodeContains(int nodeId, int visibleNodeId)\n";
+    glsl << "{\n";
+    glsl << "    switch (visibleNodeId) {\n";
+    emitSceneNodeContainsCase(glsl, root, sdfHelpers);
+    glsl << "    default: return nodeId == visibleNodeId;\n";
+    glsl << "    }\n";
     glsl << "}\n\n";
 
     glsl << "SdfMaterialSample sceneMaterial(vec3 p)\n";

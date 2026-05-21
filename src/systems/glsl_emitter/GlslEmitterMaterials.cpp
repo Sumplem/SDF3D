@@ -98,6 +98,7 @@ std::string emitMaterialFor(
     switch (node->type) {
     case SdfNodeType::SolidMaterial:
     case SdfNodeType::CheckerMaterial:
+    case SdfNodeType::ValueNoiseMaterial:
         return emitMaterialNodeSample(node, pointExpr, result);
 
     case SdfNodeType::Sphere:

@@ -136,6 +136,35 @@ void testGraphCompilerMaterialOverride(std::vector<TestFailure>& failures)
     }
 }
 
+void testGraphCompilerValueNoiseMaterial(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph compiler value noise material";
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::ValueNoiseMaterial, "Value Noise");
+    const sdf3d::SdfGraphNodeId materialOverride = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Override");
+    if (sdf3d::SdfGraphNode* node = graph.node(material)) {
+        if (sdf3d::MaterialDefinition* definition = graph.materials().material(node->payload.materialId)) {
+            definition->material.secondaryAlbedo = {0.1f, 0.2f, 0.3f};
+            definition->material.patternScale = 11.0f;
+        }
+    }
+    graph.link(sphere, "sdf", materialOverride, "sdf");
+    graph.link(material, "material", materialOverride, "material");
+    graph.link(materialOverride, "sdf", graph.outputNode(), "surface");
+
+    const sdf3d::SdfCompiler compiler;
+    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+
+    expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
+    expect(result.materials.size() == 2, testName, "Expected default plus value-noise material.", failures);
+    if (result.materials.size() == 2) {
+        expect(result.materials[1].material.type == sdf3d::SdfMaterialType::ValueNoise, testName, "Expected value-noise material type.", failures);
+        expect(result.materials[1].material.secondaryAlbedo.z == 0.3f, testName, "Expected secondary color preserved.", failures);
+        expect(result.materials[1].material.patternScale == 11.0f, testName, "Expected pattern scale preserved.", failures);
+    }
+}
+
 void testGraphNodeDefinitionMaterialOverride(std::vector<TestFailure>& failures)
 {
     const std::string testName = "graph material override definition";
@@ -564,6 +593,7 @@ int main()
     testGraphCompilerEmpty(failures);
     testGraphCompilerPrimitive(failures);
     testGraphCompilerMaterialOverride(failures);
+    testGraphCompilerValueNoiseMaterial(failures);
     testGraphNodeDefinitionMaterialOverride(failures);
     testGraphCompilerLinkedTransform(failures);
     testGraphCompilerNonUniformScale(failures);

@@ -79,13 +79,13 @@ bool drawEnumParameter(const std::string& id, const SdfParameterDefinition& defi
 
 bool drawMaterialTypeCombo(const std::string& id, SdfMaterial& material)
 {
-    const char* labels[] = {"Solid", "Checker"};
+    const char* labels[] = {"Solid", "Checker", "Value Noise"};
     int type = static_cast<int>(material.type);
-    if (!ImGui::Combo(id.c_str(), &type, labels, 2)) {
+    if (!ImGui::Combo(id.c_str(), &type, labels, 3)) {
         return false;
     }
 
-    material.type = type == 1 ? SdfMaterialType::Checker : SdfMaterialType::Solid;
+    material.type = static_cast<SdfMaterialType>(type);
     return true;
 }
 
@@ -124,7 +124,15 @@ std::vector<std::string> orderedParameterKeys(const SdfNode& node, std::unordere
 
 void drawLabel(const CanvasFrame& frame, ImVec2 position, const char* label)
 {
-    frame.drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * frame.zoom, position, IM_COL32(190, 196, 208, 255), label);
+    frame.drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize(), position, IM_COL32(190, 196, 208, 255), label);
+}
+
+void setInlineFieldCursor(ImVec2 position, float width, float height)
+{
+    ImGui::SetCursorScreenPos(position);
+    ImGui::SetNextItemWidth(width);
+    ImGui::SetNextItemAllowOverlap();
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {ImGui::GetStyle().FramePadding.x, std::max(0.0f, (height - ImGui::GetFontSize()) * 0.5f)});
 }
 
 } // namespace
@@ -142,18 +150,19 @@ EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, GraphGroupRegistry& g
     const float fieldX = layout.contentPosition.x + labelWidth;
     const float fieldWidth = layout.size.x - labelWidth - scaleValue(frame, 20.0f);
     const float rowHeight = scaleValue(frame, 24.0f);
+    const float fieldHeight = scaleValue(frame, FIELD_HEIGHT);
     const ScopedWidgetZoom widgetZoom(frame.zoom);
 
     char nameBuffer[96] = {};
     const size_t copyLength = std::min(node.name.size(), sizeof(nameBuffer) - 1);
     std::copy_n(node.name.data(), copyLength, nameBuffer);
     drawLabel(frame, {layout.contentPosition.x, y + scaleValue(frame, 3.0f)}, "Name");
-    ImGui::SetCursorScreenPos({fieldX, y});
-    ImGui::SetNextItemWidth(fieldWidth);
+    setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
     if (ImGui::InputText(("##node-name-" + std::to_string(layout.id)).c_str(), nameBuffer, sizeof(nameBuffer))) {
         (void)GraphSystem::renameNode(graph, groups, layout.id, nameBuffer);
         dirty.scene = true;
     }
+    ImGui::PopStyleVar();
     y += rowHeight;
 
     if (isSdfMaterialNode(node.type)) {
@@ -164,62 +173,62 @@ EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, GraphGroupRegistry& g
             }
         }
 
-        material->type = node.type == SdfNodeType::CheckerMaterial ? SdfMaterialType::Checker : SdfMaterialType::Solid;
+        material->type = sdfMaterialTypeForNode(node.type);
 
         drawLabel(frame, {layout.contentPosition.x, y + scaleValue(frame, 3.0f)}, "Albedo");
-        ImGui::SetCursorScreenPos({fieldX, y});
-        ImGui::SetNextItemWidth(fieldWidth);
+        setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
         if (ImGui::ColorEdit3(("##node-albedo-" + std::to_string(layout.id)).c_str(), &material->albedo.x, ImGuiColorEditFlags_NoInputs)) {
             node.material = *material;
             dirty.material = true;
         }
+        ImGui::PopStyleVar();
         y += rowHeight;
 
-        if (material->type == SdfMaterialType::Checker) {
+        if (isSdfPatternMaterialNode(node.type)) {
             drawLabel(frame, {layout.contentPosition.x, y + scaleValue(frame, 3.0f)}, "Secondary");
-            ImGui::SetCursorScreenPos({fieldX, y});
-            ImGui::SetNextItemWidth(fieldWidth);
+            setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
             if (ImGui::ColorEdit3(("##node-secondary-" + std::to_string(layout.id)).c_str(), &material->secondaryAlbedo.x, ImGuiColorEditFlags_NoInputs)) {
                 node.material = *material;
                 dirty.material = true;
             }
+            ImGui::PopStyleVar();
             y += rowHeight;
 
             drawLabel(frame, {layout.contentPosition.x, y + scaleValue(frame, 3.0f)}, "Pattern");
-            ImGui::SetCursorScreenPos({fieldX, y});
-            ImGui::SetNextItemWidth(fieldWidth);
+            setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
             if (ImGui::DragFloat(("##node-pattern-scale-" + std::to_string(layout.id)).c_str(), &material->patternScale, 0.1f, 0.001f, 100.0f, "%.2f")) {
                 node.material = *material;
                 dirty.material = true;
             }
+            ImGui::PopStyleVar();
             y += rowHeight;
         }
 
         drawLabel(frame, {layout.contentPosition.x, y + scaleValue(frame, 3.0f)}, "Roughness");
-        ImGui::SetCursorScreenPos({fieldX, y});
-        ImGui::SetNextItemWidth(fieldWidth);
+        setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
         if (ImGui::DragFloat(("##node-roughness-" + std::to_string(layout.id)).c_str(), &material->roughness, 0.01f, 0.0f, 1.0f, "%.2f")) {
             node.material = *material;
             dirty.material = true;
         }
+        ImGui::PopStyleVar();
         y += rowHeight;
 
         drawLabel(frame, {layout.contentPosition.x, y + scaleValue(frame, 3.0f)}, "Metallic");
-        ImGui::SetCursorScreenPos({fieldX, y});
-        ImGui::SetNextItemWidth(fieldWidth);
+        setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
         if (ImGui::DragFloat(("##node-metallic-" + std::to_string(layout.id)).c_str(), &material->metallic, 0.01f, 0.0f, 1.0f, "%.2f")) {
             node.material = *material;
             dirty.material = true;
         }
+        ImGui::PopStyleVar();
         y += rowHeight;
 
         drawLabel(frame, {layout.contentPosition.x, y + scaleValue(frame, 3.0f)}, "Emission");
-        ImGui::SetCursorScreenPos({fieldX, y});
-        ImGui::SetNextItemWidth(fieldWidth);
+        setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
         if (ImGui::DragFloat(("##node-emission-" + std::to_string(layout.id)).c_str(), &material->emission, 0.01f, 0.0f, 100.0f, "%.2f")) {
             node.material = *material;
             dirty.material = true;
         }
+        ImGui::PopStyleVar();
         y += rowHeight;
     }
 
@@ -232,8 +241,7 @@ EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, GraphGroupRegistry& g
         const float maxValue = definition != parameterDefinitions.end() ? definition->second.maxValue : 0.0f;
 
         drawLabel(frame, {layout.contentPosition.x, y + scaleValue(frame, 3.0f)}, key.c_str());
-        ImGui::SetCursorScreenPos({fieldX, y});
-        ImGui::SetNextItemWidth(fieldWidth);
+        setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
         const std::string id = "##node-param-" + std::to_string(layout.id) + "-" + key;
         bool changed = false;
         if (definition != parameterDefinitions.end() && definition->second.type == SdfParameterType::Bool) {
@@ -251,8 +259,13 @@ EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, GraphGroupRegistry& g
                     node.parameters["zDegrees"],
                 }));
             }
-            dirty.scene = true;
+            if (isSdfTransformNode(node.type)) {
+                dirty.params = true;
+            } else {
+                dirty.scene = true;
+            }
         }
+        ImGui::PopStyleVar();
         y += rowHeight;
     }
     return dirty;

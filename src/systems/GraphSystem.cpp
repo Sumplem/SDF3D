@@ -98,6 +98,14 @@ bool nodeHasSdfOutput(const SdfGraphNode& node)
     return findSocket(node.outputs, "sdf", SdfSocketDirection::Output) != nullptr;
 }
 
+bool isMultiInputBooleanFamily(SdfNodeType type)
+{
+    return type == SdfNodeType::Union
+        || type == SdfNodeType::SmoothUnion
+        || type == SdfNodeType::Intersect
+        || type == SdfNodeType::SmoothIntersect;
+}
+
 void appendTransformNodeParams(
     const SdfGraph& graph,
     std::vector<SdfCompiledNodeParam>& params,
@@ -193,11 +201,11 @@ SdfGraphNodeId GraphSystem::createNode(SdfGraph& graph, SdfNodeType type, std::s
         payload->name = std::move(name);
     }
     payload->stableId = id;
-    if (type == SdfNodeType::SolidMaterial || type == SdfNodeType::CheckerMaterial) {
-        payload->material.type = type == SdfNodeType::CheckerMaterial ? SdfMaterialType::Checker : SdfMaterialType::Solid;
+    if (isSdfMaterialNode(type)) {
+        payload->material.type = sdfMaterialTypeForNode(type);
     }
     SdfGraphNode graphNode{id, *payload, 0.0f, 0.0f};
-    if (type == SdfNodeType::SolidMaterial || type == SdfNodeType::CheckerMaterial) {
+    if (isSdfMaterialNode(type)) {
         graphNode.payload.materialId = graph.m_materials.createMaterial(graphNode.payload.name.empty() ? "Material" : graphNode.payload.name, graphNode.payload.material);
     }
     graphNode.inputs = defaultInputsFor(type);
@@ -305,6 +313,36 @@ bool GraphSystem::renameNode(SdfGraph& graph, GraphGroupRegistry& groups, SdfGra
             definition->name = node->payload.name.empty() ? "Group" : node->payload.name;
         }
     }
+    return true;
+}
+
+bool GraphSystem::changeNodeType(SdfGraph& graph, SdfGraphNodeId id, SdfNodeType type)
+{
+    auto it = graph.m_nodes.find(id);
+    if (it == graph.m_nodes.end() || it->second.payload.type == type) {
+        return false;
+    }
+    if (!isMultiInputBooleanFamily(it->second.payload.type) || !isMultiInputBooleanFamily(type)) {
+        return false;
+    }
+
+    SdfNodePtr replacement = makeSdfNodeFromDefinition(type);
+    if (!replacement) {
+        return false;
+    }
+
+    const uint64_t stableId = it->second.payload.stableId;
+    const std::string name = it->second.payload.name;
+    const MaterialId materialId = it->second.payload.materialId;
+    const SdfMaterial material = it->second.payload.material;
+
+    it->second.payload = *replacement;
+    it->second.payload.stableId = stableId;
+    it->second.payload.name = name.empty() ? replacement->name : name;
+    it->second.payload.materialId = materialId;
+    it->second.payload.material = material;
+    it->second.inputs = defaultInputsFor(type);
+    it->second.outputs = defaultOutputsFor(type);
     return true;
 }
 
@@ -459,8 +497,7 @@ bool GraphSystem::deleteNode(SdfGraph& graph, SdfGraphNodeId id)
     if (nodeIt == graph.m_nodes.end()) {
         return false;
     }
-    if (nodeIt->second.payload.type == SdfNodeType::SolidMaterial
-        || nodeIt->second.payload.type == SdfNodeType::CheckerMaterial
+    if (isSdfMaterialNode(nodeIt->second.payload.type)
         || nodeIt->second.payload.type == SdfNodeType::MaterialOverride) {
         materialIdToCleanup = nodeIt->second.payload.materialId;
     }

@@ -41,6 +41,7 @@ private:
     void endFrame();
     bool recompileScene(bool keepPreviousProgramOnFailure);
     bool refreshMaterials();
+    void refreshNodeParams();
 
     GLFWwindow* m_window = nullptr;
     Renderer m_renderer;

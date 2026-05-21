@@ -7,6 +7,7 @@ namespace sdf3d {
 enum class SdfMaterialType {
     Solid = 0,
     Checker = 1,
+    ValueNoise = 2,
 };
 
 /// Per-node material parameters used by the raymarch shader.

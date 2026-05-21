@@ -10,28 +10,27 @@
 - `SdfNodeDefinition` metadata owns parameter type: Float, Bool, Enum; UI must not infer bool/enum from numeric ranges
 - MaterialRegistry owns reusable graph materials; SolidMaterial/CheckerMaterial nodes hold stable `materialId`
 - MaterialOverride consumes `sdf` + `material`; inline material fallback remains legacy-only
+- ValueNoiseMaterial exists as first procedural noise material beyond Checker; future noise nodes must use specific names, not generic NoiseMaterial
 - Node groups exist: App-owned `GraphGroupRegistry`, `SdfNodeType::Group`, root JSON `definitions`, Ctrl+G grouping shortcut
-- Node editor supports group navigation: Tab or double-click enters selected/group node, Shift+Tab exits, breadcrumb switches active graph, clears transient editor state, and marks scene dirty
-- Entered group subgraph is active editor/viewport/compiler/UI Add/SceneOutliner/Properties target; viewport picking/gizmos/Add use active graph
-- Group node rename syncs its registry definition name; Group display names resolve through the definition for titles, outliner, properties, breadcrumbs, and scope labels
-- Group compile resolves definitions through `CompilerSystem`/`MaterialSystem`; reachable group transform params are uploaded for runtime edits
-- Group-internal lowered nodes use scoped runtime IDs so helper names and `sceneNodeSDF` switch labels cannot collide with root graph IDs
+- Group navigation: Tab/double-click enters selected Group, Shift+Tab exits, breadcrumbs switch active graph and clear transient editor state
+- Entered group subgraph is active editor/viewport/compiler/UI Add/SceneOutliner/Properties target
+- Group display names resolve through registry definitions; group-internal lowered node IDs are scoped by definition ID
 - Viewport picking uses GPU node-id buffer (`GL_R32I`) and single-pixel reads; CPU graph raymarch picking is removed
-- `scenePickId(vec3 p)` is compiler-emitted with scene GLSL; groups pick as root Group instance IDs
+- `scenePickId(vec3 p)` is compiler-emitted with scene GLSL; groups pick as root Group instance IDs; transform wrappers pick as visible wrapper IDs
 - Viewport hover highlight reads the GPU node-id buffer on mouse move, then maps picked node through the same highlight target logic as selection
-- Group definitions have one sdf output only; exposed params, library sharing, and Make Unique remain deferred
-- Save JSON writes only group definitions reachable from root group instances; nested reachable definitions are regression-covered
-- Load Graph commits root graph and group registry atomically, then resets NodeEditor active graph navigation to root before recompiling loaded scene
-- Union/SmoothUnion/Intersect/SmoothIntersect use one vertical pill-shaped `inputs` multi-input SDF socket; pill grows with incoming wire count, each wire gets a separate anchor, and dragging from pill detaches nearest wire
+- Shader highlight is gated by visible GPU pick ID plus `sceneNodeContains`; mask samples the visible node SDF to avoid multi-object bleed
+- Inline Translate/Rotate/Scale node-editor edits upload node params through SSBO binding 1 without recompiling scene GLSL
+- Union/SmoothUnion/Intersect/SmoothIntersect use one vertical pill-shaped `inputs` multi-input SDF socket with one empty spare slot, hover feedback, separate anchors, and exact-slot drag starts
+- Viewport Add appends new primitives to an output-root Union/SmoothUnion multi-input; otherwise it creates a Union as needed
+- Right-click Union/SmoothUnion/Intersect/SmoothIntersect can change type in place within the same multi-input boolean family
 - Path-trace shader has stochastic GI bounces, cosine hemisphere sampling, direct light shadow checks, emissive contribution, and progressive accumulation
 - Shared graph validity lives in `GraphSystemValidity.cpp`; compiler and UI consume GraphSystem queries; no remaining local UI bypass rules found
-- README reflects current editor/compiler/renderer/test state
 - Viewport camera supports Shift+right-click drag pan; right-click drag orbit and right-click release Add popup remain intact
-- Build/tests: full Debug build pass; all test executables pass; GUI smoke not rerun for multi-input slice
+- Build/tests: full Debug build pass; all test executables pass; GUI smoke pass after ValueNoiseMaterial slice
 
 ## Active
 
-Multi-input socket complete: boolean merge nodes now use one vertical pill-shaped `inputs` multi-input socket, UI can add/unplug multiple wires without replacing existing ones, the pill grows per wire with separate anchors, and old `left`/`right` JSON links migrate on load. Review gate open.
+ValueNoiseMaterial slice complete: new material node type, registry/serializer/compiler/UI/shader support, shader value-noise sampling in direct and path-trace shaders, and regression tests. Review gate open.
 
 ## Decisions
 
@@ -90,6 +89,13 @@ Multi-input socket complete: boolean merge nodes now use one vertical pill-shape
 - 2026-05 - Hover node-id readback maps through `GraphSystem::highlightNodeForNode` because raw pick ids may be leaf nodes behind visible transform wrappers
 - 2026-05 - Viewport pan is UI-owned camera behavior: Shift+right-click drag moves the orbit target in camera plane without changing orbit angles or distance
 - 2026-05 - Boolean merge nodes use one `inputs` multi-input SDF socket because graph cardinality belongs to socket metadata, not duplicated `left`/`right` UI sockets
+- 2026-05 - Multi-input boolean sockets keep one visible empty spare slot; drag intent is locked at mouse-down so empty-slot drags cannot detach existing wires
+- 2026-05 - Shader highlight is gated by visible GPU pick id plus `sceneNodeContains` so widened scaled-SDF highlight bands do not bleed across multiple objects
+- 2026-05 - Inline Translate/Rotate/Scale node-editor edits use node-param SSBO refresh instead of scene shader recompile
+- 2026-05 - Viewport Add appends new primitives to an output-root Union or SmoothUnion multi-input instead of creating nested Unions
+- 2026-05 - Same-family multi-input boolean nodes can change type in place because Union/SmoothUnion/Intersect/SmoothIntersect share the `inputs` socket contract
+- 2026-05 - Procedural noise material nodes use specific algorithm names; first landed node is ValueNoiseMaterial, not generic NoiseMaterial
+- 2026-05 - ValueNoiseMaterial reuses material secondary color and patternScale fields so material SSBO layout stays unchanged
 
 ## Constraints
 
@@ -105,6 +111,9 @@ Multi-input socket complete: boolean merge nodes now use one vertical pill-shape
 - Never add new GlslEmitter features until consolidation to 8-file structure is complete
 - Do not split tests/test_sdf_graph.cpp because user declined
 - Do not add group exposed params, Make Unique, or library sharing until explicitly requested because node group M6+ deferred scope
+- Do not remap Subtract/SmoothSubtract in boolean type-change UI without explicit socket conversion rules because their base/cutter sockets differ from multi-input `inputs`
+- Do not tint highlights by distance alone because multi-object scenes can bleed highlight onto nearby unselected objects
+- Do not add a generic NoiseMaterial node because multiple noise algorithms will coexist and names must stay specific
 
 ## Environment
 
@@ -118,4 +127,4 @@ Multi-input socket complete: boolean merge nodes now use one vertical pill-shape
 
 ## Next
 
-After multi-input socket review, choose next backlog/design item.
+Review ValueNoiseMaterial slice, then choose the next specific procedural material node or return to Full GI design.

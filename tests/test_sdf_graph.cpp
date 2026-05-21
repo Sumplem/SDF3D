@@ -500,6 +500,46 @@ void testGraphSystemPlacePrimitiveUnionsExistingOutput(std::vector<TestFailure>&
     expect(graph.selectedNode() == translate, testName, "Expected new Translate selected.", failures);
 }
 
+void testGraphSystemPlacePrimitiveAppendsToOutputUnion(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph system place primitive appends to output union";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId first = graph.createNode(sdf3d::SdfNodeType::Sphere, "First");
+    const sdf3d::SdfGraphNodeId second = graph.createNode(sdf3d::SdfNodeType::Box, "Second");
+    const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
+    expect(graph.link(first, "sdf", unionNode, "inputs"), testName, "Expected first union input.", failures);
+    expect(graph.link(second, "sdf", unionNode, "inputs"), testName, "Expected second union input.", failures);
+    expect(graph.link(unionNode, "sdf", graph.outputNode(), "surface"), testName, "Expected union linked to output.", failures);
+
+    const std::size_t nodesBefore = graph.nodes().size();
+    const sdf3d::SdfGraphNodeId third = graph.createNode(sdf3d::SdfNodeType::Cylinder, "Third");
+    const sdf3d::SdfGraphNodeId translate = sdf3d::GraphSystem::placePrimitiveAtWorldPosition(graph, third, {2.0f, 0.0f, 0.0f});
+
+    std::size_t unionCount = 0;
+    bool translateFeedsUnion = false;
+    bool unionFeedsOutput = false;
+    std::size_t unionInputCount = 0;
+    for (const auto& [id, node] : graph.nodes()) {
+        if (node.payload.type == sdf3d::SdfNodeType::Union) {
+            ++unionCount;
+        }
+    }
+    for (const sdf3d::SdfGraphLink& link : graph.links()) {
+        translateFeedsUnion = translateFeedsUnion || (link.fromNode == translate && link.toNode == unionNode && link.toSocket == "inputs");
+        unionFeedsOutput = unionFeedsOutput || (link.fromNode == unionNode && link.toNode == graph.outputNode() && link.toSocket == "surface");
+        if (link.toNode == unionNode && link.toSocket == "inputs") {
+            ++unionInputCount;
+        }
+    }
+
+    expect(graph.nodes().size() == nodesBefore + 2, testName, "Expected only primitive plus translate added.", failures);
+    expect(unionCount == 1, testName, "Expected no nested Union created.", failures);
+    expect(translateFeedsUnion, testName, "Expected new Translate appended to existing Union.inputs.", failures);
+    expect(unionFeedsOutput, testName, "Expected existing Union still linked to Output.", failures);
+    expect(unionInputCount == 3, testName, "Expected existing Union to have three inputs.", failures);
+}
+
 void testPhaseTwoDomainNodeDefinitions(std::vector<TestFailure>& failures)
 {
     const std::string testName = "phase two domain node definitions";
@@ -746,6 +786,7 @@ int main()
     testGraphSystemAccumulatedTranslateStopsAtBranch(failures);
     testGraphSystemPlacePrimitiveAtEmptyOutput(failures);
     testGraphSystemPlacePrimitiveUnionsExistingOutput(failures);
+    testGraphSystemPlacePrimitiveAppendsToOutputUnion(failures);
     testPhaseTwoDomainNodeDefinitions(failures);
     testNodeEditorAutoLayoutAllNodes(failures);
     testNodeEditorAutoLayoutSelectedOnly(failures);

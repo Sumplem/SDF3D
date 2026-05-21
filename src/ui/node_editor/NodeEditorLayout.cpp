@@ -390,7 +390,7 @@ size_t inlinePropertyRows(const SdfGraphNode& node)
 
     constexpr size_t nameRows = 1;
     const bool materialNode = isSdfMaterialNode(node.payload.type);
-    const size_t materialRows = materialNode ? (node.payload.type == SdfNodeType::CheckerMaterial ? 6 : 4) : 0;
+    const size_t materialRows = materialNode ? (isSdfPatternMaterialNode(node.payload.type) ? 6 : 4) : 0;
     return nameRows + materialRows + visibleInlinePropertyParameterCount(node.payload);
 }
 

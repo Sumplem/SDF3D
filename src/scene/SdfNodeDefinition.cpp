@@ -1,6 +1,7 @@
 #include "sdf3d/scene/SdfNodeDefinition.h"
 
 #include "sdf3d/scene/SdfRotationParams.h"
+#include "sdf3d/scene/SdfNodeTraits.h"
 
 #include <initializer_list>
 #include <utility>
@@ -81,6 +82,7 @@ const std::vector<SdfNodeDefinition>& definitions()
 
         {SdfNodeType::SolidMaterial, SdfNodeCategory::Material, "Solid Material", {}, {}, {outputSocket("material", SdfSocketType::Material)}},
         {SdfNodeType::CheckerMaterial, SdfNodeCategory::Material, "Checker Material", {}, {}, {outputSocket("material", SdfSocketType::Material)}},
+        {SdfNodeType::ValueNoiseMaterial, SdfNodeCategory::Material, "Value Noise Material", {}, {}, {outputSocket("material", SdfSocketType::Material)}},
         {SdfNodeType::MaterialOverride, SdfNodeCategory::Material, "Material Override", {}, {inputSocket("sdf"), inputSocket("material", SdfSocketType::Material)}, {outputSocket("sdf")}},
 
         {SdfNodeType::Group, SdfNodeCategory::Group, "Group", {}, {}, {outputSocket("sdf")}},
@@ -147,6 +149,9 @@ SdfNodePtr makeSdfNodeFromDefinition(SdfNodeType type)
     SdfNodePtr node = makeSdfNode(type, definition->displayName);
     for (const SdfParameterDefinition& parameter : definition->parameters) {
         node->parameters[parameter.name] = parameter.defaultValue;
+    }
+    if (isSdfMaterialNode(type)) {
+        node->material.type = sdfMaterialTypeForNode(type);
     }
 
     return node;

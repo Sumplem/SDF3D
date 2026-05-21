@@ -1,6 +1,7 @@
 #include "JsonGraphSerializerConversions.h"
 
 #include "sdf3d/scene/SdfNodeDefinition.h"
+#include "sdf3d/scene/SdfNodeTraits.h"
 
 #include <optional>
 #include <stdexcept>
@@ -57,6 +58,8 @@ const char* nodeTypeName(SdfNodeType type)
         return "SolidMaterial";
     case SdfNodeType::CheckerMaterial:
         return "CheckerMaterial";
+    case SdfNodeType::ValueNoiseMaterial:
+        return "ValueNoiseMaterial";
     case SdfNodeType::MaterialOverride:
         return "MaterialOverride";
     case SdfNodeType::Group:
@@ -94,6 +97,7 @@ std::optional<SdfNodeType> parseNodeType(const std::string& name)
              SdfNodeType::Bend,
              SdfNodeType::SolidMaterial,
              SdfNodeType::CheckerMaterial,
+             SdfNodeType::ValueNoiseMaterial,
              SdfNodeType::MaterialOverride,
              SdfNodeType::Group,
              SdfNodeType::Output,
@@ -280,7 +284,7 @@ SdfGraphNode nodeFromJson(const nlohmann::json& value)
     for (const auto& [key, parameter] : value.at("parameters").items()) {
         payload.parameters[key] = parameter.get<float>();
     }
-    if (value.contains("material") && (*type == SdfNodeType::SolidMaterial || *type == SdfNodeType::CheckerMaterial || *type == SdfNodeType::MaterialOverride)) {
+    if (value.contains("material") && (isSdfMaterialNode(*type) || *type == SdfNodeType::MaterialOverride)) {
         payload.material = materialFromJson(value.at("material"));
     }
 

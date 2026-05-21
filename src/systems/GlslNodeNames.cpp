@@ -51,6 +51,8 @@ std::string glslNodeTypeName(SdfNodeType type)
         return "SolidMaterial";
     case SdfNodeType::CheckerMaterial:
         return "CheckerMaterial";
+    case SdfNodeType::ValueNoiseMaterial:
+        return "ValueNoiseMaterial";
     case SdfNodeType::MaterialOverride:
         return "MaterialOverride";
     case SdfNodeType::Group:

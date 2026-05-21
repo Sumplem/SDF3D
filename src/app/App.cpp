@@ -144,9 +144,12 @@ void App::run()
         drawPanels();
         if (m_ui.consumeSceneDirty()) {
             (void)m_ui.consumeMaterialDirty();
+            (void)m_ui.consumeParamDirty();
             m_eventBus.emit(SceneDirtyEvent{});
         } else if (m_ui.consumeMaterialDirty()) {
             m_eventBus.emit(MaterialDirtyEvent{});
+        } else if (m_ui.consumeParamDirty()) {
+            refreshNodeParams();
         }
         ResourceManager::instance().flushErrors();
         endFrame();
@@ -276,6 +279,11 @@ bool App::refreshMaterials()
 
     m_renderer.setMaterials(materials.materials);
     return materials.errors.empty();
+}
+
+void App::refreshNodeParams()
+{
+    m_renderer.setNodeParams(GraphSystem::collectNodeParams(m_ui.activeGraph(m_sceneGraph, m_groupRegistry), m_groupRegistry));
 }
 
 } // namespace sdf3d

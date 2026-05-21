@@ -1,6 +1,7 @@
 #include "sdf3d/scene/SdfGraphCompiler.h"
 
 #include "sdf3d/scene/GraphGroupRegistry.h"
+#include "sdf3d/scene/SdfNodeTraits.h"
 #include "sdf3d/systems/GraphSystem.h"
 
 #include <algorithm>
@@ -94,7 +95,7 @@ SdfGraphLowerResult lowerSdfGraphToTreeInternal(
         node->materialId = graphNode->payload.materialId;
         node->groupDefinitionId = graphNode->payload.groupDefinitionId;
         node->material = graphNode->payload.material;
-        if ((node->type == SdfNodeType::SolidMaterial || node->type == SdfNodeType::CheckerMaterial || node->type == SdfNodeType::MaterialOverride) && node->materialId != 0) {
+        if ((isSdfMaterialNode(node->type) || node->type == SdfNodeType::MaterialOverride) && node->materialId != 0) {
             if (const MaterialDefinition* material = graph.materials().material(node->materialId)) {
                 node->material = material->material;
             }

@@ -50,7 +50,27 @@ inline bool isSdfPassThroughNode(SdfNodeType type)
 inline bool isSdfMaterialNode(SdfNodeType type)
 {
     return type == SdfNodeType::SolidMaterial
-        || type == SdfNodeType::CheckerMaterial;
+        || type == SdfNodeType::CheckerMaterial
+        || type == SdfNodeType::ValueNoiseMaterial;
+}
+
+/// Returns the packed material type owned by a material source node.
+inline SdfMaterialType sdfMaterialTypeForNode(SdfNodeType type)
+{
+    if (type == SdfNodeType::CheckerMaterial) {
+        return SdfMaterialType::Checker;
+    }
+    if (type == SdfNodeType::ValueNoiseMaterial) {
+        return SdfMaterialType::ValueNoise;
+    }
+    return SdfMaterialType::Solid;
+}
+
+/// Returns true when the material source uses secondary color and scale fields.
+inline bool isSdfPatternMaterialNode(SdfNodeType type)
+{
+    return type == SdfNodeType::CheckerMaterial
+        || type == SdfNodeType::ValueNoiseMaterial;
 }
 
 /// Returns true when a transform belongs to canonical affine wrapper order.

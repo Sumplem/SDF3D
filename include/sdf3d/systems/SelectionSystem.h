@@ -40,15 +40,22 @@ public:
     /// Marks material uniform data dirty.
     void markMaterialDirty();
 
+    /// Marks runtime node parameter data dirty.
+    void markParamDirty();
+
     /// Returns true once when scene data was dirty.
     bool consumeDirty();
 
     /// Returns true once when material uniform data was dirty.
     bool consumeMaterialDirty();
 
+    /// Returns true once when runtime node parameter data was dirty.
+    bool consumeParamDirty();
+
 private:
     bool m_dirty = false;
     bool m_materialDirty = false;
+    bool m_paramDirty = false;
 };
 
 } // namespace sdf3d

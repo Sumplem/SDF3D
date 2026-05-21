@@ -70,7 +70,7 @@ size_t inlinePropertyRows(const SdfGraphNode& node)
 
     constexpr size_t nameRows = 1;
     const bool materialNode = isSdfMaterialNode(node.payload.type);
-    const size_t materialRows = materialNode ? (node.payload.type == SdfNodeType::CheckerMaterial ? 6 : 4) : 0;
+    const size_t materialRows = materialNode ? (isSdfPatternMaterialNode(node.payload.type) ? 6 : 4) : 0;
     return nameRows + materialRows + visibleInlinePropertyParameterCount(node.payload);
 }
 
@@ -102,10 +102,22 @@ std::size_t incomingLinkCount(const SdfGraph& graph, SdfGraphNodeId node, const 
     return count;
 }
 
+constexpr float NORMAL_INPUT_PIN_RADIUS = 6.5f;
+constexpr float NORMAL_INPUT_PIN_HOVER_RADIUS = 8.5f;
+constexpr float MULTI_INPUT_SLOT_GAP = 5.0f;
+constexpr float MULTI_INPUT_SLOT_RADIUS = NORMAL_INPUT_PIN_RADIUS;
+constexpr float MULTI_INPUT_SLOT_HOVER_RADIUS = NORMAL_INPUT_PIN_HOVER_RADIUS;
+
+float multiInputSlotSpacing()
+{
+    return (MULTI_INPUT_SLOT_RADIUS * 2.0f) + MULTI_INPUT_SLOT_GAP;
+}
+
 float multiInputPillHeight(std::size_t linkCount, bool hovered)
 {
-    const std::size_t visibleCount = std::max<std::size_t>(1, linkCount);
-    return (hovered ? 34.0f : 28.0f) + static_cast<float>(visibleCount - 1) * 8.0f;
+    const std::size_t visibleCount = linkCount + 1;
+    const float radius = hovered ? MULTI_INPUT_SLOT_HOVER_RADIUS : MULTI_INPUT_SLOT_RADIUS;
+    return radius * 2.0f + static_cast<float>(visibleCount - 1) * multiInputSlotSpacing();
 }
 
 float multiInputRowHeight(const SdfGraph& graph, const SdfGraphNode& node, const SdfGraphSocket& socket)
@@ -149,6 +161,43 @@ std::size_t multiInputLinkIndex(const SdfGraph& graph, const SdfGraphLink& targe
     return index;
 }
 
+float multiInputSlotOffset(std::size_t index, std::size_t slotCount, float zoom)
+{
+    (void)slotCount;
+    return static_cast<float>(index) * multiInputSlotSpacing() * zoom;
+}
+
+float multiInputPillTop(float pinY, bool hovered, float zoom)
+{
+    const float radius = hovered ? MULTI_INPUT_SLOT_HOVER_RADIUS : MULTI_INPUT_SLOT_RADIUS;
+    return pinY - radius * zoom;
+}
+
+bool pointInsideMultiInputPill(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket, ImVec2 pin, ImVec2 point, bool hovered, float zoom)
+{
+    const float width = (hovered ? NORMAL_INPUT_PIN_HOVER_RADIUS : NORMAL_INPUT_PIN_RADIUS) * 2.0f * zoom;
+    const float height = multiInputPillHeight(incomingLinkCount(graph, node, socket), hovered) * zoom;
+    const float top = multiInputPillTop(pin.y, hovered, zoom);
+    return point.x >= pin.x - width * 0.5f
+        && point.x <= pin.x + width * 0.5f
+        && point.y >= top
+        && point.y <= top + height;
+}
+
+std::size_t nearestMultiInputSlot(float mouseY, float pinY, std::size_t slotCount, float zoom)
+{
+    std::size_t nearest = 0;
+    float nearestDistance = std::abs(mouseY - (pinY + multiInputSlotOffset(0, slotCount, zoom)));
+    for (std::size_t index = 1; index < slotCount; ++index) {
+        const float distance = std::abs(mouseY - (pinY + multiInputSlotOffset(index, slotCount, zoom)));
+        if (distance < nearestDistance) {
+            nearest = index;
+            nearestDistance = distance;
+        }
+    }
+    return nearest;
+}
+
 std::optional<SdfGraphLink> nearestLinkToMultiInput(
     const SdfGraph& graph,
     SdfGraphNodeId node,
@@ -158,17 +207,20 @@ std::optional<SdfGraphLink> nearestLinkToMultiInput(
     float zoom)
 {
     std::optional<SdfGraphLink> nearest;
-    float nearestDistance = 0.0f;
     const std::size_t count = incomingLinkCount(graph, node, socket);
+    const std::size_t slotCount = count + 1;
+    // AGENT: The final multi-input slot is intentionally empty so dragging
+    // from it can spawn/connect a new upstream node without detaching a wire.
+    float nearestDistance = std::abs(mouseY - (pinY + multiInputSlotOffset(count, slotCount, zoom)));
     std::size_t index = 0;
     for (const SdfGraphLink& link : graph.links()) {
         if (link.toNode != node || link.toSocket != socket) {
             continue;
         }
 
-        const float anchorY = pinY + (static_cast<float>(index) - (static_cast<float>(count) - 1.0f) * 0.5f) * 8.0f * zoom;
+        const float anchorY = pinY + multiInputSlotOffset(index, slotCount, zoom);
         const float distance = std::abs(mouseY - anchorY);
-        if (!nearest || distance < nearestDistance) {
+        if (distance < nearestDistance) {
             nearest = link;
             nearestDistance = distance;
         }
@@ -236,7 +288,7 @@ bool drawExistingLinks(SdfGraph& graph, const CanvasFrame& frame, const std::vec
                 socket != nullptr && socket->multiInput) {
                 const std::size_t count = incomingLinkCount(graph, link.toNode, link.toSocket);
                 const std::size_t index = multiInputLinkIndex(graph, link);
-                const float offset = (static_cast<float>(index) - (static_cast<float>(count) - 1.0f) * 0.5f) * scaleValue(frame, 8.0f);
+                const float offset = multiInputSlotOffset(index, count + 1, frame.zoom);
                 to->y += offset;
             }
         }
@@ -294,9 +346,12 @@ NodeDrawResult drawGraphNodes(
                 drag.dragOutputSocket,
                 drag.inputDragCandidateNode,
                 drag.inputDragCandidateSocket,
+                drag.inputDragCandidateEmptyMultiSlot,
+                drag.inputDragCandidateMouseY,
                 drag.draggingInputLink,
                 drag.dragInputNode,
                 drag.dragInputSocket,
+                drag.dragInputAnchorOffsetY,
                 drag.dragOutputFromInputDetach,
                 drag.detachedInputNode,
                 drag.detachedInputSocket)) {
@@ -321,6 +376,7 @@ NodeDrawResult drawGraphNodes(
         const EditorDirtyState inlineDirty = drawNodeInlineProperties(graph, groups, layout, frame);
         result.dirty.scene = result.dirty.scene || inlineDirty.scene;
         result.dirty.material = result.dirty.material || inlineDirty.material;
+        result.dirty.params = result.dirty.params || inlineDirty.params;
     }
     return result;
 }
@@ -468,9 +524,12 @@ bool drawInputPins(
     std::string& dragOutputSocket,
     SdfGraphNodeId& inputDragCandidateNode,
     std::string& inputDragCandidateSocket,
+    bool& inputDragCandidateEmptyMultiSlot,
+    float& inputDragCandidateMouseY,
     bool& draggingInputLink,
     SdfGraphNodeId& dragInputNode,
     std::string& dragInputSocket,
+    float& dragInputAnchorOffsetY,
     bool& dragOutputFromInputDetach,
     SdfGraphNodeId& detachedInputNode,
     std::string& detachedInputSocket)
@@ -481,34 +540,64 @@ bool drawInputPins(
     for (size_t i = 0; i < node.inputs.size(); ++i) {
         const SdfGraphSocket& socket = node.inputs[i];
         const ImVec2 pin = {layout.position.x, layout.position.y + scaleValue(frame, inputPinYOffset(graph, node, i))};
-        const float pinHitRadius = scaleValue(frame, 12.0f);
+        const float pinHitRadius = scaleValue(frame, 14.0f);
+        const ImVec2 mouse = ImGui::GetIO().MousePos;
+        const bool outputDragInside = socket.multiInput
+            ? pointInsideMultiInputPill(graph, layout.id, socket.name, pin, mouse, false, frame.zoom)
+            : distanceSquared(pin, mouse) <= pinHitRadius * pinHitRadius;
         const bool dragHover = draggingLink
-            && distanceSquared(pin, ImGui::GetIO().MousePos) <= pinHitRadius * pinHitRadius
+            && outputDragInside
             && socketsCompatible(graph, dragOutputNode, dragOutputSocket, layout.id, socket.name);
+        const std::size_t linkCount = socket.multiInput ? incomingLinkCount(graph, layout.id, socket.name) : 0;
+        const std::size_t multiSlotCount = linkCount + 1;
+        const float inputHitWidth = socket.multiInput
+            ? scaleValue(frame, NORMAL_INPUT_PIN_HOVER_RADIUS * 2.0f)
+            : scaleValue(frame, 22.0f);
+        const float inputHitHeight = socket.multiInput
+            ? scaleValue(frame, multiInputPillHeight(linkCount, dragHover) + 8.0f)
+            : scaleValue(frame, 16.0f);
+        const float inputHitTop = socket.multiInput
+            ? multiInputPillTop(pin.y, dragHover, frame.zoom) - scaleValue(frame, 4.0f)
+            : pin.y - inputHitHeight * 0.5f;
+        const bool mouseHover = ImGui::IsWindowHovered()
+            && mouse.x >= pin.x - inputHitWidth * 0.5f
+            && mouse.x <= pin.x + inputHitWidth * 0.5f
+            && mouse.y >= inputHitTop
+            && mouse.y <= inputHitTop + inputHitHeight;
 
-        const ImU32 pinColor = dragHover ? IM_COL32(255, 210, 110, 255) : IM_COL32(120, 180, 120, 255);
+        const ImU32 pinColor = dragHover ? IM_COL32(255, 210, 110, 255) : (mouseHover ? IM_COL32(170, 235, 170, 255) : IM_COL32(120, 180, 120, 255));
         if (socket.multiInput) {
-            const float pillWidth = scaleValue(frame, dragHover ? 10.0f : 8.0f);
-            const float pillHeight = scaleValue(frame, multiInputPillHeight(incomingLinkCount(graph, layout.id, socket.name), dragHover));
+            const float pillWidth = scaleValue(frame, (dragHover || mouseHover) ? NORMAL_INPUT_PIN_HOVER_RADIUS * 2.0f : NORMAL_INPUT_PIN_RADIUS * 2.0f);
+            const float pillHeight = scaleValue(frame, multiInputPillHeight(linkCount, dragHover));
+            const float pillTop = multiInputPillTop(pin.y, dragHover, frame.zoom);
             frame.drawList->AddRectFilled(
-                {pin.x - pillWidth * 0.5f, pin.y - pillHeight * 0.5f},
-                {pin.x + pillWidth * 0.5f, pin.y + pillHeight * 0.5f},
+                {pin.x - pillWidth * 0.5f, pillTop},
+                {pin.x + pillWidth * 0.5f, pillTop + pillHeight},
                 pinColor,
                 pillHeight * 0.5f);
+            // AGENT: Mark the spare slot so the add-new-input drag target is visible.
+            const std::size_t hoveredSlot = mouseHover ? nearestMultiInputSlot(mouse.y, pin.y, multiSlotCount, frame.zoom) : multiSlotCount;
+            for (std::size_t slot = 0; slot < multiSlotCount; ++slot) {
+                const float slotY = pin.y + multiInputSlotOffset(slot, multiSlotCount, frame.zoom);
+                const bool slotHovered = hoveredSlot == slot;
+                const ImU32 slotColor = slot == linkCount
+                    ? (slotHovered ? IM_COL32(255, 230, 150, 255) : IM_COL32(34, 38, 44, 210))
+                    : (slotHovered ? IM_COL32(255, 230, 150, 255) : IM_COL32(88, 130, 88, 180));
+                frame.drawList->AddCircleFilled({pin.x, slotY}, scaleValue(frame, slotHovered ? MULTI_INPUT_SLOT_HOVER_RADIUS : MULTI_INPUT_SLOT_RADIUS), slotColor);
+            }
         } else {
-            frame.drawList->AddCircleFilled(pin, scaleValue(frame, dragHover ? 7.0f : 5.0f), pinColor);
+            frame.drawList->AddCircleFilled(pin, scaleValue(frame, (dragHover || mouseHover) ? NORMAL_INPUT_PIN_HOVER_RADIUS : NORMAL_INPUT_PIN_RADIUS), pinColor);
         }
         addScaledText(frame, {pin.x + scaleValue(frame, 10.0f), pin.y - scaleValue(frame, 7.0f)}, IM_COL32(220, 224, 230, 255), socketDisplayName(socket).c_str());
 
-        const float inputHitWidth = scaleValue(frame, socket.multiInput ? 18.0f : 16.0f);
-        const float inputHitHeight = socket.multiInput
-            ? scaleValue(frame, multiInputPillHeight(incomingLinkCount(graph, layout.id, socket.name), dragHover) + 8.0f)
-            : scaleValue(frame, 16.0f);
-        ImGui::SetCursorScreenPos({pin.x - inputHitWidth * 0.5f, pin.y - inputHitHeight * 0.5f});
+        ImGui::SetCursorScreenPos({pin.x - inputHitWidth * 0.5f, inputHitTop});
         ImGui::InvisibleButton(("input##" + std::to_string(layout.id) + "-" + socket.name).c_str(), {inputHitWidth, inputHitHeight});
         if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
             inputDragCandidateNode = layout.id;
             inputDragCandidateSocket = socket.name;
+            inputDragCandidateMouseY = mouse.y;
+            inputDragCandidateEmptyMultiSlot = socket.multiInput
+                && nearestMultiInputSlot(mouse.y, pin.y, multiSlotCount, frame.zoom) == linkCount;
             graph.setSelectedNode(layout.id);
         }
         if (ImGui::IsItemActive()
@@ -516,9 +605,11 @@ bool drawInputPins(
             && !draggingLink
             && inputDragCandidateNode == layout.id
             && inputDragCandidateSocket == socket.name) {
-            const std::optional<SdfGraphLink> existing = socket.multiInput
-                ? nearestLinkToMultiInput(graph, layout.id, socket.name, ImGui::GetIO().MousePos.y, pin.y, frame.zoom)
-                : linkToInput(graph, layout.id, socket.name);
+            const std::optional<SdfGraphLink> existing = inputDragCandidateEmptyMultiSlot
+                ? std::nullopt
+                : (socket.multiInput
+                    ? nearestLinkToMultiInput(graph, layout.id, socket.name, inputDragCandidateMouseY, pin.y, frame.zoom)
+                    : linkToInput(graph, layout.id, socket.name));
             if (existing) {
                 if (graph.unlink(existing->fromNode, existing->fromSocket, existing->toNode, existing->toSocket)) {
                     draggingLink = true;
@@ -535,11 +626,14 @@ bool drawInputPins(
                 draggingInputLink = true;
                 dragInputNode = layout.id;
                 dragInputSocket = socket.name;
+                dragInputAnchorOffsetY = socket.multiInput ? multiInputSlotOffset(linkCount, multiSlotCount, frame.zoom) : 0.0f;
             }
         }
         if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) && inputDragCandidateNode == layout.id && inputDragCandidateSocket == socket.name) {
             inputDragCandidateNode = 0;
             inputDragCandidateSocket.clear();
+            inputDragCandidateEmptyMultiSlot = false;
+            inputDragCandidateMouseY = 0.0f;
         }
     }
 
@@ -554,14 +648,22 @@ void drawOutputPins(SdfGraph& graph, const GraphNodeLayout& layout, const Canvas
         const SdfGraphSocket& socket = node.outputs[i];
         const ImVec2 pin = {layout.position.x + layout.size.x, layout.position.y + scaleValue(frame, TITLE_HEIGHT + 18.0f + static_cast<float>(i) * SOCKET_ROW_HEIGHT)};
         const bool activeDrag = draggingLink && dragOutputNode == layout.id && dragOutputSocket == socket.name;
-        frame.drawList->AddCircleFilled(pin, scaleValue(frame, activeDrag ? 7.0f : 5.0f), activeDrag ? IM_COL32(255, 210, 110, 255) : IM_COL32(120, 160, 240, 255));
+        const ImVec2 mouse = ImGui::GetIO().MousePos;
+        const float hitSize = scaleValue(frame, 22.0f);
+        const bool mouseHover = ImGui::IsWindowHovered()
+            && mouse.x >= pin.x - hitSize * 0.5f
+            && mouse.x <= pin.x + hitSize * 0.5f
+            && mouse.y >= pin.y - hitSize * 0.5f
+            && mouse.y <= pin.y + hitSize * 0.5f;
+        const ImU32 pinColor = activeDrag ? IM_COL32(255, 210, 110, 255) : (mouseHover ? IM_COL32(165, 200, 255, 255) : IM_COL32(120, 160, 240, 255));
+        frame.drawList->AddCircleFilled(pin, scaleValue(frame, (activeDrag || mouseHover) ? 8.5f : 6.5f), pinColor);
 
         const std::string label = socketDisplayName(socket);
         const ImVec2 labelSize = ImGui::CalcTextSize(label.c_str());
         addScaledText(frame, {pin.x - scaleValue(frame, 10.0f) - scaleValue(frame, labelSize.x), pin.y - scaleValue(frame, 7.0f)}, IM_COL32(220, 224, 230, 255), label.c_str());
 
-        ImGui::SetCursorScreenPos({pin.x - scaleValue(frame, 8.0f), pin.y - scaleValue(frame, 8.0f)});
-        ImGui::InvisibleButton(("output##" + std::to_string(layout.id) + "-" + socket.name).c_str(), {scaleValue(frame, 16.0f), scaleValue(frame, 16.0f)});
+        ImGui::SetCursorScreenPos({pin.x - hitSize * 0.5f, pin.y - hitSize * 0.5f});
+        ImGui::InvisibleButton(("output##" + std::to_string(layout.id) + "-" + socket.name).c_str(), {hitSize, hitSize});
         if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
             draggingLink = true;
             dragOutputNode = layout.id;
@@ -594,15 +696,23 @@ bool updateActiveLinkDrag(SdfGraph& graph, const CanvasFrame& frame, const std::
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     const float pinHitRadius = scaleValue(frame, 12.0f);
     for (const GraphSocketAnchor& anchor : anchors) {
-        if (anchor.output || distanceSquared(anchor.position, mouse) > pinHitRadius * pinHitRadius) {
+        if (anchor.output) {
+            continue;
+        }
+
+        const SdfGraphNode* targetNode = graph.node(anchor.node);
+        const SdfGraphSocket* targetSocket = targetNode != nullptr ? findSocket(targetNode->inputs, anchor.socket, SdfSocketDirection::Input) : nullptr;
+        const bool insideTarget = targetSocket != nullptr && targetSocket->multiInput
+            ? pointInsideMultiInputPill(graph, anchor.node, anchor.socket, anchor.position, mouse, false, frame.zoom)
+            : distanceSquared(anchor.position, mouse) <= pinHitRadius * pinHitRadius;
+        if (!insideTarget) {
             continue;
         }
 
         if (socketsCompatible(graph, dragOutputNode, dragOutputSocket, anchor.node, anchor.socket)
             && graph.link(dragOutputNode, dragOutputSocket, anchor.node, anchor.socket)) {
             graph.setSelectedNode(anchor.node);
-            const SdfGraphNode* target = graph.node(anchor.node);
-            if (target != nullptr && (target->payload.type == SdfNodeType::Output || !activeOutputNodeExists(graph))) {
+            if (targetNode != nullptr && (targetNode->payload.type == SdfNodeType::Output || !activeOutputNodeExists(graph))) {
                 graph.setOutputNode(anchor.node);
             }
             sceneDirty = true;

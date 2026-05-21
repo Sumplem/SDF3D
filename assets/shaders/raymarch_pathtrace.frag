@@ -37,6 +37,28 @@ struct SdfMaterialSample {
     float emission;
 };
 
+float sdf3d_hash13(vec3 p)
+{
+    p = fract(p * 0.1031);
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+float sdf3d_valueNoise3d(vec3 p)
+{
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+
+    float x00 = mix(sdf3d_hash13(i + vec3(0.0, 0.0, 0.0)), sdf3d_hash13(i + vec3(1.0, 0.0, 0.0)), f.x);
+    float x10 = mix(sdf3d_hash13(i + vec3(0.0, 1.0, 0.0)), sdf3d_hash13(i + vec3(1.0, 1.0, 0.0)), f.x);
+    float x01 = mix(sdf3d_hash13(i + vec3(0.0, 0.0, 1.0)), sdf3d_hash13(i + vec3(1.0, 0.0, 1.0)), f.x);
+    float x11 = mix(sdf3d_hash13(i + vec3(0.0, 1.0, 1.0)), sdf3d_hash13(i + vec3(1.0, 1.0, 1.0)), f.x);
+    float y0 = mix(x00, x10, f.y);
+    float y1 = mix(x01, x11, f.y);
+    return mix(y0, y1, f.z);
+}
+
 SdfMaterialSample sampleMaterial(int materialId, vec3 p)
 {
     SdfMaterialSample material;
@@ -50,11 +72,16 @@ SdfMaterialSample sampleMaterial(int materialId, vec3 p)
 
     GpuMaterial gpuMaterial = uMaterials[materialId];
     material.albedo = gpuMaterial.albedoRoughness.rgb;
-    if (int(gpuMaterial.metallicEmissionType.z + 0.5) == 1) {
+    int materialType = int(gpuMaterial.metallicEmissionType.z + 0.5);
+    if (materialType == 1) {
         float scale = max(gpuMaterial.secondaryAlbedoScale.w, 0.0001);
         vec3 cell = floor(p * scale);
         float checker = mod(cell.x + cell.y + cell.z, 2.0);
         material.albedo = mix(gpuMaterial.albedoRoughness.rgb, gpuMaterial.secondaryAlbedoScale.rgb, checker);
+    } else if (materialType == 2) {
+        float scale = max(gpuMaterial.secondaryAlbedoScale.w, 0.0001);
+        float noise = sdf3d_valueNoise3d(p * scale);
+        material.albedo = mix(gpuMaterial.albedoRoughness.rgb, gpuMaterial.secondaryAlbedoScale.rgb, noise);
     }
     material.roughness = clamp(gpuMaterial.albedoRoughness.a, 0.02, 1.0);
     material.metallic = clamp(gpuMaterial.metallicEmissionType.x, 0.0, 1.0);
