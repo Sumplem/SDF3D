@@ -282,7 +282,7 @@ EditorDirtyState PropertiesPanel::draw(SdfGraph& graph, GraphGroupRegistry& grou
                     selected->parameters["zDegrees"],
                 }));
             }
-            dirty.scene = true;
+            dirty.params = true;
         }
     }
 

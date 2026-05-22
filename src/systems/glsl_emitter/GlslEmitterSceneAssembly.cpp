@@ -45,6 +45,11 @@ uint64_t helperIdFor(const SdfNodePtr& node, SdfHelperEmitContext& context)
     return generatedHelperIdFor(node, context);
 }
 
+uint64_t runtimeParamIdFor(const SdfNodePtr& node)
+{
+    return node ? node->stableId : 0;
+}
+
 std::string helperNameFor(const SdfNodePtr& node, SdfHelperEmitContext& context)
 {
     return "sdf_node_" + std::to_string(helperIdFor(node, context));
@@ -95,7 +100,8 @@ std::string emitPickIdFor(
     const SdfNodePtr& node,
     const std::string& pointExpr,
     SdfCompileResult& result,
-    const GlslSdfHelperBlock& sdfHelpers);
+    const GlslSdfHelperBlock& sdfHelpers,
+    GlslEmitMode mode);
 
 std::string nodePickIdLiteral(
     const SdfNodePtr& node,
@@ -109,7 +115,8 @@ std::string emitDomainPickIdFor(
     const SdfNodePtr& node,
     const std::string& pointExpr,
     SdfCompileResult& result,
-    const GlslSdfHelperBlock& sdfHelpers)
+    const GlslSdfHelperBlock& sdfHelpers,
+    GlslEmitMode mode)
 {
     using namespace glsl_emitter;
 
@@ -134,20 +141,20 @@ std::string emitDomainPickIdFor(
         return nodePickIdLiteral(node, result, sdfHelpers);
     }
     case SdfNodeType::Repeat:
-        return emitPickIdFor(node->children.front(), repeatedPointFor(*node, pointExpr), result, sdfHelpers);
+        return emitPickIdFor(node->children.front(), repeatedPointFor(*node, node->stableId, mode, pointExpr), result, sdfHelpers, mode);
     case SdfNodeType::Mirror:
-        return emitPickIdFor(node->children.front(), mirroredPointFor(*node, pointExpr), result, sdfHelpers);
+        return emitPickIdFor(node->children.front(), mirroredPointFor(*node, pointExpr), result, sdfHelpers, mode);
     case SdfNodeType::Twist:
     case SdfNodeType::Bend: {
         const float defaultStrength = node->type == SdfNodeType::Twist ? 1.0f : 0.5f;
         const float defaultAxis = node->type == SdfNodeType::Twist ? 1.0f : 0.0f;
         const float strengthValue = parameterOr(*node, "strength", defaultStrength);
-        const std::string strength = glslFloat(strengthValue);
+        const std::string strength = glslNodeParamComponent(mode, node->stableId, glslVec4(strengthValue, 0.0f, 0.0f, 0.0f), 'x');
         const int axis = axisIndexFor(*node, defaultAxis);
         const std::string axisCoord = axis == 0 ? pointExpr + ".x" : (axis == 1 ? pointExpr + ".y" : pointExpr + ".z");
         const std::string angle = "(" + axisCoord + " * " + strength + ")";
         const std::string warpedPoint = rotatePointAroundAxis(pointExpr, axis, "cos(" + angle + ")", "sin(" + angle + ")");
-        return emitPickIdFor(node->children.front(), warpedPoint, result, sdfHelpers);
+        return emitPickIdFor(node->children.front(), warpedPoint, result, sdfHelpers, mode);
     }
     default:
         break;
@@ -160,7 +167,8 @@ std::string emitBooleanPickIdFor(
     const SdfNodePtr& node,
     const std::string& pointExpr,
     SdfCompileResult& result,
-    const GlslSdfHelperBlock& sdfHelpers)
+    const GlslSdfHelperBlock& sdfHelpers,
+    GlslEmitMode mode)
 {
     using namespace glsl_emitter;
 
@@ -169,27 +177,28 @@ std::string emitBooleanPickIdFor(
         return "-1";
     }
     if (node->children.size() == 1) {
-        return emitPickIdFor(node->children.front(), pointExpr, result, sdfHelpers);
+        return emitPickIdFor(node->children.front(), pointExpr, result, sdfHelpers, mode);
     }
     if (node->type == SdfNodeType::Subtract || node->type == SdfNodeType::SmoothSubtract) {
-        return emitPickIdFor(node->children.front(), pointExpr, result, sdfHelpers);
+        return emitPickIdFor(node->children.front(), pointExpr, result, sdfHelpers, mode);
     }
 
     const bool useMax = node->type == SdfNodeType::Intersect || node->type == SdfNodeType::SmoothIntersect;
     const bool smoothUnion = node->type == SdfNodeType::SmoothUnion;
     const bool smoothIntersect = node->type == SdfNodeType::SmoothIntersect;
-    const float smoothness = std::max(parameterOr(*node, "smoothness", 0.25f), 0.0001f);
+    const float smoothnessValue = std::max(parameterOr(*node, "smoothness", 0.25f), 0.0001f);
+    const std::string smoothness = "max(" + glslNodeParamComponent(mode, node->stableId, glslVec4(smoothnessValue, 0.0f, 0.0f, 0.0f), 'x') + ", 0.000100)";
     std::string distance = helperDistanceFor(node->children.front(), pointExpr, result, sdfHelpers);
-    std::string pickId = emitPickIdFor(node->children.front(), pointExpr, result, sdfHelpers);
+    std::string pickId = emitPickIdFor(node->children.front(), pointExpr, result, sdfHelpers, mode);
     for (std::size_t i = 1; i < node->children.size(); ++i) {
         const std::string childDistance = helperDistanceFor(node->children[i], pointExpr, result, sdfHelpers);
-        const std::string childPickId = emitPickIdFor(node->children[i], pointExpr, result, sdfHelpers);
+        const std::string childPickId = emitPickIdFor(node->children[i], pointExpr, result, sdfHelpers, mode);
         const std::string chooseFirst = "(" + distance + (useMax ? " > " : " < ") + childDistance + ")";
         pickId = "(" + chooseFirst + " ? " + pickId + " : " + childPickId + ")";
         if (smoothUnion) {
-            distance = "sdf3d_smin(" + distance + ", " + childDistance + ", " + glslFloat(smoothness) + ")";
+            distance = "sdf3d_smin(" + distance + ", " + childDistance + ", " + smoothness + ")";
         } else if (smoothIntersect) {
-            distance = "(-sdf3d_smin(-(" + distance + "), -(" + childDistance + "), " + glslFloat(smoothness) + "))";
+            distance = "(-sdf3d_smin(-(" + distance + "), -(" + childDistance + "), " + smoothness + "))";
         } else {
             distance = std::string(useMax ? "max(" : "min(") + distance + ", " + childDistance + ")";
         }
@@ -201,7 +210,8 @@ std::string emitPickIdFor(
     const SdfNodePtr& node,
     const std::string& pointExpr,
     SdfCompileResult& result,
-    const GlslSdfHelperBlock& sdfHelpers)
+    const GlslSdfHelperBlock& sdfHelpers,
+    GlslEmitMode mode)
 {
     if (!node) {
         result.errors.push_back("Encountered a null SDF node while emitting pick-id evaluation.");
@@ -211,17 +221,17 @@ std::string emitPickIdFor(
         return nodePickIdLiteral(node, result, sdfHelpers);
     }
     if (isSdfBooleanNode(node->type)) {
-        return emitBooleanPickIdFor(node, pointExpr, result, sdfHelpers);
+        return emitBooleanPickIdFor(node, pointExpr, result, sdfHelpers, mode);
     }
     if (isSdfTransformNode(node->type)) {
-        return emitDomainPickIdFor(node, pointExpr, result, sdfHelpers);
+        return emitDomainPickIdFor(node, pointExpr, result, sdfHelpers, mode);
     }
     if (node->type == SdfNodeType::MaterialOverride) {
         if (node->children.empty()) {
             result.errors.push_back("MaterialOverride node has no SDF input.");
             return "-1";
         }
-        return emitPickIdFor(node->children.front(), pointExpr, result, sdfHelpers);
+        return emitPickIdFor(node->children.front(), pointExpr, result, sdfHelpers, mode);
     }
     if (node->type == SdfNodeType::Group) {
         if (node->children.empty()) {
@@ -296,7 +306,7 @@ GlslSdfHelperBlock GlslEmitter::emitSdfHelpers(const SdfNodePtr& root, SdfCompil
     std::unordered_set<uint64_t> emittedIds;
     std::unordered_set<const SdfNode*> visiting;
     uint64_t nextGeneratedId = kGeneratedHelperIdBase;
-    glsl_emitter::SdfHelperEmitContext context{generatedIds, nextGeneratedId};
+    glsl_emitter::SdfHelperEmitContext context{generatedIds, nextGeneratedId, m_mode};
 
     emitSdfHelperPostorder(root, result, block, context, emittedIds, visiting);
     block.rootFunctionName = glsl_emitter::helperNameFor(root, context);
@@ -311,7 +321,7 @@ std::string GlslEmitter::emitSceneMaterialExpression(
 {
     const MaterialSystem materialSystem;
     materialSystem.ensureDefaultMaterial(result);
-    return glsl_emitter::emitMaterialFor(root, pointExpr, result, sdfHelpers);
+    return glsl_emitter::emitMaterialFor(root, pointExpr, result, sdfHelpers, m_mode);
 }
 
 std::string GlslEmitter::emitScenePickIdExpression(
@@ -320,7 +330,7 @@ std::string GlslEmitter::emitScenePickIdExpression(
     SdfCompileResult& result,
     const GlslSdfHelperBlock& sdfHelpers) const
 {
-    return emitPickIdFor(root, pointExpr, result, sdfHelpers);
+    return emitPickIdFor(root, pointExpr, result, sdfHelpers, m_mode);
 }
 
 } // namespace sdf3d

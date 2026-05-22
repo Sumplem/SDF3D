@@ -63,6 +63,24 @@ std::string helperDistanceFor(
     return it->second + "(" + pointExpr + ")";
 }
 
+std::string smoothnessExpr(const SdfNode& node, GlslEmitMode mode, uint64_t nodeId)
+{
+    const float smoothness = std::max(parameterOr(node, "smoothness", 0.25f), 0.0001f);
+    if (mode == GlslEmitMode::Baked || nodeId == 0) {
+        return glslFloat(smoothness);
+    }
+    return "max(" + glslNodeParamComponent(mode, nodeId, glslVec4(smoothness, 0.0f, 0.0f, 0.0f), 'x') + ", 0.000100)";
+}
+
+std::string strengthExpr(const SdfNode& node, GlslEmitMode mode, uint64_t nodeId, float fallback)
+{
+    const float strength = parameterOr(node, "strength", fallback);
+    if (mode == GlslEmitMode::Baked || nodeId == 0) {
+        return glslFloat(strength);
+    }
+    return glslNodeParamComponent(mode, nodeId, glslVec4(strength, 0.0f, 0.0f, 0.0f), 'x');
+}
+
 } // namespace
 
 std::string emitMaterialGeometryExpression(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result, SdfHelperEmitContext& context)
@@ -88,7 +106,8 @@ std::string emitMaterialFor(
     const SdfNodePtr& node,
     const std::string& pointExpr,
     SdfCompileResult& result,
-    const GlslSdfHelperBlock& sdfHelpers)
+    const GlslSdfHelperBlock& sdfHelpers,
+    GlslEmitMode mode)
 {
     if (!node) {
         result.errors.push_back("Encountered a null SDF node while emitting material evaluation.");
@@ -119,7 +138,7 @@ std::string emitMaterialFor(
 
         const MaterialSystem materialSystem;
         if (node->children.size() > 1 && isSdfMaterialNode(node->children[1]->type)) {
-            return emitMaterialFor(node->children[1], pointExpr, result, sdfHelpers);
+            return emitMaterialFor(node->children[1], pointExpr, result, sdfHelpers, mode);
         }
         const int materialId = materialSystem.appendMaterial(result, node->material);
         return sampleMaterialCall(materialId, pointExpr);
@@ -132,7 +151,7 @@ std::string emitMaterialFor(
         if (node->children.size() > 1) {
             result.errors.push_back("Group node ignores extra children.");
         }
-        return emitMaterialFor(node->children.front(), pointExpr, result, sdfHelpers);
+        return emitMaterialFor(node->children.front(), pointExpr, result, sdfHelpers, mode);
     case SdfNodeType::Translate: {
         if (node->children.empty()) {
             result.errors.push_back("Translate node has no child.");
@@ -145,11 +164,9 @@ std::string emitMaterialFor(
         const float x = parameterOr(*node, "x", 0.0f);
         const float y = parameterOr(*node, "y", 0.0f);
         const float z = parameterOr(*node, "z", 0.0f);
-        const std::string translate = node->stableId != 0
-            ? glslNodeParam0(node->stableId, glslVec4(x, y, z, 0.0f)) + ".xyz"
-            : glslVec3(x, y, z);
+        const std::string translate = glslNodeParam0(mode, node->stableId, glslVec4(x, y, z, 0.0f)) + ".xyz";
         const std::string translatedPoint = "(" + pointExpr + " - " + translate + ")";
-        return emitMaterialFor(node->children.front(), translatedPoint, result, sdfHelpers);
+        return emitMaterialFor(node->children.front(), translatedPoint, result, sdfHelpers, mode);
     }
     case SdfNodeType::Rotate: {
         if (node->children.empty()) {
@@ -161,11 +178,9 @@ std::string emitMaterialFor(
         }
 
         const glm::vec4 fallback = rotationQuaternionForNode(*node);
-        const std::string rotation = node->stableId != 0
-            ? glslNodeParam0(node->stableId, glslVec4(fallback.x, fallback.y, fallback.z, fallback.w))
-            : glslVec4(fallback.x, fallback.y, fallback.z, fallback.w);
+        const std::string rotation = glslNodeParam0(mode, node->stableId, glslVec4(fallback.x, fallback.y, fallback.z, fallback.w));
         const std::string rotatedPoint = "(transpose(sdf3d_rotationQuat(" + rotation + ")) * " + pointExpr + ")";
-        return emitMaterialFor(node->children.front(), rotatedPoint, result, sdfHelpers);
+        return emitMaterialFor(node->children.front(), rotatedPoint, result, sdfHelpers, mode);
     }
     case SdfNodeType::Scale: {
         if (node->children.empty()) {
@@ -181,12 +196,10 @@ std::string emitMaterialFor(
         const float y = std::max(parameterOr(*node, "y", uniformScale), 0.0001f);
         const float z = std::max(parameterOr(*node, "z", uniformScale), 0.0001f);
         const float distanceScale = std::min({x, y, z});
-        const std::string scaleParam = node->stableId != 0
-            ? glslNodeParam0(node->stableId, glslVec4(x, y, z, distanceScale))
-            : glslVec4(x, y, z, distanceScale);
-        const std::string scale = node->stableId != 0 ? "(" + scaleParam + ".xyz)" : glslVec3(x, y, z);
+        const std::string scaleParam = glslNodeParam0(mode, node->stableId, glslVec4(x, y, z, distanceScale));
+        const std::string scale = "(" + scaleParam + ".xyz)";
         const std::string scaledPoint = "(" + pointExpr + " / " + scale + ")";
-        return emitMaterialFor(node->children.front(), scaledPoint, result, sdfHelpers);
+        return emitMaterialFor(node->children.front(), scaledPoint, result, sdfHelpers, mode);
     }
     case SdfNodeType::Repeat: {
         if (node->children.empty()) {
@@ -197,8 +210,8 @@ std::string emitMaterialFor(
             result.errors.push_back("Repeat node ignores extra children.");
         }
 
-        const std::string repeatedPoint = repeatedPointFor(*node, pointExpr);
-        return emitMaterialFor(node->children.front(), repeatedPoint, result, sdfHelpers);
+        const std::string repeatedPoint = repeatedPointFor(*node, node->stableId, mode, pointExpr);
+        return emitMaterialFor(node->children.front(), repeatedPoint, result, sdfHelpers, mode);
     }
     case SdfNodeType::Mirror: {
         if (node->children.empty()) {
@@ -210,7 +223,7 @@ std::string emitMaterialFor(
         }
 
         const std::string mirroredPoint = mirroredPointFor(*node, pointExpr);
-        return emitMaterialFor(node->children.front(), mirroredPoint, result, sdfHelpers);
+        return emitMaterialFor(node->children.front(), mirroredPoint, result, sdfHelpers, mode);
     }
     case SdfNodeType::Twist: {
         if (node->children.empty()) {
@@ -221,14 +234,14 @@ std::string emitMaterialFor(
             result.errors.push_back("Twist node ignores extra children.");
         }
 
-        const std::string strength = glslFloat(parameterOr(*node, "strength", 1.0f));
+        const std::string strength = strengthExpr(*node, mode, node->stableId, 1.0f);
         const int axis = axisIndexFor(*node, 1.0f);
         const std::string axisCoord = axis == 0 ? pointExpr + ".x" : (axis == 1 ? pointExpr + ".y" : pointExpr + ".z");
         const std::string angle = "(" + axisCoord + " * " + strength + ")";
         const std::string c = "cos(" + angle + ")";
         const std::string s = "sin(" + angle + ")";
         const std::string twistedPoint = rotatePointAroundAxis(pointExpr, axis, c, s);
-        return emitMaterialFor(node->children.front(), twistedPoint, result, sdfHelpers);
+        return emitMaterialFor(node->children.front(), twistedPoint, result, sdfHelpers, mode);
     }
     case SdfNodeType::Bend: {
         if (node->children.empty()) {
@@ -239,14 +252,14 @@ std::string emitMaterialFor(
             result.errors.push_back("Bend node ignores extra children.");
         }
 
-        const std::string strength = glslFloat(parameterOr(*node, "strength", 0.5f));
+        const std::string strength = strengthExpr(*node, mode, node->stableId, 0.5f);
         const int axis = axisIndexFor(*node, 0.0f);
         const std::string axisCoord = axis == 0 ? pointExpr + ".x" : (axis == 1 ? pointExpr + ".y" : pointExpr + ".z");
         const std::string angle = "(" + axisCoord + " * " + strength + ")";
         const std::string c = "cos(" + angle + ")";
         const std::string s = "sin(" + angle + ")";
         const std::string bentPoint = rotatePointAroundAxis(pointExpr, axis, c, s);
-        return emitMaterialFor(node->children.front(), bentPoint, result, sdfHelpers);
+        return emitMaterialFor(node->children.front(), bentPoint, result, sdfHelpers, mode);
     }
     case SdfNodeType::Union:
     case SdfNodeType::SmoothUnion: {
@@ -256,16 +269,16 @@ std::string emitMaterialFor(
         }
 
         const bool smooth = node->type == SdfNodeType::SmoothUnion;
-        const float smoothness = std::max(parameterOr(*node, "smoothness", 0.25f), 0.0001f);
+        const std::string smoothness = smoothnessExpr(*node, mode, node->stableId);
         std::string distance = helperDistanceFor(node->children.front(), pointExpr, result, sdfHelpers);
-        std::string material = emitMaterialFor(node->children.front(), pointExpr, result, sdfHelpers);
+        std::string material = emitMaterialFor(node->children.front(), pointExpr, result, sdfHelpers, mode);
         for (size_t i = 1; i < node->children.size(); ++i) {
             const std::string childDistance = helperDistanceFor(node->children[i], pointExpr, result, sdfHelpers);
-            const std::string childMaterial = emitMaterialFor(node->children[i], pointExpr, result, sdfHelpers);
+            const std::string childMaterial = emitMaterialFor(node->children[i], pointExpr, result, sdfHelpers, mode);
             if (smooth) {
-                const std::string blend = "clamp(0.5 + 0.5 * (" + childDistance + " - " + distance + ") / " + glslFloat(smoothness) + ", 0.0, 1.0)";
+                const std::string blend = "clamp(0.5 + 0.5 * (" + childDistance + " - " + distance + ") / " + smoothness + ", 0.0, 1.0)";
                 material = "mixMaterial(" + childMaterial + ", " + material + ", " + blend + ")";
-                distance = "sdf3d_smin(" + distance + ", " + childDistance + ", " + glslFloat(smoothness) + ")";
+                distance = "sdf3d_smin(" + distance + ", " + childDistance + ", " + smoothness + ")";
             } else {
                 material = "selectMaterial(" + distance + " < " + childDistance + ", " + material + ", " + childMaterial + ")";
                 distance = "min(" + distance + ", " + childDistance + ")";
@@ -284,7 +297,7 @@ std::string emitMaterialFor(
         if (node->children.size() > 2) {
             result.errors.push_back("Subtract node ignores extra children beyond base and cutter.");
         }
-        return emitMaterialFor(node->children.front(), pointExpr, result, sdfHelpers);
+        return emitMaterialFor(node->children.front(), pointExpr, result, sdfHelpers, mode);
     }
     case SdfNodeType::SmoothSubtract: {
         if (node->children.empty()) {
@@ -293,18 +306,18 @@ std::string emitMaterialFor(
         }
         if (node->children.size() == 1) {
             result.errors.push_back("SmoothSubtract node is missing a cutter child; bypassing to base.");
-            return emitMaterialFor(node->children.front(), pointExpr, result, sdfHelpers);
+            return emitMaterialFor(node->children.front(), pointExpr, result, sdfHelpers, mode);
         }
         if (node->children.size() > 2) {
             result.errors.push_back("SmoothSubtract node ignores extra children beyond base and cutter.");
         }
 
-        const float smoothness = std::max(parameterOr(*node, "smoothness", 0.25f), 0.0001f);
+        const std::string smoothness = smoothnessExpr(*node, mode, node->stableId);
         const std::string baseDistance = helperDistanceFor(node->children[0], pointExpr, result, sdfHelpers);
         const std::string cutterDistance = helperDistanceFor(node->children[1], pointExpr, result, sdfHelpers);
-        const std::string baseMaterial = emitMaterialFor(node->children[0], pointExpr, result, sdfHelpers);
-        const std::string cutterMaterial = emitMaterialFor(node->children[1], pointExpr, result, sdfHelpers);
-        const std::string blend = "clamp(0.5 + 0.5 * (" + cutterDistance + " + " + baseDistance + ") / " + glslFloat(smoothness) + ", 0.0, 1.0)";
+        const std::string baseMaterial = emitMaterialFor(node->children[0], pointExpr, result, sdfHelpers, mode);
+        const std::string cutterMaterial = emitMaterialFor(node->children[1], pointExpr, result, sdfHelpers, mode);
+        const std::string blend = "clamp(0.5 + 0.5 * (" + cutterDistance + " + " + baseDistance + ") / " + smoothness + ", 0.0, 1.0)";
         return "mixMaterial(" + cutterMaterial + ", " + baseMaterial + ", " + blend + ")";
     }
     case SdfNodeType::Intersect:
@@ -315,16 +328,16 @@ std::string emitMaterialFor(
         }
 
         const bool smooth = node->type == SdfNodeType::SmoothIntersect;
-        const float smoothness = std::max(parameterOr(*node, "smoothness", 0.25f), 0.0001f);
+        const std::string smoothness = smoothnessExpr(*node, mode, node->stableId);
         std::string distance = helperDistanceFor(node->children.front(), pointExpr, result, sdfHelpers);
-        std::string material = emitMaterialFor(node->children.front(), pointExpr, result, sdfHelpers);
+        std::string material = emitMaterialFor(node->children.front(), pointExpr, result, sdfHelpers, mode);
         for (size_t i = 1; i < node->children.size(); ++i) {
             const std::string childDistance = helperDistanceFor(node->children[i], pointExpr, result, sdfHelpers);
-            const std::string childMaterial = emitMaterialFor(node->children[i], pointExpr, result, sdfHelpers);
+            const std::string childMaterial = emitMaterialFor(node->children[i], pointExpr, result, sdfHelpers, mode);
             if (smooth) {
-                const std::string blend = "clamp(0.5 + 0.5 * (" + distance + " - " + childDistance + ") / " + glslFloat(smoothness) + ", 0.0, 1.0)";
+                const std::string blend = "clamp(0.5 + 0.5 * (" + distance + " - " + childDistance + ") / " + smoothness + ", 0.0, 1.0)";
                 material = "mixMaterial(" + childMaterial + ", " + material + ", " + blend + ")";
-                distance = "(-sdf3d_smin(-(" + distance + "), -(" + childDistance + "), " + glslFloat(smoothness) + "))";
+                distance = "(-sdf3d_smin(-(" + distance + "), -(" + childDistance + "), " + smoothness + "))";
             } else {
                 material = "selectMaterial(" + distance + " > " + childDistance + ", " + material + ", " + childMaterial + ")";
                 distance = "max(" + distance + ", " + childDistance + ")";

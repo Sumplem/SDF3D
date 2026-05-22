@@ -259,11 +259,8 @@ EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, GraphGroupRegistry& g
                     node.parameters["zDegrees"],
                 }));
             }
-            if (isSdfTransformNode(node.type)) {
-                dirty.params = true;
-            } else {
-                dirty.scene = true;
-            }
+            dirty.params = definition == parameterDefinitions.end() || definition->second.type == SdfParameterType::Float;
+            dirty.scene = dirty.scene || !dirty.params;
         }
         ImGui::PopStyleVar();
         y += rowHeight;

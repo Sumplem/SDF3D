@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sdf3d/scene/SdfCompiler.h"
+#include "sdf3d/systems/GlslEmitMode.h"
 
 #include <string>
 
@@ -10,9 +11,9 @@ inline constexpr float kWarpCorrection = 1.5f;
 
 int axisIndexFor(const SdfNode& node, float defaultAxis);
 std::string rotatePointAroundAxis(const std::string& pointExpr, int axis, const std::string& c, const std::string& s);
-std::string repeatedPointFor(const SdfNode& node, const std::string& pointExpr);
+std::string repeatedPointFor(const SdfNode& node, uint64_t nodeId, GlslEmitMode mode, const std::string& pointExpr);
 std::string mirroredPointFor(const SdfNode& node, const std::string& pointExpr);
-std::string warpCorrectionExpr(float strengthValue);
+std::string warpCorrectionExpr(const std::string& strengthExpr);
 std::string glslRotationQuaternionFunction();
 
 } // namespace sdf3d::glsl_emitter

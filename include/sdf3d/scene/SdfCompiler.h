@@ -2,6 +2,7 @@
 
 #include "sdf3d/scene/SdfGraph.h"
 #include "sdf3d/scene/SdfNode.h"
+#include "sdf3d/systems/GlslEmitMode.h"
 
 #include <array>
 #include <cstdint>
@@ -41,13 +42,13 @@ struct SdfCompileResult {
 class SdfCompiler {
 public:
     /// Compiles a tree into self-contained `sceneSDF` and `sceneMaterial` GLSL entry points.
-    SdfCompileResult compile(const SdfNodePtr& root) const;
+    SdfCompileResult compile(const SdfNodePtr& root, GlslEmitMode mode = GlslEmitMode::Runtime) const;
 
     /// Compiles a graph output into self-contained SDF GLSL.
-    SdfCompileResult compile(const SdfGraph& graph) const;
+    SdfCompileResult compile(const SdfGraph& graph, GlslEmitMode mode = GlslEmitMode::Runtime) const;
 
     /// Compiles a graph output with resolved group definitions.
-    SdfCompileResult compile(const SdfGraph& graph, const GraphGroupRegistry& groups) const;
+    SdfCompileResult compile(const SdfGraph& graph, const GraphGroupRegistry& groups, GlslEmitMode mode = GlslEmitMode::Runtime) const;
 };
 
 } // namespace sdf3d

@@ -16,6 +16,7 @@ namespace sdf3d {
 namespace {
 
 constexpr float PI = 3.14159265358979323846f;
+constexpr double HOVER_PICK_INTERVAL_SECONDS = 1.0 / 30.0;
 
 float radians(float degrees)
 {
@@ -86,6 +87,11 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SdfGraph& graph, const Graph
     const int width = std::max(1, static_cast<int>(available.x));
     const int height = std::max(1, static_cast<int>(available.y));
     const bool hovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+    if (width != m_cachedViewportWidth || height != m_cachedViewportHeight) {
+        resetHoverPickCache();
+        m_cachedViewportWidth = width;
+        m_cachedViewportHeight = height;
+    }
 
     handleInput(hovered, {available.x, available.y});
 
@@ -107,11 +113,23 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SdfGraph& graph, const Graph
         && gizmo.hoverAxis < 0
         && !m_dragging;
     const std::optional<glm::ivec2> pickPixel = nodeIdPixelForMouse(mouse, imageMin, imageMax, width, height);
-    int nodeIdUnderMouse = -1;
-    if (canPickScene && pickPixel) {
+    const bool clickSelect = canPickScene && pickPixel && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+    const bool sameCachedPixel = pickPixel
+        && m_cachedHoverPickPixel
+        && m_cachedHoverPickPixel->x == pickPixel->x
+        && m_cachedHoverPickPixel->y == pickPixel->y;
+    const double now = ImGui::GetTime();
+    const bool hoverReadDue = m_showHoverHighlight && !sameCachedPixel && now >= m_nextHoverPickTime;
+    int nodeIdUnderMouse = canPickScene && pickPixel ? m_cachedHoverPickNodeId : -1;
+    if (canPickScene && pickPixel && (clickSelect || hoverReadDue)) {
         nodeIdUnderMouse = renderer.readNodeIdPixel(pickPixel->x, pickPixel->y);
+        m_cachedHoverPickPixel = *pickPixel;
+        m_cachedHoverPickNodeId = nodeIdUnderMouse;
+        m_nextHoverPickTime = now + HOVER_PICK_INTERVAL_SECONDS;
+    } else if (!canPickScene || !pickPixel) {
+        resetHoverPickCache();
     }
-    if (canPickScene && pickPixel && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+    if (clickSelect) {
         if (nodeIdUnderMouse > 0) {
             graph.setSelectedNode(static_cast<SdfGraphNodeId>(nodeIdUnderMouse));
         } else {
@@ -167,6 +185,7 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SdfGraph& graph, const Graph
     ImGui::Checkbox("Show hover highlight", &m_showHoverHighlight);
     if (!m_showHoverHighlight) {
         m_hoverNodeId = -1;
+        resetHoverPickCache();
     }
 
     if (imageHovered
@@ -287,6 +306,13 @@ void Viewport::updateCameraPosition()
     };
 
     m_position = m_target + direction * m_distance;
+}
+
+void Viewport::resetHoverPickCache()
+{
+    m_cachedHoverPickPixel.reset();
+    m_cachedHoverPickNodeId = -1;
+    m_nextHoverPickTime = 0.0;
 }
 
 } // namespace sdf3d

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sdf3d/scene/SdfNode.h"
+#include "sdf3d/systems/GlslEmitMode.h"
 
 #include <string>
 
@@ -11,6 +12,8 @@ std::string glslFloat(float value);
 std::string glslVec3(float x, float y, float z);
 std::string glslVec4(float x, float y, float z, float w);
 std::string glslNodeParam0(uint64_t nodeId, const std::string& fallback);
+std::string glslNodeParam0(GlslEmitMode mode, uint64_t nodeId, const std::string& fallback);
+std::string glslNodeParamComponent(GlslEmitMode mode, uint64_t nodeId, const std::string& fallback, char component);
 std::string glslHit(const std::string& distanceExpr, int materialId);
 std::string glslNoHit();
 std::string hitDistance(const std::string& hitExpr);

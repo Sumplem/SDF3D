@@ -106,7 +106,51 @@ bool isMultiInputBooleanFamily(SdfNodeType type)
         || type == SdfNodeType::SmoothIntersect;
 }
 
-void appendTransformNodeParams(
+bool runtimeNodeParamFor(const SdfGraphNode& node, SdfCompiledNodeParam& param, GroupDefId stableIdScope)
+{
+    param.nodeId = scopedSdfNodeStableId(stableIdScope, node.payload.stableId != 0 ? node.payload.stableId : node.id);
+    param.data0 = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    switch (node.payload.type) {
+    case SdfNodeType::Rotate:
+    {
+        const glm::vec4 q = rotationQuaternionForNode(node.payload);
+        param.data0 = {q.x, q.y, q.z, q.w};
+        return true;
+    }
+    case SdfNodeType::Scale: {
+        const float uniformScale = parameterOr(node.payload, "scale", 1.0f);
+        const float x = std::max(parameterOr(node.payload, "x", uniformScale), 0.0001f);
+        const float y = std::max(parameterOr(node.payload, "y", uniformScale), 0.0001f);
+        const float z = std::max(parameterOr(node.payload, "z", uniformScale), 0.0001f);
+        param.data0 = {x, y, z, std::min({x, y, z})};
+        return true;
+    }
+    default:
+        break;
+    }
+
+    const SdfNodeDefinition* definition = sdfNodeDefinition(node.payload.type);
+    if (definition == nullptr) {
+        return false;
+    }
+
+    std::size_t packedCount = 0;
+    for (const SdfParameterDefinition& parameter : definition->parameters) {
+        if (parameter.type != SdfParameterType::Float) {
+            continue;
+        }
+        if (packedCount >= param.data0.size()) {
+            break;
+        }
+        param.data0[packedCount] = parameterOr(node.payload, parameter.name, parameter.defaultValue);
+        ++packedCount;
+    }
+
+    return packedCount > 0;
+}
+
+void appendRuntimeNodeParams(
     const SdfGraph& graph,
     std::vector<SdfCompiledNodeParam>& params,
     std::unordered_set<SdfGraphNodeId>& packedIds,
@@ -115,36 +159,7 @@ void appendTransformNodeParams(
     for (const auto& [id, node] : graph.nodes()) {
         SdfCompiledNodeParam param;
         (void)id;
-        param.nodeId = scopedSdfNodeStableId(stableIdScope, node.payload.stableId != 0 ? node.payload.stableId : node.id);
-        switch (node.payload.type) {
-        case SdfNodeType::Translate:
-            param.data0 = {
-                parameterOr(node.payload, "x", 0.0f),
-                parameterOr(node.payload, "y", 0.0f),
-                parameterOr(node.payload, "z", 0.0f),
-                0.0f,
-            };
-            break;
-        case SdfNodeType::Rotate:
-        {
-            const glm::vec4 q = rotationQuaternionForNode(node.payload);
-            param.data0 = {
-                q.x,
-                q.y,
-                q.z,
-                q.w,
-            };
-            break;
-        }
-        case SdfNodeType::Scale: {
-            const float uniformScale = parameterOr(node.payload, "scale", 1.0f);
-            const float x = std::max(parameterOr(node.payload, "x", uniformScale), 0.0001f);
-            const float y = std::max(parameterOr(node.payload, "y", uniformScale), 0.0001f);
-            const float z = std::max(parameterOr(node.payload, "z", uniformScale), 0.0001f);
-            param.data0 = {x, y, z, std::min({x, y, z})};
-            break;
-        }
-        default:
+        if (!runtimeNodeParamFor(node, param, stableIdScope)) {
             continue;
         }
 
@@ -174,7 +189,7 @@ void appendReachableGroupNodeParams(
         if (definition == nullptr) {
             continue;
         }
-        appendTransformNodeParams(definition->subgraph, params, packedIds, node.payload.groupDefinitionId);
+        appendRuntimeNodeParams(definition->subgraph, params, packedIds, node.payload.groupDefinitionId);
         appendReachableGroupNodeParams(definition->subgraph, groups, params, packedIds, visitedDefinitions);
     }
 }
@@ -690,7 +705,7 @@ std::vector<SdfCompiledNodeParam> GraphSystem::collectNodeParams(const SdfGraph&
     std::vector<SdfCompiledNodeParam> params;
     params.reserve(graph.nodes().size());
     std::unordered_set<SdfGraphNodeId> packedIds;
-    appendTransformNodeParams(graph, params, packedIds, 0);
+    appendRuntimeNodeParams(graph, params, packedIds, 0);
 
     return params;
 }
@@ -701,7 +716,7 @@ std::vector<SdfCompiledNodeParam> GraphSystem::collectNodeParams(const SdfGraph&
     params.reserve(graph.nodes().size());
     std::unordered_set<SdfGraphNodeId> packedIds;
     std::unordered_set<GroupDefId> visitedDefinitions;
-    appendTransformNodeParams(graph, params, packedIds, 0);
+    appendRuntimeNodeParams(graph, params, packedIds, 0);
     appendReachableGroupNodeParams(graph, groups, params, packedIds, visitedDefinitions);
     return params;
 }

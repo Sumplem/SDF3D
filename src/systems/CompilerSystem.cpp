@@ -53,25 +53,29 @@ void emitSceneNodeContainsCase(std::ostringstream& glsl, const SdfNodePtr& node,
 
 } // namespace
 
-SdfCompileResult CompilerSystem::compile(const SdfGraph& graph) const
+SdfCompileResult CompilerSystem::compile(const SdfGraph& graph, GlslEmitMode mode) const
 {
     const SdfGraphLowerResult lowered = lowerSdfGraphToTree(graph);
-    SdfCompileResult result = compile(lowered.root);
+    SdfCompileResult result = compile(lowered.root, mode);
     result.errors.insert(result.errors.begin(), lowered.errors.begin(), lowered.errors.end());
-    result.nodeParams = GraphSystem::collectNodeParams(graph);
+    if (mode == GlslEmitMode::Runtime) {
+        result.nodeParams = GraphSystem::collectNodeParams(graph);
+    }
     return result;
 }
 
-SdfCompileResult CompilerSystem::compile(const SdfGraph& graph, const GraphGroupRegistry& groups) const
+SdfCompileResult CompilerSystem::compile(const SdfGraph& graph, const GraphGroupRegistry& groups, GlslEmitMode mode) const
 {
     const SdfGraphLowerResult lowered = lowerSdfGraphToTree(graph, groups);
-    SdfCompileResult result = compile(lowered.root);
+    SdfCompileResult result = compile(lowered.root, mode);
     result.errors.insert(result.errors.begin(), lowered.errors.begin(), lowered.errors.end());
-    result.nodeParams = GraphSystem::collectNodeParams(graph, groups);
+    if (mode == GlslEmitMode::Runtime) {
+        result.nodeParams = GraphSystem::collectNodeParams(graph, groups);
+    }
     return result;
 }
 
-SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root) const
+SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root, GlslEmitMode mode) const
 {
     SdfCompileResult result;
 
@@ -103,31 +107,33 @@ SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root) const
         return result;
     }
 
-    const GlslEmitter emitter;
+    const GlslEmitter emitter(mode);
     const GlslSdfHelperBlock sdfHelpers = emitter.emitSdfHelpers(root, result);
     const std::string materialExpression = emitter.emitSceneMaterialExpression(root, "p", result, sdfHelpers);
     const std::string pickIdExpression = emitter.emitScenePickIdExpression(root, "p", result, sdfHelpers);
 
     std::ostringstream glsl;
-    glsl << "struct SdfNodeParam\n";
-    glsl << "{\n";
-    glsl << "    uvec4 id;\n";
-    glsl << "    vec4 data0;\n";
-    glsl << "};\n\n";
-    glsl << "layout(std430, binding = 1) readonly buffer NodeParamBuffer\n";
-    glsl << "{\n";
-    glsl << "    SdfNodeParam uNodeParams[];\n";
-    glsl << "};\n\n";
-    glsl << "uniform int uNodeParamCount;\n\n";
-    glsl << "vec4 sdf3d_nodeParam0(uint nodeIdLow, uint nodeIdHigh, vec4 fallback)\n";
-    glsl << "{\n";
-    glsl << "    for (int i = 0; i < uNodeParamCount; ++i) {\n";
-    glsl << "        if (uNodeParams[i].id.x == nodeIdLow && uNodeParams[i].id.y == nodeIdHigh) {\n";
-    glsl << "            return uNodeParams[i].data0;\n";
-    glsl << "        }\n";
-    glsl << "    }\n";
-    glsl << "    return fallback;\n";
-    glsl << "}\n\n";
+    if (mode == GlslEmitMode::Runtime) {
+        glsl << "struct SdfNodeParam\n";
+        glsl << "{\n";
+        glsl << "    uvec4 id;\n";
+        glsl << "    vec4 data0;\n";
+        glsl << "};\n\n";
+        glsl << "layout(std430, binding = 1) readonly buffer NodeParamBuffer\n";
+        glsl << "{\n";
+        glsl << "    SdfNodeParam uNodeParams[];\n";
+        glsl << "};\n\n";
+        glsl << "uniform int uNodeParamCount;\n\n";
+        glsl << "vec4 sdf3d_nodeParam0(uint nodeIdLow, uint nodeIdHigh, vec4 fallback)\n";
+        glsl << "{\n";
+        glsl << "    for (int i = 0; i < uNodeParamCount; ++i) {\n";
+        glsl << "        if (uNodeParams[i].id.x == nodeIdLow && uNodeParams[i].id.y == nodeIdHigh) {\n";
+        glsl << "            return uNodeParams[i].data0;\n";
+        glsl << "        }\n";
+        glsl << "    }\n";
+        glsl << "    return fallback;\n";
+        glsl << "}\n\n";
+    }
 
     if (result.usesBox) {
         glsl << "float sdf3d_box(vec3 p, vec3 b)\n";

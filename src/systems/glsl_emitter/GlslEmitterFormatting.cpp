@@ -40,6 +40,20 @@ std::string glslNodeParam0(uint64_t nodeId, const std::string& fallback)
     return "sdf3d_nodeParam0(" + std::to_string(low) + "u, " + std::to_string(high) + "u, " + fallback + ")";
 }
 
+std::string glslNodeParam0(GlslEmitMode mode, uint64_t nodeId, const std::string& fallback)
+{
+    if (mode == GlslEmitMode::Baked || nodeId == 0) {
+        return fallback;
+    }
+
+    return glslNodeParam0(nodeId, fallback);
+}
+
+std::string glslNodeParamComponent(GlslEmitMode mode, uint64_t nodeId, const std::string& fallback, char component)
+{
+    return glslNodeParam0(mode, nodeId, fallback) + "." + component;
+}
+
 std::string glslHit(const std::string& distanceExpr, int materialId)
 {
     return "vec2(" + distanceExpr + ", " + glslFloat(static_cast<float>(materialId)) + ")";

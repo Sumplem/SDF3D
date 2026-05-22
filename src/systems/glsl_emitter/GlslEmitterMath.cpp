@@ -26,7 +26,7 @@ std::string rotatePointAroundAxis(const std::string& pointExpr, int axis, const 
         + s + " * " + pointExpr + ".x + " + c + " * " + pointExpr + ".y, " + pointExpr + ".z)";
 }
 
-std::string repeatedPointFor(const SdfNode& node, const std::string& pointExpr)
+std::string repeatedPointFor(const SdfNode& node, uint64_t nodeId, GlslEmitMode mode, const std::string& pointExpr)
 {
     const float x = std::max(parameterOr(node, "x", 2.0f), 0.0001f);
     const float y = std::max(parameterOr(node, "y", 2.0f), 0.0001f);
@@ -34,7 +34,10 @@ std::string repeatedPointFor(const SdfNode& node, const std::string& pointExpr)
     const bool repeatX = parameterOr(node, "repeatX", 1.0f) != 0.0f;
     const bool repeatY = parameterOr(node, "repeatY", 1.0f) != 0.0f;
     const bool repeatZ = parameterOr(node, "repeatZ", 1.0f) != 0.0f;
-    const std::string cell = glslVec3(x, y, z);
+    const std::string fallbackCell = glslVec3(x, y, z);
+    const std::string cell = mode == GlslEmitMode::Baked || nodeId == 0
+        ? fallbackCell
+        : glslNodeParam0(mode, nodeId, glslVec4(x, y, z, 0.0f)) + ".xyz";
 
     if (repeatX && repeatY && repeatZ) {
         return "(mod(" + pointExpr + " + 0.5 * " + cell + ", " + cell + ") - 0.5 * " + cell + ")";
@@ -43,9 +46,9 @@ std::string repeatedPointFor(const SdfNode& node, const std::string& pointExpr)
         return pointExpr;
     }
 
-    const std::string xSize = glslFloat(x);
-    const std::string ySize = glslFloat(y);
-    const std::string zSize = glslFloat(z);
+    const std::string xSize = mode == GlslEmitMode::Baked || nodeId == 0 ? glslFloat(x) : glslNodeParamComponent(mode, nodeId, glslVec4(x, y, z, 0.0f), 'x');
+    const std::string ySize = mode == GlslEmitMode::Baked || nodeId == 0 ? glslFloat(y) : glslNodeParamComponent(mode, nodeId, glslVec4(x, y, z, 0.0f), 'y');
+    const std::string zSize = mode == GlslEmitMode::Baked || nodeId == 0 ? glslFloat(z) : glslNodeParamComponent(mode, nodeId, glslVec4(x, y, z, 0.0f), 'z');
     const std::string xExpr = repeatX ? "(mod(" + pointExpr + ".x + 0.5 * " + xSize + ", " + xSize + ") - 0.5 * " + xSize + ")" : pointExpr + ".x";
     const std::string yExpr = repeatY ? "(mod(" + pointExpr + ".y + 0.5 * " + ySize + ", " + ySize + ") - 0.5 * " + ySize + ")" : pointExpr + ".y";
     const std::string zExpr = repeatZ ? "(mod(" + pointExpr + ".z + 0.5 * " + zSize + ", " + zSize + ") - 0.5 * " + zSize + ")" : pointExpr + ".z";
@@ -63,9 +66,9 @@ std::string mirroredPointFor(const SdfNode& node, const std::string& pointExpr)
     return "vec3(" + xExpr + ", " + yExpr + ", " + zExpr + ")";
 }
 
-std::string warpCorrectionExpr(float strengthValue)
+std::string warpCorrectionExpr(const std::string& strengthExpr)
 {
-    return "(1.0 + abs(" + glslFloat(strengthValue) + ") * " + glslFloat(kWarpCorrection) + ")";
+    return "(1.0 + abs(" + strengthExpr + ") * " + glslFloat(kWarpCorrection) + ")";
 }
 
 std::string glslRotationQuaternionFunction()

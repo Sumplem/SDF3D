@@ -9,6 +9,8 @@
 #include <glm/glm.hpp>
 #include <imgui.h>
 
+#include <optional>
+
 namespace sdf3d {
 
 class GraphGroupRegistry;
@@ -30,6 +32,7 @@ private:
     void pan(const glm::vec2& mouseDelta, const glm::vec2& panelSize);
     void zoom(float wheelDelta);
     void updateCameraPosition();
+    void resetHoverPickCache();
 
     glm::vec3 m_target = {0.0f, 0.0f, 0.0f};
     float m_distance = 4.0f;
@@ -43,7 +46,12 @@ private:
     TranslateGizmo m_translateGizmo;
     AddMenu m_viewportAddMenu;
     glm::vec3 m_pendingAddWorldPosition = {0.0f, 0.0f, 0.0f};
+    std::optional<glm::ivec2> m_cachedHoverPickPixel;
     int m_hoverNodeId = -1;
+    int m_cachedHoverPickNodeId = -1;
+    int m_cachedViewportWidth = 0;
+    int m_cachedViewportHeight = 0;
+    double m_nextHoverPickTime = 0.0;
     bool m_dragging = false;
     bool m_rightMouseMoved = false;
     bool m_showHoverHighlight = true;

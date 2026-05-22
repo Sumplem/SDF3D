@@ -12,25 +12,23 @@
 - MaterialOverride consumes `sdf` + `material`; inline material fallback remains legacy-only
 - ValueNoiseMaterial exists as first procedural noise material beyond Checker; future noise nodes must use specific names, not generic NoiseMaterial
 - Node groups exist: App-owned `GraphGroupRegistry`, `SdfNodeType::Group`, root JSON `definitions`, Ctrl+G grouping shortcut
-- Group navigation: Tab/double-click enters selected Group, Shift+Tab exits, breadcrumbs switch active graph and clear transient editor state
-- Entered group subgraph is active editor/viewport/compiler/UI Add/SceneOutliner/Properties target
-- Group display names resolve through registry definitions; group-internal lowered node IDs are scoped by definition ID
+- Entered group subgraph is active editor/viewport/compiler/UI Add/SceneOutliner/Properties target; breadcrumbs clear transient editor state
+- Group display names resolve through registry definitions; group-internal lowered node IDs and runtime params are scoped by definition ID
 - Viewport picking uses GPU node-id buffer (`GL_R32I`) and single-pixel reads; CPU graph raymarch picking is removed
 - `scenePickId(vec3 p)` is compiler-emitted with scene GLSL; groups pick as root Group instance IDs; transform wrappers pick as visible wrapper IDs
-- Viewport hover highlight reads the GPU node-id buffer on mouse move, then maps picked node through the same highlight target logic as selection
+- Viewport hover highlight reads the GPU node-id buffer through a cached/throttled readback path, then maps picked node through the same highlight target logic as selection
 - Shader highlight is gated by visible GPU pick ID plus `sceneNodeContains`; mask samples the visible node SDF to avoid multi-object bleed
-- Inline Translate/Rotate/Scale node-editor edits upload node params through SSBO binding 1 without recompiling scene GLSL
+- Runtime GLSL mode reads all Float node params from SSBO binding 1; Baked mode emits literals and no node-param SSBO
+- UI Float parameter edits mark param-dirty and refresh node-param SSBO only; Bool/Enum/topology still mark scene-dirty
 - Union/SmoothUnion/Intersect/SmoothIntersect use one vertical pill-shaped `inputs` multi-input SDF socket with one empty spare slot, hover feedback, separate anchors, and exact-slot drag starts
 - Viewport Add appends new primitives to an output-root Union/SmoothUnion multi-input; otherwise it creates a Union as needed
 - Right-click Union/SmoothUnion/Intersect/SmoothIntersect can change type in place within the same multi-input boolean family
 - Path-trace shader has stochastic GI bounces, cosine hemisphere sampling, direct light shadow checks, emissive contribution, and progressive accumulation
-- Shared graph validity lives in `GraphSystemValidity.cpp`; compiler and UI consume GraphSystem queries; no remaining local UI bypass rules found
-- Viewport camera supports Shift+right-click drag pan; right-click drag orbit and right-click release Add popup remain intact
-- Build/tests: full Debug build pass; all test executables pass; GUI smoke pass after ValueNoiseMaterial slice
+- Build/tests: full Debug app build pass; all test executables pass after Runtime SSBO extension
 
 ## Active
 
-ValueNoiseMaterial slice complete: new material node type, registry/serializer/compiler/UI/shader support, shader value-noise sampling in direct and path-trace shaders, and regression tests. Review gate open.
+Primitive Float param lag fix complete: runtime GLSL and node-param packing already used SSBO, but UI dirty routing still sent primitive/property Float edits through scene-dirty recompile; Float edits now go through param-dirty SSBO refresh. Review gate open.
 
 ## Decisions
 
@@ -96,6 +94,9 @@ ValueNoiseMaterial slice complete: new material node type, registry/serializer/c
 - 2026-05 - Same-family multi-input boolean nodes can change type in place because Union/SmoothUnion/Intersect/SmoothIntersect share the `inputs` socket contract
 - 2026-05 - Procedural noise material nodes use specific algorithm names; first landed node is ValueNoiseMaterial, not generic NoiseMaterial
 - 2026-05 - ValueNoiseMaterial reuses material secondary color and patternScale fields so material SSBO layout stays unchanged
+- 2026-05 - Runtime param GLSL uses `GlslEmitMode::Runtime` for edit shaders and `GlslEmitMode::Baked` for export shaders so Float edits avoid GPU shader recompile while baked output stays SSBO-free
+- 2026-05 - Viewport hover pick readback is cached and throttled because per-frame `glReadPixels` on hover causes GPU/CPU sync stalls; click selection still reads immediately
+- 2026-05 - Float parameter UI edits route to param-dirty SSBO refresh; Bool/Enum edits route to scene-dirty because they change GLSL structure
 
 ## Constraints
 
@@ -127,4 +128,4 @@ ValueNoiseMaterial slice complete: new material node type, registry/serializer/c
 
 ## Next
 
-Review ValueNoiseMaterial slice, then choose the next specific procedural material node or return to Full GI design.
+Review primitive Float param SSBO dirty-routing fix, then choose next procedural material node or return to Full GI design.

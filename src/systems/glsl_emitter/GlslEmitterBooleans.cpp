@@ -7,6 +7,20 @@
 #include <algorithm>
 
 namespace sdf3d {
+namespace {
+
+std::string smoothnessExpr(const SdfNode& node, GlslEmitMode mode, uint64_t nodeId)
+{
+    using namespace glsl_emitter;
+
+    const float smoothness = std::max(parameterOr(node, "smoothness", 0.25f), 0.0001f);
+    if (mode == GlslEmitMode::Baked || nodeId == 0) {
+        return glslFloat(smoothness);
+    }
+    return "max(" + glslNodeParamComponent(mode, nodeId, glslVec4(smoothness, 0.0f, 0.0f, 0.0f), 'x') + ", 0.000100)";
+}
+
+} // namespace
 
 std::string GlslEmitter::emitBooleanNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const
 {
@@ -38,12 +52,12 @@ std::string GlslEmitter::emitBooleanNode(const SdfNodePtr& node, const std::stri
             return emitNode(node->children.front(), pointExpr, result);
         }
         result.usesSmoothMin = true;
-        const float smoothness = std::max(parameterOr(*node, "smoothness", 0.25f), 0.0001f);
+        const std::string smoothness = smoothnessExpr(*node, m_mode, node->stableId);
         std::string expression = emitNode(node->children.front(), pointExpr, result);
         for (size_t i = 1; i < node->children.size(); ++i) {
             const std::string child = emitNode(node->children[i], pointExpr, result);
             const std::string distance = "sdf3d_smin(" + hitDistance(expression) + ", " + hitDistance(child)
-                + ", " + glslFloat(smoothness) + ")";
+                + ", " + smoothness + ")";
             expression = "(" + hitDistance(expression) + " < " + hitDistance(child) + " ? vec2(" + distance + ", "
                 + expression + ".y) : vec2(" + distance + ", " + child + ".y))";
         }
@@ -78,10 +92,10 @@ std::string GlslEmitter::emitBooleanNode(const SdfNodePtr& node, const std::stri
             result.errors.push_back("SmoothSubtract node ignores extra children beyond base and cutter.");
         }
         result.usesSmoothMin = true;
-        const float smoothness = std::max(parameterOr(*node, "smoothness", 0.25f), 0.0001f);
+        const std::string smoothness = smoothnessExpr(*node, m_mode, node->stableId);
         const std::string base = emitNode(node->children[0], pointExpr, result);
         const std::string cutter = emitNode(node->children[1], pointExpr, result);
-        return "vec2((-sdf3d_smin(-(" + hitDistance(base) + "), " + hitDistance(cutter) + ", " + glslFloat(smoothness) + ")), " + base + ".y)";
+        return "vec2((-sdf3d_smin(-(" + hitDistance(base) + "), " + hitDistance(cutter) + ", " + smoothness + ")), " + base + ".y)";
     }
     case SdfNodeType::Intersect: {
         if (node->children.empty()) {
@@ -108,12 +122,12 @@ std::string GlslEmitter::emitBooleanNode(const SdfNodePtr& node, const std::stri
             return emitNode(node->children.front(), pointExpr, result);
         }
         result.usesSmoothMin = true;
-        const float smoothness = std::max(parameterOr(*node, "smoothness", 0.25f), 0.0001f);
+        const std::string smoothness = smoothnessExpr(*node, m_mode, node->stableId);
         std::string expression = emitNode(node->children.front(), pointExpr, result);
         for (size_t i = 1; i < node->children.size(); ++i) {
             const std::string child = emitNode(node->children[i], pointExpr, result);
             const std::string distance = "(-sdf3d_smin(-(" + hitDistance(expression) + "), -(" + hitDistance(child)
-                + "), " + glslFloat(smoothness) + "))";
+                + "), " + smoothness + "))";
             expression = "(" + hitDistance(expression) + " > " + hitDistance(child) + " ? vec2(" + distance + ", "
                 + expression + ".y) : vec2(" + distance + ", " + child + ".y))";
         }
@@ -150,11 +164,11 @@ std::string emitBooleanGeometryExpression(const SdfNodePtr& node, const std::str
             return "1e6";
         }
         result.usesSmoothMin = true;
-        const float smoothness = std::max(parameterOr(*node, "smoothness", 0.25f), 0.0001f);
+        const std::string smoothness = smoothnessExpr(*node, context.mode, runtimeParamIdFor(node));
         std::string expression = helperCallFor(node->children.front(), pointExpr, context);
         for (size_t i = 1; i < node->children.size(); ++i) {
             const std::string child = helperCallFor(node->children[i], pointExpr, context);
-            expression = "sdf3d_smin(" + expression + ", " + child + ", " + glslFloat(smoothness) + ")";
+            expression = "sdf3d_smin(" + expression + ", " + child + ", " + smoothness + ")";
         }
         return expression;
     }
@@ -187,10 +201,10 @@ std::string emitBooleanGeometryExpression(const SdfNodePtr& node, const std::str
             result.errors.push_back("SmoothSubtract node ignores extra children beyond base and cutter.");
         }
         result.usesSmoothMin = true;
-        const float smoothness = std::max(parameterOr(*node, "smoothness", 0.25f), 0.0001f);
+        const std::string smoothness = smoothnessExpr(*node, context.mode, runtimeParamIdFor(node));
         const std::string base = helperCallFor(node->children[0], pointExpr, context);
         const std::string cutter = helperCallFor(node->children[1], pointExpr, context);
-        return "(-sdf3d_smin(-(" + base + "), " + cutter + ", " + glslFloat(smoothness) + "))";
+        return "(-sdf3d_smin(-(" + base + "), " + cutter + ", " + smoothness + "))";
     }
     case SdfNodeType::Intersect: {
         if (node->children.empty()) {
@@ -210,11 +224,11 @@ std::string emitBooleanGeometryExpression(const SdfNodePtr& node, const std::str
             return "1e6";
         }
         result.usesSmoothMin = true;
-        const float smoothness = std::max(parameterOr(*node, "smoothness", 0.25f), 0.0001f);
+        const std::string smoothness = smoothnessExpr(*node, context.mode, runtimeParamIdFor(node));
         std::string expression = helperCallFor(node->children.front(), pointExpr, context);
         for (size_t i = 1; i < node->children.size(); ++i) {
             const std::string child = helperCallFor(node->children[i], pointExpr, context);
-            expression = "(-sdf3d_smin(-(" + expression + "), -(" + child + "), " + glslFloat(smoothness) + "))";
+            expression = "(-sdf3d_smin(-(" + expression + "), -(" + child + "), " + smoothness + "))";
         }
         return expression;
     }

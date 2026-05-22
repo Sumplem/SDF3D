@@ -60,7 +60,7 @@ void testGraphCompilerOutputNode(std::vector<TestFailure>& failures)
     graph.link(sphere, "sdf", output, "surface");
 
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
     expect(contains(result.glsl, "length(p) - 1.500000"), testName, "Expected output node to compile linked surface.", failures);
@@ -73,7 +73,7 @@ void testGraphCompilerUnlinkedOutputNode(std::vector<TestFailure>& failures)
     sdf3d::SdfGraph graph;
 
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(!result.errors.empty(), testName, "Expected unlinked output compiler error.", failures);
     expect(contains(result.errors.front(), "Output node"), testName, "Expected output node error text.", failures);
@@ -85,7 +85,7 @@ void testGraphCompilerEmpty(std::vector<TestFailure>& failures)
     const std::string testName = "graph compiler empty";
     const sdf3d::SdfCompiler compiler;
     const sdf3d::SdfGraph graph;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(!result.errors.empty(), testName, "Expected empty graph compiler warning.", failures);
     expect(contains(result.glsl, "sceneMaterial"), testName, "Expected deferred material empty graph output.", failures);
@@ -103,11 +103,35 @@ void testGraphCompilerPrimitive(std::vector<TestFailure>& failures)
     graph.link(sphere, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
     expect(contains(result.glsl, "length(p) - 2.000000"), testName, "Expected graph payload radius.", failures);
     expect(result.materials.size() == 1, testName, "Expected default graph material.", failures);
+}
+
+void testGraphCompilerRuntimePrimitiveUsesNodeParam(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph compiler runtime primitive uses node param";
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    if (sdf3d::SdfGraphNode* node = graph.node(sphere)) {
+        node->payload.parameters["radius"] = 2.0f;
+    }
+    graph.link(sphere, "sdf", graph.outputNode(), "surface");
+
+    const sdf3d::SdfCompiler compiler;
+    const sdf3d::SdfCompileResult runtime = compiler.compile(graph);
+    const sdf3d::SdfCompileResult baked = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
+
+    expect(runtime.errors.empty(), testName, "Expected no runtime compiler errors.", failures);
+    expect(contains(runtime.glsl, "layout(std430, binding = 1) readonly buffer NodeParamBuffer"), testName, "Expected runtime node-param SSBO.", failures);
+    expect(contains(runtime.glsl, "sdf3d_nodeParam0(" + std::to_string(sphere) + "u, 0u, vec4(2.000000"), testName, "Expected sphere radius runtime lookup.", failures);
+    expect(runtime.nodeParams.size() == 1 && runtime.nodeParams[0].data0[0] == 2.0f, testName, "Expected sphere radius packed.", failures);
+    expect(baked.errors.empty(), testName, "Expected no baked compiler errors.", failures);
+    expect(!contains(baked.glsl, "NodeParamBuffer"), testName, "Expected baked GLSL without node-param SSBO.", failures);
+    expect(contains(baked.glsl, "length(p) - 2.000000"), testName, "Expected baked radius literal.", failures);
+    expect(baked.nodeParams.empty(), testName, "Expected baked compile to skip node params.", failures);
 }
 
 void testGraphCompilerMaterialOverride(std::vector<TestFailure>& failures)
@@ -199,7 +223,7 @@ void testGraphCompilerLinkedTransform(std::vector<TestFailure>& failures)
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
     expect(contains(result.glsl, "sdf3d_nodeParam0("), testName, "Expected runtime node param lookup.", failures);
     expect(contains(result.glsl, "vec4(3.000000, 0.000000, -1.000000, 0.000000)).xyz"), testName, "Expected linked transform fallback expression.", failures);
-    expect(result.nodeParams.size() == 1, testName, "Expected transform node param.", failures);
+    expect(result.nodeParams.size() == 2, testName, "Expected primitive and transform node params.", failures);
     expect(contains(result.glsl, "float sceneNodeSDF(int nodeId, vec3 p)"), testName, "Expected node highlight SDF entry point.", failures);
     expect(contains(result.glsl, "case "), testName, "Expected node highlight SDF switch cases.", failures);
 }
@@ -226,7 +250,7 @@ void testGraphCompilerNonUniformScale(std::vector<TestFailure>& failures)
     expect(contains(result.glsl, "vec4(2.000000, 3.000000, 4.000000, 2.000000)"), testName, "Expected non-uniform scale fallback params.", failures);
     expect(contains(result.glsl, ".xyz"), testName, "Expected runtime scale vector expression.", failures);
     expect(contains(result.glsl, ".w"), testName, "Expected runtime min-axis distance rescale expression.", failures);
-    expect(result.nodeParams.size() == 1, testName, "Expected scale node param.", failures);
+    expect(result.nodeParams.size() == 2, testName, "Expected primitive and scale node params.", failures);
 }
 
 void testGraphCompilerCollectsGroupTransformParams(std::vector<TestFailure>& failures)
@@ -257,8 +281,8 @@ void testGraphCompilerCollectsGroupTransformParams(std::vector<TestFailure>& fai
     const sdf3d::SdfCompileResult result = compiler.compile(graph, groups);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
-    const auto it = std::find_if(result.nodeParams.begin(), result.nodeParams.end(), [translate](const sdf3d::SdfCompiledNodeParam& param) {
-        return param.nodeId != translate;
+    const auto it = std::find_if(result.nodeParams.begin(), result.nodeParams.end(), [](const sdf3d::SdfCompiledNodeParam& param) {
+        return param.data0[0] == 2.0f && param.data0[1] == 3.0f && param.data0[2] == 4.0f;
     });
     expect(it != result.nodeParams.end(), testName, "Expected group transform node param.", failures);
     if (it != result.nodeParams.end()) {
@@ -307,7 +331,7 @@ void testGraphCompilerCycle(std::vector<TestFailure>& failures)
     graph.link(a, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(!result.errors.empty(), testName, "Expected cycle compiler error.", failures);
     expect(contains(result.errors.front(), "Cycle"), testName, "Expected cycle error text.", failures);
@@ -334,7 +358,7 @@ void testGraphCompilerSocketOrdering(std::vector<TestFailure>& failures)
     graph.link(subtract, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
     expect(contains(result.glsl, "max(-("), testName, "Expected subtract expression.", failures);
@@ -355,7 +379,7 @@ void testGraphCompilerIncompleteUnion(std::vector<TestFailure>& failures)
     graph.link(unionNode, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(!result.errors.empty(), testName, "Expected incomplete union compiler error.", failures);
     expect(contains(result.glsl, "return 1e6;"), testName, "Expected geometry no-hit return.", failures);
@@ -377,7 +401,7 @@ void testGraphCompilerBypassSingleInputUnion(std::vector<TestFailure>& failures)
     graph.link(unionNode, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(result.errors.empty(), testName, "Expected single-input union to bypass without errors.", failures);
     expect(contains(result.glsl, "length(p) - 1.250000"), testName, "Expected union to compile linked child.", failures);
@@ -402,7 +426,7 @@ void testGraphCompilerMultiInputUnion(std::vector<TestFailure>& failures)
     expect(graph.link(unionNode, "sdf", graph.outputNode(), "surface"), testName, "Expected union output link.", failures);
 
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
     expect(contains(result.glsl, "length(p) - 1.000000"), testName, "Expected first union child.", failures);
@@ -426,7 +450,7 @@ void testGraphCompilerBypassInvalidUnionInput(std::vector<TestFailure>& failures
     graph.link(unionNode, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(!result.errors.empty(), testName, "Expected invalid upstream input warning.", failures);
     expect(contains(result.glsl, "length(p) - 1.250000"), testName, "Expected union to bypass invalid input and keep valid child.", failures);
@@ -447,7 +471,7 @@ void testGraphCompilerBypassSubtractBase(std::vector<TestFailure>& failures)
     graph.link(subtract, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(!result.errors.empty(), testName, "Expected missing cutter warning.", failures);
     expect(contains(result.glsl, "length(p) - 1.750000"), testName, "Expected subtract to bypass to base child.", failures);
@@ -463,7 +487,7 @@ void testGraphCompilerMissingTransformChild(std::vector<TestFailure>& failures)
     graph.link(translate, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(!result.errors.empty(), testName, "Expected missing transform child warning.", failures);
     expect(contains(result.glsl, "return 1e6;"), testName, "Expected no-hit distance for missing child.", failures);
@@ -486,7 +510,7 @@ void testGraphCompilerRepeat(std::vector<TestFailure>& failures)
     graph.link(repeat, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
     expect(contains(result.glsl, "vec3((mod(p.x + 0.5 * 3.000000, 3.000000) - 0.5 * 3.000000), p.y, (mod(p.z + 0.5 * 5.000000, 5.000000) - 0.5 * 5.000000))"), testName, "Expected repeat to skip disabled y axis.", failures);
@@ -508,7 +532,7 @@ void testGraphCompilerRepeatAllAxesDefault(std::vector<TestFailure>& failures)
     graph.link(repeat, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
     expect(contains(result.glsl, "mod(p + 0.5 * vec3(3.000000, 4.000000, 5.000000)"), testName, "Expected default repeat to affect all axes.", failures);
@@ -530,7 +554,7 @@ void testGraphCompilerMirror(std::vector<TestFailure>& failures)
     graph.link(mirror, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
     expect(contains(result.glsl, "vec3(abs(p.x), p.y, abs(p.z))"), testName, "Expected mirror domain transform.", failures);
@@ -551,7 +575,7 @@ void testGraphCompilerTwist(std::vector<TestFailure>& failures)
     graph.link(twist, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
     expect(contains(result.glsl, "cos((p.z * 1.250000))"), testName, "Expected twist z-axis cosine angle.", failures);
@@ -574,7 +598,7 @@ void testGraphCompilerBend(std::vector<TestFailure>& failures)
     graph.link(bend, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
-    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+    const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
     expect(contains(result.glsl, "cos((p.y * 0.750000))"), testName, "Expected bend y-axis cosine angle.", failures);
@@ -592,6 +616,7 @@ int main()
     testGraphCompilerUnlinkedOutputNode(failures);
     testGraphCompilerEmpty(failures);
     testGraphCompilerPrimitive(failures);
+    testGraphCompilerRuntimePrimitiveUsesNodeParam(failures);
     testGraphCompilerMaterialOverride(failures);
     testGraphCompilerValueNoiseMaterial(failures);
     testGraphNodeDefinitionMaterialOverride(failures);

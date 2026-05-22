@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sdf3d/scene/SdfCompiler.h"
+#include "sdf3d/systems/GlslEmitMode.h"
 
 #include <cstdint>
 #include <string>
@@ -25,6 +26,9 @@ struct GlslSdfHelperBlock {
 /// Emits per-node GLSL expressions for SDF compiler orchestration.
 class GlslEmitter {
 public:
+    /// Creates an emitter for runtime-edit or baked-export GLSL.
+    explicit GlslEmitter(GlslEmitMode mode = GlslEmitMode::Runtime);
+
     /// Emits a material-aware GLSL expression for one SDF node subtree.
     std::string emitNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const;
 
@@ -50,6 +54,8 @@ private:
     std::string emitBooleanNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const;
     std::string emitDomainNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const;
     std::string emitMaterialNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const;
+
+    GlslEmitMode m_mode = GlslEmitMode::Runtime;
 };
 
 } // namespace sdf3d

@@ -408,6 +408,38 @@ void testCollectNodeParamsNormalizesRotateQuaternion(std::vector<TestFailure>& f
     }
 }
 
+void testCollectNodeParamsPacksPrimitiveAndSmoothValues(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "collect node params packs primitive and smooth values";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    if (sdf3d::SdfGraphNode* node = graph.node(sphere)) {
+        node->payload.parameters["radius"] = 1.75f;
+    }
+    const sdf3d::SdfGraphNodeId smoothUnion = graph.createNode(sdf3d::SdfNodeType::SmoothUnion, "Smooth Union");
+    if (sdf3d::SdfGraphNode* node = graph.node(smoothUnion)) {
+        node->payload.parameters["smoothness"] = 0.5f;
+    }
+
+    const std::vector<sdf3d::SdfCompiledNodeParam> params = sdf3d::GraphSystem::collectNodeParams(graph);
+    const auto sphereIt = std::find_if(params.begin(), params.end(), [sphere](const sdf3d::SdfCompiledNodeParam& param) {
+        return param.nodeId == sphere;
+    });
+    const auto smoothIt = std::find_if(params.begin(), params.end(), [smoothUnion](const sdf3d::SdfCompiledNodeParam& param) {
+        return param.nodeId == smoothUnion;
+    });
+
+    expect(sphereIt != params.end(), testName, "Expected sphere radius node param.", failures);
+    if (sphereIt != params.end()) {
+        expect(sphereIt->data0[0] == 1.75f, testName, "Expected radius packed in data0.x.", failures);
+    }
+    expect(smoothIt != params.end(), testName, "Expected smoothness node param.", failures);
+    if (smoothIt != params.end()) {
+        expect(smoothIt->data0[0] == 0.5f, testName, "Expected smoothness packed in data0.x.", failures);
+    }
+}
+
 void testHighlightNodeForSelectionUsesTransformWrapper(std::vector<TestFailure>& failures)
 {
     const std::string testName = "highlight node for selection uses transform wrapper";
@@ -666,6 +698,7 @@ int main()
     testUnlinkMaterialInputClearsOverrideMaterial(failures);
     testCollectNodeParamsPacksTransformValues(failures);
     testCollectNodeParamsNormalizesRotateQuaternion(failures);
+    testCollectNodeParamsPacksPrimitiveAndSmoothValues(failures);
     testHighlightNodeForSelectionUsesTransformWrapper(failures);
     testHighlightNodeForSelectionFollowsTransformChain(failures);
     testHighlightNodeForSelectionStopsAtBranchedTransform(failures);

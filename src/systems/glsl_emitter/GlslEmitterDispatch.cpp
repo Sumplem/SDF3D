@@ -8,6 +8,11 @@
 namespace sdf3d
 {
 
+    GlslEmitter::GlslEmitter(GlslEmitMode mode)
+        : m_mode(mode)
+    {
+    }
+
     std::string GlslEmitter::emitNode(const SdfNodePtr &node, const std::string &pointExpr, SdfCompileResult &result) const
     {
         using glsl_emitter::glslNoHit;
@@ -56,7 +61,7 @@ namespace sdf3d::glsl_emitter
     {
         if (isSdfPrimitiveNode(node->type))
         {
-            return emitPrimitiveGeometryExpression(node, pointExpr, result);
+            return emitPrimitiveGeometryExpression(node, pointExpr, result, context);
         }
         if (isSdfBooleanNode(node->type))
         {

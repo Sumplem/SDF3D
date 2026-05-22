@@ -101,6 +101,9 @@ void UI::drawPanels(SceneGraph& sceneGraph, GraphGroupRegistry& groups, const st
     if (propertiesDirty.material) {
         markMaterialDirty();
     }
+    if (propertiesDirty.params) {
+        markParamDirty();
+    }
 }
 
 SdfGraph& UI::activeGraph(SceneGraph& sceneGraph, GraphGroupRegistry& groups)
