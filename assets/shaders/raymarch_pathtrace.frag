@@ -11,6 +11,7 @@ uniform int uMaterialCount;
 uniform int uRenderQuality;
 uniform int uPathTraceMaxBounces;
 uniform uint uPathTraceSampleIndex;
+uniform vec3 uEnvColor;
 uniform sampler2D uPathTraceAccumulation;
 
 struct GpuMaterial {
@@ -29,6 +30,9 @@ const float MAX_DISTANCE = 100.0;
 const float SURFACE_EPSILON = 0.001;
 const float NORMAL_EPSILON = 0.00035;
 const float PI = 3.14159265358979323846;
+const int RUSSIAN_ROULETTE_START_BOUNCE = 2;
+const float RUSSIAN_ROULETTE_MIN_KEEP = 0.05;
+const float RUSSIAN_ROULETTE_MAX_KEEP = 0.95;
 
 struct SdfMaterialSample {
     vec3 albedo;
@@ -150,7 +154,7 @@ float raymarch(vec3 rayOrigin, vec3 rayDirection, out vec3 hitPosition)
 
 vec3 backgroundColor(vec3 rayDirection)
 {
-    return mix(vec3(0.05, 0.06, 0.07), vec3(0.12, 0.14, 0.17), max(rayDirection.y, 0.0));
+    return uEnvColor;
 }
 
 vec3 rayDirectionFromCamera(vec2 fragCoord)
@@ -233,29 +237,53 @@ vec3 cosineHemisphere(vec3 normal, inout uint rng)
     return normalize(tangent * local.x + bitangent * local.y + normal * local.z);
 }
 
-vec3 powerCosineHemisphere(vec3 axis, float exponent, inout uint rng)
+vec3 tangentToWorld(vec3 local, vec3 normal)
 {
-    float r1 = random01(rng);
-    float r2 = random01(rng);
-    float phi = 2.0 * PI * r1;
-    float cosTheta = pow(1.0 - r2, 1.0 / (exponent + 1.0));
-    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
-    vec3 local = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+    vec3 up = abs(normal.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(up, normal));
+    vec3 bitangent = cross(normal, tangent);
+    return normalize(tangent * local.x + bitangent * local.y + normal * local.z);
+}
 
-    vec3 up = abs(axis.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
-    vec3 tangent = normalize(cross(up, axis));
-    vec3 bitangent = cross(axis, tangent);
-    return normalize(tangent * local.x + bitangent * local.y + axis * local.z);
+vec3 worldToTangent(vec3 world, vec3 normal)
+{
+    vec3 up = abs(normal.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(up, normal));
+    vec3 bitangent = cross(normal, tangent);
+    return vec3(dot(world, tangent), dot(world, bitangent), dot(world, normal));
+}
+
+vec3 sampleGGXVNDFHalfVector(vec3 viewDirection, vec3 normal, float roughness, inout uint rng)
+{
+    float alpha = max(roughness * roughness, 0.001);
+    vec3 localView = worldToTangent(viewDirection, normal);
+    localView.z = max(localView.z, 0.001);
+    localView = normalize(localView);
+
+    vec3 stretchedView = normalize(vec3(alpha * localView.x, alpha * localView.y, localView.z));
+    float lensq = stretchedView.x * stretchedView.x + stretchedView.y * stretchedView.y;
+    vec3 tangent1 = lensq > 0.0 ? vec3(-stretchedView.y, stretchedView.x, 0.0) * inversesqrt(lensq) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent2 = cross(stretchedView, tangent1);
+
+    float r = sqrt(random01(rng));
+    float phi = 2.0 * PI * random01(rng);
+    float t1 = r * cos(phi);
+    float t2 = r * sin(phi);
+    float s = 0.5 * (1.0 + stretchedView.z);
+    t2 = mix(sqrt(max(0.0, 1.0 - t1 * t1)), t2, s);
+
+    vec3 normalSample = t1 * tangent1 + t2 * tangent2 + sqrt(max(0.0, 1.0 - t1 * t1 - t2 * t2)) * stretchedView;
+    vec3 localHalf = normalize(vec3(alpha * normalSample.x, alpha * normalSample.y, max(0.0, normalSample.z)));
+    return tangentToWorld(localHalf, normal);
 }
 
 vec3 sampleGlossyReflection(vec3 incomingDirection, vec3 normal, float roughness, inout uint rng)
 {
-    vec3 reflected = reflect(incomingDirection, normal);
-    float gloss = max(0.02, 1.0 - roughness);
-    float exponent = mix(4.0, 256.0, gloss * gloss);
-    vec3 sampled = powerCosineHemisphere(reflected, exponent, rng);
+    vec3 viewDirection = normalize(-incomingDirection);
+    vec3 halfVector = sampleGGXVNDFHalfVector(viewDirection, normal, roughness, rng);
+    vec3 sampled = reflect(incomingDirection, halfVector);
     if (dot(sampled, normal) <= 0.0) {
-        sampled = normalize(reflected + normal * (0.25 + roughness));
+        sampled = reflect(incomingDirection, normal);
     }
     return normalize(sampled);
 }
@@ -328,8 +356,8 @@ vec3 tracePath(vec3 rayOrigin, vec3 rayDirection, inout uint rng)
         }
 
         rayOrigin = hitPosition + normal * SURFACE_EPSILON * 4.0;
-        if (bounce >= 2) {
-            float keep = clamp(max(max(throughput.r, throughput.g), throughput.b), 0.05, 0.95);
+        if (bounce >= RUSSIAN_ROULETTE_START_BOUNCE) {
+            float keep = clamp(max(max(throughput.r, throughput.g), throughput.b), RUSSIAN_ROULETTE_MIN_KEEP, RUSSIAN_ROULETTE_MAX_KEEP);
             if (random01(rng) > keep) {
                 break;
             }

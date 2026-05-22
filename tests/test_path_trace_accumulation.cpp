@@ -52,6 +52,10 @@ void testFrameKeyMatches(std::vector<TestFailure>& failures)
     b = a;
     b.mode = sdf3d::RenderMode::DirectPreview;
     expect(!sdf3d::PathTraceAccumulation::frameKeyMatches(a, b), testName, "Expected render mode change to reset accumulation.", failures);
+
+    b = a;
+    b.environmentColor.r += 0.05f;
+    expect(!sdf3d::PathTraceAccumulation::frameKeyMatches(a, b), testName, "Expected environment color change to reset accumulation.", failures);
 }
 
 void testSampleCounter(std::vector<TestFailure>& failures)

@@ -23,12 +23,13 @@
 - Union/SmoothUnion/Intersect/SmoothIntersect use one vertical pill-shaped `inputs` multi-input SDF socket with one empty spare slot, hover feedback, separate anchors, and exact-slot drag starts
 - Viewport Add appends new primitives to an output-root Union/SmoothUnion multi-input; otherwise it creates a Union as needed
 - Right-click Union/SmoothUnion/Intersect/SmoothIntersect can change type in place within the same multi-input boolean family
-- Path-trace shader has stochastic GI bounces, cosine hemisphere sampling, direct light shadow checks, emissive contribution, and progressive accumulation
-- Build/tests: full Debug app build pass; all test executables pass after Runtime SSBO extension
+- Path-trace shader has stochastic GI bounces, Russian Roulette after secondary bounces, solid-color environment lighting, GGX VNDF glossy sampling, direct light shadow checks, emissive contribution, and progressive accumulation
+- Path-trace environment color is renderer/viewport state and resets accumulation on change
+- Build/tests: full Debug app build pass; all test executables pass after Full GI Tier 1
 
 ## Active
 
-Primitive Float param lag fix complete: runtime GLSL and node-param packing already used SSBO, but UI dirty routing still sent primitive/property Float edits through scene-dirty recompile; Float edits now go through param-dirty SSBO refresh. Review gate open.
+Full GI Tier 1 complete: Russian Roulette was already in the path-trace bounce loop and is now named with constants; misses return editable solid `uEnvColor`; glossy/metal sampling now uses GGX VNDF half-vector sampling instead of power-cosine reflection. Review gates open for Items 1-3.
 
 ## Decisions
 
@@ -97,6 +98,7 @@ Primitive Float param lag fix complete: runtime GLSL and node-param packing alre
 - 2026-05 - Runtime param GLSL uses `GlslEmitMode::Runtime` for edit shaders and `GlslEmitMode::Baked` for export shaders so Float edits avoid GPU shader recompile while baked output stays SSBO-free
 - 2026-05 - Viewport hover pick readback is cached and throttled because per-frame `glReadPixels` on hover causes GPU/CPU sync stalls; click selection still reads immediately
 - 2026-05 - Float parameter UI edits route to param-dirty SSBO refresh; Bool/Enum edits route to scene-dirty because they change GLSL structure
+- 2026-05 - Full GI Tier 1 stays renderer/shader-owned: path-trace shader owns Russian Roulette and GGX VNDF sampling, renderer/viewport own solid environment color uniform and accumulation reset
 
 ## Constraints
 
@@ -128,4 +130,4 @@ Primitive Float param lag fix complete: runtime GLSL and node-param packing alre
 
 ## Next
 
-Review primitive Float param SSBO dirty-routing fix, then choose next procedural material node or return to Full GI design.
+Review Full GI Tier 1, then choose Full GI Tier 2 or next procedural material node.

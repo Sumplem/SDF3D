@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 
+#include <glm/glm.hpp>
+
 namespace sdf3d {
 
 /// Owns the M2 fullscreen raymarch draw path.
@@ -42,6 +44,9 @@ public:
 
     /// Stores render mode for the next render.
     void setRenderMode(RenderMode mode);
+
+    /// Stores path-trace environment lighting color.
+    void setEnvironmentColor(const glm::vec3& color);
 
     /// Rebuilds the fragment shader after replacing the sceneSDF injection block.
     bool reloadScene(const std::string& sceneGlsl);
@@ -75,6 +80,7 @@ private:
     RenderGizmo m_gizmo;
     RenderQuality m_quality = RenderQuality::High;
     RenderMode m_renderMode = RenderMode::DirectPreview;
+    glm::vec3 m_environmentColor = {0.46f, 0.56f, 0.72f};
     bool m_lastFramePathTracing = false;
     uint64_t m_sceneRevision = 0;
     uint64_t m_materialRevision = 0;

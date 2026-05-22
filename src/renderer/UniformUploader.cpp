@@ -46,6 +46,7 @@ void UniformUploader::upload(
     const RenderCamera& camera,
     const RenderGizmo& gizmo,
     RenderQuality quality,
+    const glm::vec3& environmentColor,
     const std::vector<SdfCompiledMaterial>& materials,
     const std::vector<SdfCompiledNodeParam>& nodeParams)
 {
@@ -69,6 +70,7 @@ void UniformUploader::upload(
     glUniform1i(glGetUniformLocation(program, "uHoverNodeId"), static_cast<GLint>(gizmo.hoverNodeId));
     glUniform1i(glGetUniformLocation(program, "uRenderQuality"), static_cast<GLint>(quality));
     glUniform1i(glGetUniformLocation(program, "uPathTraceMaxBounces"), pathTraceMaxBouncesForQuality(quality));
+    glUniform3fv(glGetUniformLocation(program, "uEnvColor"), 1, &environmentColor.x);
 
     const size_t materialCount = materialCountForShader(materials.size());
     glUniform1i(glGetUniformLocation(program, "uMaterialCount"), static_cast<GLint>(materialCount));

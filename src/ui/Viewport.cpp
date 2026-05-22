@@ -149,6 +149,7 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SdfGraph& graph, const Graph
     renderer.setGizmo(gizmo);
     renderer.setQuality(m_quality);
     renderer.setRenderMode(m_renderMode);
+    renderer.setEnvironmentColor(m_environmentColor);
 
     renderer.resize(width, height);
     renderer.render(renderCamera);
@@ -180,6 +181,9 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SdfGraph& graph, const Graph
         } else {
             ImGui::TextUnformatted("Direct preview");
         }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(128.0f);
+        ImGui::ColorEdit3("Env", &m_environmentColor.x, ImGuiColorEditFlags_NoInputs);
     }
     ImGui::SameLine();
     ImGui::Checkbox("Show hover highlight", &m_showHoverHighlight);

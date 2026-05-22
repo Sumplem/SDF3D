@@ -97,6 +97,7 @@ bool PathTraceAccumulation::frameKeyMatches(const PathTraceFrameKey& a, const Pa
         && cameraEqual(a.camera, b.camera)
         && a.quality == b.quality
         && a.mode == b.mode
+        && vec3Equal(a.environmentColor, b.environmentColor)
         && a.sceneRevision == b.sceneRevision
         && a.materialRevision == b.materialRevision
         && a.nodeParamRevision == b.nodeParamRevision;

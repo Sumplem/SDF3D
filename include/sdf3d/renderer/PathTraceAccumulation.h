@@ -13,6 +13,7 @@ struct PathTraceFrameKey {
     RenderCamera camera;
     RenderQuality quality = RenderQuality::High;
     RenderMode mode = RenderMode::DirectPreview;
+    glm::vec3 environmentColor = {0.46f, 0.56f, 0.72f};
     uint64_t sceneRevision = 0;
     uint64_t materialRevision = 0;
     uint64_t nodeParamRevision = 0;

@@ -85,6 +85,7 @@ public:
         const RenderCamera& camera,
         const RenderGizmo& gizmo,
         RenderQuality quality,
+        const glm::vec3& environmentColor,
         const std::vector<SdfCompiledMaterial>& materials,
         const std::vector<SdfCompiledNodeParam>& nodeParams);
 

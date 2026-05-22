@@ -51,7 +51,16 @@ void Renderer::render(const RenderCamera& camera)
 
     glUseProgram(program);
 
-    m_uniformUploader.upload(program, m_fboRenderer.width(), m_fboRenderer.height(), camera, m_gizmo, m_quality, m_materials, m_nodeParams);
+    m_uniformUploader.upload(
+        program,
+        m_fboRenderer.width(),
+        m_fboRenderer.height(),
+        camera,
+        m_gizmo,
+        m_quality,
+        m_environmentColor,
+        m_materials,
+        m_nodeParams);
     bool pathTraceFrameReady = false;
     if (progressive) {
         const PathTraceFrameKey key{
@@ -60,6 +69,7 @@ void Renderer::render(const RenderCamera& camera)
             camera,
             m_quality,
             m_renderMode,
+            m_environmentColor,
             m_sceneRevision,
             m_materialRevision,
             m_nodeParamRevision,
@@ -114,6 +124,14 @@ void Renderer::setRenderMode(RenderMode mode)
         m_pathTraceAccumulation.reset();
     }
     m_renderMode = mode;
+}
+
+void Renderer::setEnvironmentColor(const glm::vec3& color)
+{
+    if (m_environmentColor != color) {
+        m_pathTraceAccumulation.reset();
+    }
+    m_environmentColor = color;
 }
 
 void Renderer::setMaterials(std::vector<SdfCompiledMaterial> materials)

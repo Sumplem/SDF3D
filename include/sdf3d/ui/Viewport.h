@@ -43,6 +43,7 @@ private:
     glm::vec3 m_position = {0.0f, 0.0f, 4.0f};
     RenderQuality m_quality = RenderQuality::High;
     RenderMode m_renderMode = RenderMode::DirectPreview;
+    glm::vec3 m_environmentColor = {0.46f, 0.56f, 0.72f};
     TranslateGizmo m_translateGizmo;
     AddMenu m_viewportAddMenu;
     glm::vec3 m_pendingAddWorldPosition = {0.0f, 0.0f, 0.0f};
