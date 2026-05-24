@@ -3,6 +3,7 @@
 #include "sdf3d/scene/SdfNodeDefinition.h"
 #include "sdf3d/scene/SdfNodeTraits.h"
 #include "sdf3d/systems/GraphSystem.h"
+#include "sdf3d/ui/GraphEditorCore.h"
 #include "sdf3d/ui/node_editor/NodeEditorProperties.h"
 
 #include <algorithm>
@@ -232,7 +233,7 @@ std::optional<SdfGraphLink> nearestLinkToMultiInput(
 
 void addScaledText(const CanvasFrame& frame, ImVec2 position, ImU32 color, const char* text)
 {
-    frame.drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * frame.zoom, position, color, text);
+    ui::drawGraphText(frame, position, color, text);
 }
 
 } // namespace
@@ -293,8 +294,7 @@ bool drawExistingLinks(SdfGraph& graph, const CanvasFrame& frame, const std::vec
             }
         }
 
-        const float handle = scaleValue(frame, 70.0f);
-        frame.drawList->AddBezierCubic(*from, {from->x + handle, from->y}, {to->x - handle, to->y}, *to, IM_COL32(130, 170, 255, 255), scaleValue(frame, 3.0f));
+        ui::drawGraphBezier(frame, *from, *to, IM_COL32(130, 170, 255, 255));
         if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && mouseNearBezier(ImGui::GetIO().MousePos, *from, *to)) {
             pendingRemoval = link;
         }
@@ -314,7 +314,7 @@ bool mouseInsideAnyNode(const std::vector<GraphNodeLayout>& layouts, ImVec2 mous
 {
     for (const GraphNodeLayout& layout : layouts) {
         const ImVec2 nodeEnd = {layout.position.x + layout.size.x, layout.position.y + layout.size.y};
-        if (mouse.x >= layout.position.x && mouse.x <= nodeEnd.x && mouse.y >= layout.position.y && mouse.y <= nodeEnd.y) {
+        if (ui::pointInsideRect(mouse, layout.position, nodeEnd)) {
             return true;
         }
     }
@@ -459,28 +459,26 @@ void drawNodeBody(SdfGraph& graph, GraphGroupRegistry& groups, const GraphNodeLa
     SdfGraphNode& node = *layout.node;
     const bool selected = graph.isNodeSelected(layout.id);
     const bool output = graph.outputNode() == layout.id;
-    const ImU32 bodyColor = selected ? IM_COL32(58, 66, 84, 255) : IM_COL32(42, 45, 52, 255);
-    const ImU32 titleColor = node.payload.type == SdfNodeType::Output ? IM_COL32(96, 74, 48, 255) : (output ? IM_COL32(76, 96, 70, 255) : IM_COL32(54, 58, 68, 255));
-    const ImVec2 nodeEnd = {layout.position.x + layout.size.x, layout.position.y + layout.size.y};
-
-    frame.drawList->AddRectFilled(layout.position, nodeEnd, bodyColor, scaleValue(frame, 6.0f));
-    frame.drawList->AddRectFilled(layout.position, {nodeEnd.x, layout.position.y + scaleValue(frame, TITLE_HEIGHT)}, titleColor, scaleValue(frame, 6.0f), ImDrawFlags_RoundCornersTop);
-    frame.drawList->AddRect(layout.position, nodeEnd, selected ? IM_COL32(120, 170, 255, 255) : IM_COL32(78, 82, 92, 255), scaleValue(frame, 6.0f), 0, scaleValue(frame, selected ? 2.0f : 1.0f));
-
     const std::string title = graphNodeDisplayName(&node, groups) + (output ? "  [Output]" : "");
-    addScaledText(frame, {layout.position.x + scaleValue(frame, 10.0f), layout.position.y + scaleValue(frame, 7.0f)}, IM_COL32(235, 238, 242, 255), title.c_str());
+    ui::GraphNodeStyle style;
+    style.bodyColor = selected ? IM_COL32(58, 66, 84, 255) : IM_COL32(42, 45, 52, 255);
+    style.titleColor = node.payload.type == SdfNodeType::Output ? IM_COL32(96, 74, 48, 255) : (output ? IM_COL32(76, 96, 70, 255) : IM_COL32(54, 58, 68, 255));
+    style.borderColor = selected ? IM_COL32(120, 170, 255, 255) : IM_COL32(78, 82, 92, 255);
+    style.borderThickness = selected ? 2.0f : 1.0f;
+    ui::drawGraphNodeShell(frame, layout.position, layout.size, title, style);
 }
 
 bool handleNodeTitleDrag(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNodeId& activeDraggedNode, SdfGraphNodeId& requestedGroupEnterNode)
 {
     static SdfGraphNodeId draggedNode = 0;
     bool releasedDraggedNode = false;
-    ImGui::SetCursorScreenPos(layout.position);
     const float zoom = layoutZoom(layout);
     const float buttonExtent = std::max(16.0f, 18.0f * zoom);
     const float titleActionWidth = buttonExtent * 2.0f + 14.0f * zoom;
     const float titleDragWidth = std::max(1.0f, layout.size.x - titleActionWidth);
-    ImGui::InvisibleButton(("node-title##" + std::to_string(layout.id)).c_str(), {titleDragWidth, TITLE_HEIGHT * zoom});
+    CanvasFrame titleFrame;
+    titleFrame.zoom = zoom;
+    ui::drawGraphNodeTitleDragRegion(titleFrame, layout.position, {titleDragWidth + titleActionWidth, layout.size.y}, TITLE_HEIGHT, titleActionWidth, "node-title##" + std::to_string(layout.id));
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
         if (ImGui::GetIO().KeyShift) {
             graph.toggleSelectedNode(layout.id);
@@ -583,10 +581,10 @@ bool drawInputPins(
                 const ImU32 slotColor = slot == linkCount
                     ? (slotHovered ? IM_COL32(255, 230, 150, 255) : IM_COL32(34, 38, 44, 210))
                     : (slotHovered ? IM_COL32(255, 230, 150, 255) : IM_COL32(88, 130, 88, 180));
-                frame.drawList->AddCircleFilled({pin.x, slotY}, scaleValue(frame, slotHovered ? MULTI_INPUT_SLOT_HOVER_RADIUS : MULTI_INPUT_SLOT_RADIUS), slotColor);
+                ui::drawGraphSocket(frame, {pin.x, slotY}, slotColor, slotHovered ? MULTI_INPUT_SLOT_HOVER_RADIUS : MULTI_INPUT_SLOT_RADIUS);
             }
         } else {
-            frame.drawList->AddCircleFilled(pin, scaleValue(frame, (dragHover || mouseHover) ? NORMAL_INPUT_PIN_HOVER_RADIUS : NORMAL_INPUT_PIN_RADIUS), pinColor);
+            ui::drawGraphSocket(frame, pin, pinColor, (dragHover || mouseHover) ? NORMAL_INPUT_PIN_HOVER_RADIUS : NORMAL_INPUT_PIN_RADIUS);
         }
         addScaledText(frame, {pin.x + scaleValue(frame, 10.0f), pin.y - scaleValue(frame, 7.0f)}, IM_COL32(220, 224, 230, 255), socketDisplayName(socket).c_str());
 
@@ -656,7 +654,7 @@ void drawOutputPins(SdfGraph& graph, const GraphNodeLayout& layout, const Canvas
             && mouse.y >= pin.y - hitSize * 0.5f
             && mouse.y <= pin.y + hitSize * 0.5f;
         const ImU32 pinColor = activeDrag ? IM_COL32(255, 210, 110, 255) : (mouseHover ? IM_COL32(165, 200, 255, 255) : IM_COL32(120, 160, 240, 255));
-        frame.drawList->AddCircleFilled(pin, scaleValue(frame, (activeDrag || mouseHover) ? 8.5f : 6.5f), pinColor);
+        ui::drawGraphSocket(frame, pin, pinColor, (activeDrag || mouseHover) ? 8.5f : 6.5f);
 
         const std::string label = socketDisplayName(socket);
         const ImVec2 labelSize = ImGui::CalcTextSize(label.c_str());
@@ -683,8 +681,7 @@ bool updateActiveLinkDrag(SdfGraph& graph, const CanvasFrame& frame, const std::
 
     if (const std::optional<ImVec2> from = findSocketAnchor(anchors, dragOutputNode, dragOutputSocket, true)) {
         const ImVec2 mouse = ImGui::GetIO().MousePos;
-        const float handle = scaleValue(frame, 70.0f);
-        frame.drawList->AddBezierCubic(*from, {from->x + handle, from->y}, {mouse.x - handle, mouse.y}, mouse, IM_COL32(255, 210, 110, 255), scaleValue(frame, 3.0f));
+        ui::drawGraphBezier(frame, *from, mouse, IM_COL32(255, 210, 110, 255));
     }
 
     if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {

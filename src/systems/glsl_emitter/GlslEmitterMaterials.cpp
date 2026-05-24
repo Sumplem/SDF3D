@@ -20,6 +20,18 @@ std::string sampleMaterialCall(int materialId, const std::string& pointExpr)
     return "sampleMaterial(" + std::to_string(materialId) + ", " + pointExpr + ")";
 }
 
+std::string materialGraphCall(const SdfNodePtr& node, const std::string& pointExpr, const SdfCompileResult& result)
+{
+    if (!node || node->materialId == 0) {
+        return "";
+    }
+    const auto it = result.materialFunctionByRegistryId.find(node->materialId);
+    if (it == result.materialFunctionByRegistryId.end()) {
+        return "";
+    }
+    return it->second + "(" + pointExpr + ")";
+}
+
 std::string defaultMaterial(const std::string& pointExpr)
 {
     return sampleMaterialCall(kDefaultMaterialId, pointExpr);
@@ -151,6 +163,10 @@ std::string emitMaterialNodeSample(
     SdfCompileResult& result,
     const MaterialSystem& materialSystem)
 {
+    const std::string graphCall = materialGraphCall(node, pointExpr, result);
+    if (!graphCall.empty()) {
+        return graphCall;
+    }
     const int materialId = materialSystem.appendMaterial(result, node->material);
     return sampleMaterialCall(materialId, pointExpr);
 }
@@ -196,6 +212,10 @@ MaterialEval emitMaterialEvalFor(
             MaterialEval material = emitMaterialEvalFor(node->children[1], pointExpr, result, sdfHelpers, mode, context);
             material.distance = helperDistanceFor(node, pointExpr, result, sdfHelpers);
             return material;
+        }
+        const std::string graphCall = materialGraphCall(node, pointExpr, result);
+        if (!graphCall.empty()) {
+            return {"", graphCall, helperDistanceFor(node, pointExpr, result, sdfHelpers)};
         }
         const int materialId = context.materialSystem.appendMaterial(result, node->material);
         return {"", sampleMaterialCall(materialId, pointExpr), helperDistanceFor(node, pointExpr, result, sdfHelpers)};

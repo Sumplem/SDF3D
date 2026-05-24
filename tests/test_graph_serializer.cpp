@@ -76,6 +76,7 @@ void testJsonGraphRoundTrip(std::vector<TestFailure>& failures)
             definition->material.metallic = 0.2f;
             definition->material.emission = 1.25f;
             definition->material.patternScale = 9.0f;
+            definition->graph = sdf3d::makeMaterialGraphFromMaterial(definition->material);
         }
     }
     expect(graph.link(sphere, "sdf", materialOverride, "sdf"), testName, "Expected sphere to override link.", failures);
@@ -131,6 +132,7 @@ void testJsonGraphRoundTrip(std::vector<TestFailure>& failures)
             expect(definition->material.secondaryAlbedo.x == 0.75f, testName, "Expected secondary albedo preserved.", failures);
             expect(definition->material.emission == 1.25f, testName, "Expected emission preserved.", failures);
             expect(definition->material.patternScale == 9.0f, testName, "Expected pattern scale preserved.", failures);
+            expect(definition->graph.outputNode() != 0, testName, "Expected material graph loaded.", failures);
         }
     }
     if (loadedMaterialOverride != nullptr && loadedMaterial != nullptr) {
@@ -145,16 +147,10 @@ void testJsonGraphRoundTrip(std::vector<TestFailure>& failures)
 
     const sdf3d::SdfCompileResult compileResult = sdf3d::SdfCompiler{}.compile(loaded);
     expect(compileResult.errors.empty(), testName, "Expected loaded graph to compile without errors.", failures);
-    bool compiledLoadedMaterial = false;
-    for (const sdf3d::SdfCompiledMaterial& compiledMaterial : compileResult.materials) {
-        const sdf3d::SdfMaterial& materialValue = compiledMaterial.material;
-        compiledLoadedMaterial = compiledLoadedMaterial
-            || (materialValue.type == sdf3d::SdfMaterialType::Checker
-                && materialValue.albedo.z == 0.75f
-                && materialValue.secondaryAlbedo.x == 0.75f
-                && materialValue.patternScale == 9.0f);
-    }
-    expect(compiledLoadedMaterial, testName, "Expected loaded registry material to reach compiled material output.", failures);
+    expect(compileResult.glsl.find("sdf3d_material_") != std::string::npos, testName, "Expected loaded registry material graph helper.", failures);
+    expect(compileResult.glsl.find("9.000000") != std::string::npos, testName, "Expected loaded material graph scale in GLSL.", failures);
+    expect(compileResult.glsl.find("0.350000") != std::string::npos, testName, "Expected loaded material graph roughness in GLSL.", failures);
+    expect(compileResult.glsl.find("1.250000") != std::string::npos, testName, "Expected loaded material graph emission in GLSL.", failures);
 
     std::filesystem::remove(path);
 }
@@ -172,6 +168,7 @@ void testJsonGraphValueNoiseMaterialRoundTrip(std::vector<TestFailure>& failures
             definition->material.albedo = {0.2f, 0.3f, 0.4f};
             definition->material.secondaryAlbedo = {0.8f, 0.7f, 0.6f};
             definition->material.patternScale = 15.0f;
+            definition->graph = sdf3d::makeMaterialGraphFromMaterial(definition->material);
         }
     }
 
@@ -188,6 +185,7 @@ void testJsonGraphValueNoiseMaterialRoundTrip(std::vector<TestFailure>& failures
             expect(definition->material.type == sdf3d::SdfMaterialType::ValueNoise, testName, "Expected value-noise material type preserved.", failures);
             expect(definition->material.secondaryAlbedo.x == 0.8f, testName, "Expected secondary albedo preserved.", failures);
             expect(definition->material.patternScale == 15.0f, testName, "Expected pattern scale preserved.", failures);
+            expect(definition->graph.outputNode() != 0, testName, "Expected value-noise material graph preserved.", failures);
         }
     }
 

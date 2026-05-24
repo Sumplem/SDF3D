@@ -1,9 +1,11 @@
 #include "sdf3d/systems/CompilerSystem.h"
 
 #include "sdf3d/scene/SdfGraphCompiler.h"
+#include "sdf3d/scene/GraphGroupRegistry.h"
 #include "sdf3d/scene/SdfNodeDefinition.h"
 #include "sdf3d/scene/SdfRotationParams.h"
 #include "sdf3d/systems/GlslEmitter.h"
+#include "sdf3d/systems/MaterialGraphCompiler.h"
 #include "sdf3d/systems/MaterialSystem.h"
 #include "sdf3d/systems/GraphSystem.h"
 
@@ -11,6 +13,7 @@
 
 #include <algorithm>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -145,6 +148,36 @@ std::vector<SdfCompiledNodeParam> collectTreeNodeParams(const SdfNodePtr& root)
     return params;
 }
 
+std::vector<MaterialDefinition> materialDefinitionsForGraph(const SdfGraph& graph)
+{
+    std::vector<MaterialDefinition> materials;
+    for (const MaterialDefinition& material : graph.materials().materials()) {
+        materials.push_back(material);
+    }
+    return materials;
+}
+
+void appendGroupMaterialDefinitions(const GraphGroupRegistry& groups, std::vector<MaterialDefinition>& materials)
+{
+    for (const GraphGroupDefinition& definition : groups.definitions()) {
+        for (const MaterialDefinition& material : definition.subgraph.materials().materials()) {
+            materials.push_back(material);
+        }
+    }
+}
+
+std::vector<MaterialDefinition> deduplicateMaterialDefinitions(std::vector<MaterialDefinition> materials)
+{
+    std::vector<MaterialDefinition> unique;
+    std::unordered_set<MaterialId> seen;
+    for (MaterialDefinition& material : materials) {
+        if (material.id != 0 && seen.insert(material.id).second) {
+            unique.push_back(std::move(material));
+        }
+    }
+    return unique;
+}
+
 } // namespace
 
 SdfCompileResult CompilerSystem::compile(const SdfGraph& graph, GlslEmitMode mode) const
@@ -154,7 +187,7 @@ SdfCompileResult CompilerSystem::compile(const SdfGraph& graph, GlslEmitMode mod
     if (mode == GlslEmitMode::Runtime) {
         nodeParams = GraphSystem::collectNodeParams(graph);
     }
-    SdfCompileResult result = compileTree(lowered.root, mode, std::move(nodeParams));
+    SdfCompileResult result = compileTree(lowered.root, mode, std::move(nodeParams), materialDefinitionsForGraph(graph));
     result.errors.insert(result.errors.begin(), lowered.errors.begin(), lowered.errors.end());
     return result;
 }
@@ -166,7 +199,9 @@ SdfCompileResult CompilerSystem::compile(const SdfGraph& graph, const GraphGroup
     if (mode == GlslEmitMode::Runtime) {
         nodeParams = GraphSystem::collectNodeParams(graph, groups);
     }
-    SdfCompileResult result = compileTree(lowered.root, mode, std::move(nodeParams));
+    std::vector<MaterialDefinition> materials = materialDefinitionsForGraph(graph);
+    appendGroupMaterialDefinitions(groups, materials);
+    SdfCompileResult result = compileTree(lowered.root, mode, std::move(nodeParams), deduplicateMaterialDefinitions(std::move(materials)));
     result.errors.insert(result.errors.begin(), lowered.errors.begin(), lowered.errors.end());
     return result;
 }
@@ -176,10 +211,19 @@ SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root, GlslEmitMode mo
     return compileTree(root, mode, mode == GlslEmitMode::Runtime ? collectTreeNodeParams(root) : std::vector<SdfCompiledNodeParam>{});
 }
 
-SdfCompileResult CompilerSystem::compileTree(const SdfNodePtr& root, GlslEmitMode mode, std::vector<SdfCompiledNodeParam> nodeParams) const
+SdfCompileResult CompilerSystem::compileTree(
+    const SdfNodePtr& root,
+    GlslEmitMode mode,
+    std::vector<SdfCompiledNodeParam> nodeParams,
+    std::vector<MaterialDefinition> materialDefinitions) const
 {
     SdfCompileResult result;
     result.nodeParams = std::move(nodeParams);
+    MaterialGraphCompiler materialGraphCompiler;
+    std::ostringstream materialGraphFunctions;
+    for (const MaterialDefinition& material : materialDefinitions) {
+        materialGraphFunctions << materialGraphCompiler.emitMaterialFunction(material, result);
+    }
 
     if (!root) {
         result.errors.push_back("Cannot compile an empty SDF tree.");
@@ -259,6 +303,8 @@ SdfCompileResult CompilerSystem::compileTree(const SdfNodePtr& root, GlslEmitMod
     if (result.usesRotate) {
         glsl << glsl_emitter::glslRotationQuaternionFunction();
     }
+
+    glsl << materialGraphFunctions.str();
 
     for (const GlslSdfHelper& helper : sdfHelpers.helpers) {
         glsl << helper.glsl << "\n";

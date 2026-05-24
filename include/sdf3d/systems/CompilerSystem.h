@@ -22,7 +22,11 @@ public:
     SdfCompileResult compile(const SdfGraph& graph, const GraphGroupRegistry& groups, GlslEmitMode mode = GlslEmitMode::Runtime) const;
 
 private:
-    SdfCompileResult compileTree(const SdfNodePtr& root, GlslEmitMode mode, std::vector<SdfCompiledNodeParam> nodeParams) const;
+    SdfCompileResult compileTree(
+        const SdfNodePtr& root,
+        GlslEmitMode mode,
+        std::vector<SdfCompiledNodeParam> nodeParams,
+        std::vector<MaterialDefinition> materialDefinitions = {}) const;
 };
 
 } // namespace sdf3d

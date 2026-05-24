@@ -4,6 +4,7 @@
 #include "sdf3d/systems/DiagnosticsSystem.h"
 #include "sdf3d/systems/SelectionSystem.h"
 #include "sdf3d/ui/AddMenu.h"
+#include "sdf3d/ui/MaterialGraphPanel.h"
 #include "sdf3d/ui/NodeEditor.h"
 #include "sdf3d/ui/PropertiesPanel.h"
 #include "sdf3d/ui/SceneOutliner.h"
@@ -54,6 +55,7 @@ private:
     AddMenu m_addMenu;
     NodeEditor m_nodeEditor;
     PropertiesPanel m_propertiesPanel;
+    MaterialGraphPanel m_materialGraphPanel;
     SceneOutliner m_sceneOutliner;
 };
 

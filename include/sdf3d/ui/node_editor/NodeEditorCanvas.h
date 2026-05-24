@@ -3,6 +3,8 @@
 #include "sdf3d/scene/SdfGraph.h"
 #include "sdf3d/scene/GraphGroupRegistry.h"
 #include "sdf3d/ui/EditorDirtyState.h"
+#include "sdf3d/ui/GraphCanvas.h"
+#include "sdf3d/ui/GraphEditorCore.h"
 
 #include "sdf3d/core/EventBus.h"
 
@@ -35,13 +37,7 @@ struct GraphSocketAnchor {
     ImVec2 position = {0.0f, 0.0f};
 };
 
-struct CanvasFrame {
-    ImVec2 origin = {0.0f, 0.0f};
-    ImVec2 end = {0.0f, 0.0f};
-    ImVec2 pan = {0.0f, 0.0f};
-    float zoom = 1.0f;
-    ImDrawList* drawList = nullptr;
-};
+using CanvasFrame = ui::GraphCanvasFrame;
 
 struct NodeDrawResult {
     EditorDirtyState dirty;
@@ -99,7 +95,7 @@ std::optional<ImVec2> findSocketAnchor(
 const SdfGraphSocket* findSocket(const std::vector<SdfGraphSocket>& sockets, const std::string& name, SdfSocketDirection direction);
 bool socketsCompatible(const SdfGraph& graph, SdfGraphNodeId fromNode, const std::string& fromSocket, SdfGraphNodeId toNode, const std::string& toSocket);
 bool activeOutputNodeExists(const SdfGraph& graph);
-float distanceSquared(ImVec2 a, ImVec2 b);
+using ui::distanceSquared;
 std::optional<SdfGraphLink> linkToInput(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket);
 bool mouseNearBezier(ImVec2 mouse, ImVec2 from, ImVec2 to);
 ImVec2 canvasMouseGraphPosition(const CanvasFrame& frame);
@@ -116,16 +112,27 @@ EditorDirtyState handleNodeEditorShortcuts(
     std::vector<SdfGraphNodeId>& pendingDelete);
 bool flushPendingDeletes(SdfGraph& graph, std::vector<SdfGraphNodeId>& pendingDelete);
 std::optional<SdfGraphLink> firstLinkFromOutput(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket);
-float scaleValue(const CanvasFrame& frame, float value);
-ImVec2 graphToScreen(const CanvasFrame& frame, ImVec2 graphPosition);
-ImVec2 screenToGraph(const CanvasFrame& frame, ImVec2 screenPosition);
+using ui::graphToScreen;
+using ui::scaleValue;
+using ui::screenToGraph;
 bool insertNodeIntoLink(SdfGraph& graph, const GraphNodeLayout& layout, const std::vector<GraphSocketAnchor>& anchors);
 void drawLinkInsertionPreview(const SdfGraph& graph, const GraphNodeLayout& layout, const CanvasFrame& frame, const std::vector<GraphSocketAnchor>& anchors);
 void drawInactiveNodePreview(const SdfGraph& graph, const GraphNodeLayout& layout, const CanvasFrame& frame, const std::vector<GraphSocketAnchor>& anchors);
 
-CanvasFrame beginCanvas(float panX, float panY, float zoom);
-void updateCanvasView(CanvasFrame& frame, float& panX, float& panY, float& zoom);
-void drawGrid(const CanvasFrame& frame);
+inline CanvasFrame beginCanvas(float panX, float panY, float zoom)
+{
+    return ui::beginGraphCanvas("GraphCanvas", panX, panY, zoom, {320.0f, 260.0f}, 0.35f, 2.25f);
+}
+
+inline void updateCanvasView(CanvasFrame& frame, float& panX, float& panY, float& zoom)
+{
+    ui::updateGraphCanvasView(frame, panX, panY, zoom, 0.35f, 2.25f);
+}
+
+inline void drawGrid(const CanvasFrame& frame)
+{
+    ui::drawGraphCanvasGrid(frame);
+}
 bool updateSelectionRectangle(
     SdfGraph& graph,
     const CanvasFrame& frame,

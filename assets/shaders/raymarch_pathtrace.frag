@@ -33,6 +33,11 @@ const float PI = 3.14159265358979323846;
 const int RUSSIAN_ROULETTE_START_BOUNCE = 2;
 const float RUSSIAN_ROULETTE_MIN_KEEP = 0.05;
 const float RUSSIAN_ROULETTE_MAX_KEEP = 0.95;
+const vec3 DIRECT_LIGHT_DIRECTION = vec3(-0.421637, 0.737865, 0.527046);
+const vec3 DIRECT_LIGHT_RADIANCE = vec3(1.15, 1.10, 1.0);
+const float DIRECT_LIGHT_PDF = 1.0;
+const float MIN_PDF = 0.0001;
+const float MAX_EMISSIVE_RADIANCE = 16.0;
 
 struct SdfMaterialSample {
     vec3 albedo;
@@ -288,6 +293,45 @@ vec3 sampleGlossyReflection(vec3 incomingDirection, vec3 normal, float roughness
     return normalize(sampled);
 }
 
+float cosineHemispherePdf(vec3 normal, vec3 direction)
+{
+    return max(dot(normal, direction), 0.0) / PI;
+}
+
+float powerHeuristic(float firstPdf, float secondPdf)
+{
+    float first = firstPdf * firstPdf;
+    float second = secondPdf * secondPdf;
+    return first / max(first + second, MIN_PDF);
+}
+
+vec3 diffuseBrdf(SdfMaterialSample material)
+{
+    return material.albedo / PI;
+}
+
+vec3 emissiveRadiance(SdfMaterialSample material)
+{
+    vec3 radiance = material.albedo * max(material.emission, 0.0);
+    return min(radiance, vec3(MAX_EMISSIVE_RADIANCE));
+}
+
+vec3 glossyLobeEstimate(vec3 normal, vec3 viewDirection, vec3 lightDirection, SdfMaterialSample material)
+{
+    vec3 halfVector = normalize(viewDirection + lightDirection);
+    float nDotH = max(dot(normal, halfVector), 0.0);
+    float shininess = mix(96.0, 6.0, material.roughness);
+    vec3 fresnel = mix(vec3(0.04), material.albedo, material.metallic);
+    return fresnel * pow(nDotH, shininess) * (1.0 - material.roughness);
+}
+
+float bsdfPdfEstimate(vec3 normal, vec3 direction, SdfMaterialSample material)
+{
+    float diffusePdf = cosineHemispherePdf(normal, direction);
+    float glossyPdf = mix(diffusePdf, 1.0, material.metallic) * (1.0 - material.roughness);
+    return mix(diffusePdf, max(glossyPdf, MIN_PDF), material.metallic);
+}
+
 bool lightVisible(vec3 origin, vec3 direction, float maxDistance)
 {
     float traveled = SURFACE_EPSILON * 4.0;
@@ -304,18 +348,19 @@ bool lightVisible(vec3 origin, vec3 direction, float maxDistance)
     return true;
 }
 
-vec3 directLight(vec3 hitPosition, vec3 normal, vec3 viewDirection, SdfMaterialSample material)
+vec3 nextEventEstimate(vec3 hitPosition, vec3 normal, vec3 viewDirection, SdfMaterialSample material)
 {
-    vec3 lightDirection = normalize(vec3(-0.4, 0.7, 0.5));
+    vec3 lightDirection = DIRECT_LIGHT_DIRECTION;
     float nDotL = max(dot(normal, lightDirection), 0.0);
     if (nDotL <= 0.0 || !lightVisible(hitPosition + normal * SURFACE_EPSILON * 4.0, lightDirection, MAX_DISTANCE)) {
         return vec3(0.0);
     }
 
-    float rim = pow(1.0 - max(dot(normal, viewDirection), 0.0), 2.0);
-    vec3 diffuse = material.albedo * nDotL * vec3(1.15, 1.10, 1.0);
-    vec3 specular = mix(vec3(0.04), material.albedo, material.metallic) * rim * (1.0 - material.roughness);
-    return diffuse + specular;
+    vec3 brdf = diffuseBrdf(material) * (1.0 - material.metallic);
+    brdf += glossyLobeEstimate(normal, viewDirection, lightDirection, material);
+    float bsdfPdf = bsdfPdfEstimate(normal, lightDirection, material);
+    float misWeight = powerHeuristic(DIRECT_LIGHT_PDF, bsdfPdf);
+    return DIRECT_LIGHT_RADIANCE * brdf * nDotL * misWeight / DIRECT_LIGHT_PDF;
 }
 
 vec3 tracePath(vec3 rayOrigin, vec3 rayDirection, inout uint rng)
@@ -343,8 +388,8 @@ vec3 tracePath(vec3 rayOrigin, vec3 rayDirection, inout uint rng)
 
         SdfMaterialSample material = sceneMaterial(hitPosition);
         vec3 viewDirection = normalize(-rayDirection);
-        radiance += throughput * material.albedo * material.emission;
-        radiance += throughput * directLight(hitPosition, normal, viewDirection, material);
+        radiance += throughput * emissiveRadiance(material);
+        radiance += throughput * nextEventEstimate(hitPosition, normal, viewDirection, material);
 
         bool sampleMetal = random01(rng) < material.metallic;
         if (sampleMetal) {

@@ -7,8 +7,8 @@
 - Canonical branch order: Scale -> Rotate -> Translate; ensure-wrapper reuses existing nodes in chain
 - `GlslEmitter` is 8 concern files; shared math owns domain transform expressions used by geometry and material emitters
 - `SdfNodeDefinition` metadata owns parameter type: Float, Bool, Enum; UI must not infer bool/enum from numeric ranges
-- MaterialRegistry owns reusable graph materials; SolidMaterial/CheckerMaterial nodes hold stable `materialId`
-- MaterialOverride consumes `sdf` + `material`; inline material fallback remains legacy-only
+- MaterialRegistry owns reusable material assets; each `MaterialDefinition` has a per-material shader graph plus legacy preview `SdfMaterial`
+- MaterialOverride applies material assets by stable `materialId`; inline material fallback remains legacy-only
 - Node groups exist: App-owned `GraphGroupRegistry`, `SdfNodeType::Group`, root JSON `definitions`, Ctrl+G grouping shortcut
 - Entered group subgraph is active editor/viewport/compiler/UI Add/SceneOutliner/Properties target
 - Group names resolve through registry definitions; group-internal lowered node IDs and runtime params are scoped by definition ID
@@ -18,13 +18,17 @@
 - Runtime GLSL mode reads Float node params from SSBO binding 1; Float edits refresh SSBO only, Bool/Enum/topology recompile
 - Union/SmoothUnion/Intersect/SmoothIntersect use one vertical pill-shaped `inputs` multi-input SDF socket and can change type in place
 - Viewport Add appends primitives to output-root Union/SmoothUnion multi-input; otherwise it creates a Union as needed
-- Path-trace shader has GI bounces, Russian Roulette, solid environment color, GGX VNDF glossy sampling, direct shadows, emissive contribution, and accumulation
+- Path-trace shader has GI bounces, Russian Roulette, solid environment color, GGX VNDF glossy sampling, NEE/MIS direct light, clamped emissive contribution, and accumulation
+- `MaterialGraphPanel` owns material asset list plus canvas-based per-material graph editing with embedded input defaults below socket labels and overridden by connected sockets
+- `GraphCanvas` owns shared graph UI frame behavior: child canvas, pan, zoom, grid, coordinate transforms, and zoom-scaled values
+- `GraphEditorCore` owns shared graph editor primitives: node shell, title bar, action buttons, title drag region, sockets, Bezier wires, scaled text, and point/rect hit helpers
+- MaterialGraph compiler emits `SdfMaterialSample` GLSL helpers consumed by deferred `sceneMaterial`; renderer remains graph-free
 - GlslEmitter perf batch complete: direct node-param SSBO slots, root `sceneSDFWithId`, and threaded material distances
-- Build/tests: full Debug app build, all test executables, and hidden GUI smoke pass after GlslEmitter perf batch
+- Build/tests: full Debug app build, all test executables, and hidden GUI smoke pass after MaterialGraph foundation
 
 ## Active
 
-GlslEmitter performance batch complete: runtime node params use direct SSBO slot reads, `sceneSDF`/`scenePickId` share root `sceneSDFWithId`, and `sceneMaterial` reuses threaded branch distance locals instead of re-calling helpers.
+Separate per-material shader graph foundation implemented: material assets own `MaterialGraph` data, compiler emits material helper GLSL, JSON round-trips graphs with legacy migration, and `MaterialGraphPanel` has a node canvas with embedded input fields, right-click add, Delete-key node removal, pan, zoom, and socket linking.
 
 ## Decisions
 
@@ -104,6 +108,16 @@ GlslEmitter performance batch complete: runtime node params use direct SSBO slot
 - 2026-05 - Runtime node-param GLSL indexes `uNodeParams[slot].data0` directly; compiler and GraphSystem assign deterministic slots and Baked mode stays SSBO-free
 - 2026-05 - `sceneSDFWithId` is the only root-level vec2 distance/id path; per-node `sdf_node_<id>` helpers stay float and `sceneSDF`/`scenePickId` are wrappers
 - 2026-05 - Deferred material evaluation threads distance expressions with material samples so boolean material selection does not re-call the same branch helper twice
+- 2026-05 - Path-trace direct lighting uses shader-owned next-event estimation with a power-heuristic MIS weight; compiler and MaterialSystem remain uninvolved in GI
+- 2026-05 - Path-trace material emission is shader-local and clamped through `emissiveRadiance`; true emissive-object NEE requires explicit design before crossing compiler ownership
+- 2026-05 - True emissive-object area-light sampling is deferred until a future LightSystem owns light extraction/query data instead of baking that ownership into GlslEmitter now
+- 2026-05 - Material assets own separate per-material shader graphs; scene graph applies them by stable `materialId` through MaterialOverride
+- 2026-05 - MaterialGraph compiler emits `SdfMaterialSample` GLSL helpers inside scene GLSL so renderer stays graph-free and material graphs can use hit point `p`
+- 2026-05 - Scene Add hides SolidMaterial/CheckerMaterial/ValueNoiseMaterial for new workflows; legacy material source nodes still load and compile for compatibility
+- 2026-05 - MaterialGraph input defaults live on the consuming node and compile unless a linked socket overrides that input
+- 2026-05 - MaterialGraph canvas follows NodeEditor basics: embedded fields sit below socket labels, right-click adds at cursor, Delete removes selected non-output nodes
+- 2026-05 - Shared graph canvas behavior lives in `GraphCanvas`; NodeEditor and MaterialGraphPanel keep graph-specific node/link policy separate
+- 2026-05 - Shared graph editor primitives live in `GraphEditorCore`; Scene and Material graph editors reuse drawing/hit primitives but keep graph policy separate
 
 ## Constraints
 
@@ -122,6 +136,7 @@ GlslEmitter performance batch complete: runtime node params use direct SSBO slot
 - Do not remap Subtract/SmoothSubtract in boolean type-change UI without explicit socket conversion rules because their base/cutter sockets differ from multi-input `inputs`
 - Do not tint highlights by distance alone because multi-object scenes can bleed highlight onto nearby unselected objects
 - Do not add a generic NoiseMaterial node because multiple noise algorithms will coexist and names must stay specific
+- Do not route material graph ownership through renderer because material graph compilation belongs to compiler/UI layers
 
 ## Environment
 
@@ -135,4 +150,4 @@ GlslEmitter performance batch complete: runtime node params use direct SSBO slot
 
 ## Next
 
-Next backlog item: Full GI Tier 2 design/review gate before implementation.
+Next review gate: improve MaterialGraph canvas/link UX or add next shader graph node family.

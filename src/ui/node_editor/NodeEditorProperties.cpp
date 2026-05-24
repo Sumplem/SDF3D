@@ -167,8 +167,10 @@ EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, GraphGroupRegistry& g
 
     if (isSdfMaterialNode(node.type)) {
         SdfMaterial* material = &node.material;
+        MaterialDefinition* selectedDefinition = nullptr;
         if (node.materialId != 0) {
             if (MaterialDefinition* definition = graph.materials().material(node.materialId)) {
+                selectedDefinition = definition;
                 material = &definition->material;
             }
         }
@@ -179,6 +181,9 @@ EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, GraphGroupRegistry& g
         setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
         if (ImGui::ColorEdit3(("##node-albedo-" + std::to_string(layout.id)).c_str(), &material->albedo.x, ImGuiColorEditFlags_NoInputs)) {
             node.material = *material;
+            if (selectedDefinition != nullptr) {
+                selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
+            }
             dirty.material = true;
         }
         ImGui::PopStyleVar();
@@ -189,6 +194,9 @@ EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, GraphGroupRegistry& g
             setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
             if (ImGui::ColorEdit3(("##node-secondary-" + std::to_string(layout.id)).c_str(), &material->secondaryAlbedo.x, ImGuiColorEditFlags_NoInputs)) {
                 node.material = *material;
+                if (selectedDefinition != nullptr) {
+                    selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
+                }
                 dirty.material = true;
             }
             ImGui::PopStyleVar();
@@ -198,6 +206,9 @@ EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, GraphGroupRegistry& g
             setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
             if (ImGui::DragFloat(("##node-pattern-scale-" + std::to_string(layout.id)).c_str(), &material->patternScale, 0.1f, 0.001f, 100.0f, "%.2f")) {
                 node.material = *material;
+                if (selectedDefinition != nullptr) {
+                    selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
+                }
                 dirty.material = true;
             }
             ImGui::PopStyleVar();
@@ -208,6 +219,9 @@ EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, GraphGroupRegistry& g
         setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
         if (ImGui::DragFloat(("##node-roughness-" + std::to_string(layout.id)).c_str(), &material->roughness, 0.01f, 0.0f, 1.0f, "%.2f")) {
             node.material = *material;
+            if (selectedDefinition != nullptr) {
+                selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
+            }
             dirty.material = true;
         }
         ImGui::PopStyleVar();
@@ -217,6 +231,9 @@ EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, GraphGroupRegistry& g
         setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
         if (ImGui::DragFloat(("##node-metallic-" + std::to_string(layout.id)).c_str(), &material->metallic, 0.01f, 0.0f, 1.0f, "%.2f")) {
             node.material = *material;
+            if (selectedDefinition != nullptr) {
+                selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
+            }
             dirty.material = true;
         }
         ImGui::PopStyleVar();
@@ -226,6 +243,9 @@ EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, GraphGroupRegistry& g
         setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
         if (ImGui::DragFloat(("##node-emission-" + std::to_string(layout.id)).c_str(), &material->emission, 0.01f, 0.0f, 100.0f, "%.2f")) {
             node.material = *material;
+            if (selectedDefinition != nullptr) {
+                selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
+            }
             dirty.material = true;
         }
         ImGui::PopStyleVar();

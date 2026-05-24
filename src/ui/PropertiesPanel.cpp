@@ -143,9 +143,6 @@ EditorDirtyState PropertiesPanel::draw(SdfGraph& graph, GraphGroupRegistry& grou
     EditorDirtyState dirty;
 
     ImGui::Begin("Properties");
-    const EditorDirtyState paletteDirty = drawMaterialPalette(graph);
-    dirty.scene = dirty.scene || paletteDirty.scene;
-    dirty.material = dirty.material || paletteDirty.material;
 
     SdfNode* selected = nullptr;
     if (graph.selectedNodes().size() > 1) {
@@ -177,8 +174,10 @@ EditorDirtyState PropertiesPanel::draw(SdfGraph& graph, GraphGroupRegistry& grou
 
     if (isSdfMaterialNode(selected->type)) {
         SdfMaterial* material = &selected->material;
+        MaterialDefinition* selectedDefinition = nullptr;
         if (selectedGraphNode != nullptr && selected->materialId != 0) {
             if (MaterialDefinition* definition = graph.materials().material(selected->materialId)) {
+                selectedDefinition = definition;
                 material = &definition->material;
             }
         }
@@ -188,28 +187,46 @@ EditorDirtyState PropertiesPanel::draw(SdfGraph& graph, GraphGroupRegistry& grou
         material->type = sdfMaterialTypeForNode(selected->type);
         if (ImGui::ColorEdit3("Albedo", &material->albedo.x)) {
             selected->material = *material;
+            if (selectedDefinition != nullptr) {
+                selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
+            }
             dirty.material = true;
         }
         if (isSdfPatternMaterialNode(selected->type)) {
             if (ImGui::ColorEdit3("Secondary", &material->secondaryAlbedo.x)) {
                 selected->material = *material;
+                if (selectedDefinition != nullptr) {
+                    selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
+                }
                 dirty.material = true;
             }
             if (ImGui::DragFloat("Pattern Scale", &material->patternScale, 0.1f, 0.001f, 100.0f)) {
                 selected->material = *material;
+                if (selectedDefinition != nullptr) {
+                    selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
+                }
                 dirty.material = true;
             }
         }
         if (ImGui::DragFloat("Roughness", &material->roughness, 0.01f, 0.0f, 1.0f)) {
             selected->material = *material;
+            if (selectedDefinition != nullptr) {
+                selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
+            }
             dirty.material = true;
         }
         if (ImGui::DragFloat("Metallic", &material->metallic, 0.01f, 0.0f, 1.0f)) {
             selected->material = *material;
+            if (selectedDefinition != nullptr) {
+                selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
+            }
             dirty.material = true;
         }
         if (ImGui::DragFloat("Emission", &material->emission, 0.01f, 0.0f, 100.0f)) {
             selected->material = *material;
+            if (selectedDefinition != nullptr) {
+                selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
+            }
             dirty.material = true;
         }
     }

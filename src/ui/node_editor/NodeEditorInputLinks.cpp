@@ -22,8 +22,7 @@ bool updateActiveInputLinkDrag(
     if (std::optional<ImVec2> to = findSocketAnchor(anchors, dragInputNode, dragInputSocket, false)) {
         to->y += dragInputAnchorOffsetY;
         const ImVec2 mouse = ImGui::GetIO().MousePos;
-        const float handle = scaleValue(frame, 70.0f);
-        frame.drawList->AddBezierCubic(*to, {to->x - handle, to->y}, {mouse.x + handle, mouse.y}, mouse, IM_COL32(255, 210, 110, 255), scaleValue(frame, 3.0f));
+        ui::drawGraphBezier(frame, mouse, *to, IM_COL32(255, 210, 110, 255));
     }
 
     if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {

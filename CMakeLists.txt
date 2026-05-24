@@ -49,6 +49,9 @@ add_executable(sdf3d
     src/systems/MaterialSystem.cpp
     src/systems/SelectionSystem.cpp
     src/ui/AddMenu.cpp
+    src/ui/GraphCanvas.cpp
+    src/ui/GraphEditorCore.cpp
+    src/ui/MaterialGraphPanel.cpp
     src/ui/node_editor/NodeEditorActions.cpp
     src/ui/node_editor/NodeEditorCanvas.cpp
     src/ui/node_editor/NodeEditorInputLinks.cpp
@@ -524,4 +527,24 @@ if(MSVC)
     target_compile_options(sdf3d_material_system_tests PRIVATE /W4)
 else()
     target_compile_options(sdf3d_material_system_tests PRIVATE -Wall -Wextra)
+endif()
+
+add_executable(sdf3d_material_graph_tests
+    tests/test_material_graph.cpp
+)
+
+target_compile_features(sdf3d_material_graph_tests PRIVATE cxx_std_17)
+
+target_include_directories(sdf3d_material_graph_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(sdf3d_material_graph_tests PRIVATE
+    glm::glm
+)
+
+if(MSVC)
+    target_compile_options(sdf3d_material_graph_tests PRIVATE /W4)
+else()
+    target_compile_options(sdf3d_material_graph_tests PRIVATE -Wall -Wextra)
 endif()

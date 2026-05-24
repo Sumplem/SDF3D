@@ -124,6 +124,22 @@ void testWriteInjectedFragmentSource(std::vector<TestFailure>& failures)
     expect(!contains(exported, "old"), testName, "Expected old scene block removed.", failures);
 }
 
+void testPathTraceShaderHasNeeMis(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "path trace shader has NEE MIS";
+    std::ifstream shader(std::filesystem::path("assets") / "shaders" / "raymarch_pathtrace.frag");
+    std::ostringstream contents;
+    contents << shader.rdbuf();
+    const std::string source = contents.str();
+
+    expect(contains(source, "nextEventEstimate"), testName, "Expected explicit light sampling entry point.", failures);
+    expect(contains(source, "powerHeuristic"), testName, "Expected MIS power heuristic.", failures);
+    expect(contains(source, "DIRECT_LIGHT_PDF"), testName, "Expected named direct-light PDF.", failures);
+    expect(contains(source, "bsdfPdfEstimate"), testName, "Expected BSDF PDF estimate for MIS.", failures);
+    expect(contains(source, "emissiveRadiance"), testName, "Expected emissive radiance helper.", failures);
+    expect(contains(source, "MAX_EMISSIVE_RADIANCE"), testName, "Expected named emissive clamp.", failures);
+}
+
 void testPathTraceShaderCompiles(std::vector<TestFailure>& failures)
 {
     const std::string testName = "path trace shader compiles";
@@ -174,6 +190,7 @@ int main()
     testInjectMissingMarkers(failures);
     testEditShaderHasGizmoInjectionShape(failures);
     testWriteInjectedFragmentSource(failures);
+    testPathTraceShaderHasNeeMis(failures);
     testPathTraceShaderCompiles(failures);
 
     if (!failures.empty()) {

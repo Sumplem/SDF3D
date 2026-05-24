@@ -7,6 +7,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace sdf3d {
@@ -33,6 +34,7 @@ struct SdfCompileResult {
     // material ID assignment without coupling SdfNode to renderer uniform layout.
     std::vector<SdfCompiledMaterial> materials;
     std::vector<SdfCompiledNodeParam> nodeParams;
+    std::unordered_map<MaterialId, std::string> materialFunctionByRegistryId;
     bool usesBox = false;
     bool usesCylinder = false;
     bool usesSmoothMin = false;

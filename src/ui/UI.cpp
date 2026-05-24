@@ -100,6 +100,13 @@ void UI::drawPanels(SceneGraph& sceneGraph, GraphGroupRegistry& groups, const st
 {
     drawScenePanel(sceneGraph, groups);
     drawDiagnosticsPanel(runtimeErrors);
+    const EditorDirtyState materialsDirty = m_materialGraphPanel.draw(activeGraph(sceneGraph, groups));
+    if (materialsDirty.scene) {
+        markSceneDirty();
+    }
+    if (materialsDirty.material) {
+        markMaterialDirty();
+    }
     const EditorDirtyState propertiesDirty = m_propertiesPanel.draw(activeGraph(sceneGraph, groups), groups);
     if (propertiesDirty.scene) {
         markSceneDirty();

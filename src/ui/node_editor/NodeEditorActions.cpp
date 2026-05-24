@@ -4,6 +4,7 @@
 #include "sdf3d/scene/SdfNodeDefinition.h"
 #include "sdf3d/scene/SdfNodeTraits.h"
 #include "sdf3d/systems/GraphSystem.h"
+#include "sdf3d/ui/GraphEditorCore.h"
 
 #include <algorithm>
 #include <vector>
@@ -202,32 +203,24 @@ bool flushPendingDeletes(SdfGraph& graph, std::vector<SdfGraphNodeId>& pendingDe
 bool drawNodeActions(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNodeId& pendingDelete)
 {
     bool sceneDirty = false;
-    const float zoom = layoutZoom(layout);
-    const float buttonExtent = std::max(16.0f, 18.0f * zoom);
-    const ImVec2 buttonSize = {buttonExtent, buttonExtent};
-    const float top = layout.position.y + 5.0f * zoom;
-    const float deleteX = layout.position.x + layout.size.x - buttonExtent - 5.0f * zoom;
-    const float collapseX = deleteX - buttonExtent - 4.0f * zoom;
+    CanvasFrame actionFrame;
+    actionFrame.zoom = layoutZoom(layout);
 
-    ImGui::SetCursorScreenPos({collapseX, top});
     const char* collapseLabel = layout.node->editorPropertiesCollapsed ? "+##node-props-" : "-##node-props-";
-    if (ImGui::Button((std::string(collapseLabel) + std::to_string(layout.id)).c_str(), buttonSize)) {
+    if (ui::drawGraphNodeTitleActionButton(actionFrame, layout.position, layout.size, 1, std::string(collapseLabel) + std::to_string(layout.id), true)) {
         layout.node->editorPropertiesCollapsed = !layout.node->editorPropertiesCollapsed;
     }
 
-    ImGui::SetCursorScreenPos({deleteX, top});
     if (graph.isOutputNode(layout.id)) {
-        ImGui::BeginDisabled();
-        ImGui::Button(("X##delete-node-" + std::to_string(layout.id)).c_str(), buttonSize);
-        ImGui::EndDisabled();
-    } else if (ImGui::Button(("X##delete-node-" + std::to_string(layout.id)).c_str(), buttonSize)) {
+        (void)ui::drawGraphNodeTitleActionButton(actionFrame, layout.position, layout.size, 0, "X##delete-node-" + std::to_string(layout.id), false);
+    } else if (ui::drawGraphNodeTitleActionButton(actionFrame, layout.position, layout.size, 0, "X##delete-node-" + std::to_string(layout.id), true)) {
         pendingDelete = layout.id;
     }
 
     const std::string popupId = "node-context-" + std::to_string(layout.id);
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     const ImVec2 nodeEnd = {layout.position.x + layout.size.x, layout.position.y + layout.size.y};
-    const bool mouseInsideNode = mouse.x >= layout.position.x && mouse.x <= nodeEnd.x && mouse.y >= layout.position.y && mouse.y <= nodeEnd.y;
+    const bool mouseInsideNode = ui::pointInsideRect(mouse, layout.position, nodeEnd);
     if ((isSdfPrimitiveNode(layout.node->payload.type) || isMultiInputBooleanActionType(layout.node->payload.type))
         && mouseInsideNode
         && ImGui::IsWindowHovered()

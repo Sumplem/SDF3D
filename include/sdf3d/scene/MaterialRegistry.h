@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sdf3d/components/SdfMaterial.h"
+#include "sdf3d/scene/MaterialGraph.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -18,6 +19,7 @@ struct MaterialDefinition {
     MaterialId id = 0;
     std::string name;
     SdfMaterial material;
+    MaterialGraph graph;
 };
 
 /// Owns reusable scene materials independently from graph nodes.
@@ -27,7 +29,7 @@ public:
     MaterialId createMaterial(std::string name, SdfMaterial material = {})
     {
         const MaterialId id = m_nextId++;
-        m_materials.push_back({id, std::move(name), material});
+        m_materials.push_back({id, std::move(name), material, makeMaterialGraphFromMaterial(material)});
         return id;
     }
 

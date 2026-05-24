@@ -161,6 +161,113 @@ std::optional<SdfSocketDirection> parseSocketDirection(const std::string& name)
     return std::nullopt;
 }
 
+const char* materialGraphNodeTypeNameForJson(MaterialGraphNodeType type)
+{
+    return materialGraphNodeTypeName(type);
+}
+
+std::optional<MaterialGraphNodeType> parseMaterialGraphNodeType(const std::string& name)
+{
+    for (MaterialGraphNodeType type : {
+             MaterialGraphNodeType::PbrMaterial,
+             MaterialGraphNodeType::ColorConstant,
+             MaterialGraphNodeType::FloatConstant,
+             MaterialGraphNodeType::MixColor,
+             MaterialGraphNodeType::CheckerPattern,
+             MaterialGraphNodeType::ValueNoisePattern,
+             MaterialGraphNodeType::MaterialOutput,
+         }) {
+        if (name == materialGraphNodeTypeNameForJson(type)) {
+            return type;
+        }
+    }
+    return std::nullopt;
+}
+
+nlohmann::json materialGraphToJson(const MaterialGraph& graph)
+{
+    nlohmann::json nodes = nlohmann::json::array();
+    for (const MaterialGraphNode& node : graph.nodes()) {
+        nodes.push_back({
+            {"id", node.id},
+            {"type", materialGraphNodeTypeNameForJson(node.type)},
+            {"name", node.name},
+            {"color", {node.color.x, node.color.y, node.color.z}},
+            {"secondaryColor", {node.secondaryColor.x, node.secondaryColor.y, node.secondaryColor.z}},
+            {"value", node.value},
+            {"roughness", node.roughness},
+            {"metallic", node.metallic},
+            {"emission", node.emission},
+            {"editor", {{"x", node.editorX}, {"y", node.editorY}}},
+        });
+    }
+
+    nlohmann::json links = nlohmann::json::array();
+    for (const MaterialGraphLink& link : graph.links()) {
+        links.push_back({
+            {"from", {{"node", link.fromNode}, {"socket", link.fromSocket}}},
+            {"to", {{"node", link.toNode}, {"socket", link.toSocket}}},
+        });
+    }
+
+    return {
+        {"nextId", graph.nextNodeIdForSerialization()},
+        {"outputNode", graph.outputNode()},
+        {"nodes", nodes},
+        {"links", links},
+    };
+}
+
+MaterialGraph materialGraphFromJson(const nlohmann::json& value)
+{
+    std::vector<MaterialGraphNode> nodes;
+    for (const nlohmann::json& nodeValue : value.at("nodes")) {
+        const std::optional<MaterialGraphNodeType> type = parseMaterialGraphNodeType(nodeValue.at("type").get<std::string>());
+        if (!type) {
+            throw std::runtime_error("Unknown material graph node type.");
+        }
+        MaterialGraphNode node;
+        node.id = nodeValue.at("id").get<MaterialGraphNodeId>();
+        node.type = *type;
+        node.name = nodeValue.at("name").get<std::string>();
+        const nlohmann::json& color = nodeValue.at("color");
+        node.color = {color.at(0).get<float>(), color.at(1).get<float>(), color.at(2).get<float>()};
+        if (nodeValue.contains("secondaryColor")) {
+            const nlohmann::json& secondaryColor = nodeValue.at("secondaryColor");
+            node.secondaryColor = {
+                secondaryColor.at(0).get<float>(),
+                secondaryColor.at(1).get<float>(),
+                secondaryColor.at(2).get<float>(),
+            };
+        }
+        node.value = nodeValue.at("value").get<float>();
+        node.roughness = nodeValue.value("roughness", node.roughness);
+        node.metallic = nodeValue.value("metallic", node.metallic);
+        node.emission = nodeValue.value("emission", node.emission);
+        if (nodeValue.contains("editor")) {
+            node.editorX = nodeValue.at("editor").value("x", 0.0f);
+            node.editorY = nodeValue.at("editor").value("y", 0.0f);
+        }
+        nodes.push_back(node);
+    }
+
+    std::vector<MaterialGraphLink> links;
+    for (const nlohmann::json& linkValue : value.at("links")) {
+        links.push_back({
+            linkValue.at("from").at("node").get<MaterialGraphNodeId>(),
+            linkValue.at("from").at("socket").get<std::string>(),
+            linkValue.at("to").at("node").get<MaterialGraphNodeId>(),
+            linkValue.at("to").at("socket").get<std::string>(),
+        });
+    }
+
+    MaterialGraph graph;
+    if (!graph.replaceData(value.at("nextId").get<MaterialGraphNodeId>(), value.at("outputNode").get<MaterialGraphNodeId>(), std::move(nodes), std::move(links))) {
+        throw std::runtime_error("Serialized material graph failed validation.");
+    }
+    return graph;
+}
+
 } // namespace
 
 nlohmann::json socketToJson(const SdfGraphSocket& socket)
@@ -231,15 +338,18 @@ nlohmann::json materialDefinitionToJson(const MaterialDefinition& material)
         {"id", material.id},
         {"name", material.name},
         {"material", materialToJson(material.material)},
+        {"graph", materialGraphToJson(material.graph)},
     };
 }
 
 MaterialDefinition materialDefinitionFromJson(const nlohmann::json& value)
 {
+    const SdfMaterial material = materialFromJson(value.at("material"));
     return {
         value.at("id").get<MaterialId>(),
         value.at("name").get<std::string>(),
-        materialFromJson(value.at("material")),
+        material,
+        value.contains("graph") ? materialGraphFromJson(value.at("graph")) : makeMaterialGraphFromMaterial(material),
     };
 }
 

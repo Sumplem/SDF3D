@@ -27,11 +27,6 @@ ImVec2 cubicBezierPoint(ImVec2 p0, ImVec2 p1, ImVec2 p2, ImVec2 p3, float t)
     };
 }
 
-bool pointInsideRect(ImVec2 point, ImVec2 min, ImVec2 max)
-{
-    return point.x >= min.x && point.x <= max.x && point.y >= min.y && point.y <= max.y;
-}
-
 bool rectOverBezier(const GraphNodeLayout& layout, ImVec2 from, ImVec2 to)
 {
     constexpr int sampleCount = 24;
@@ -42,7 +37,7 @@ bool rectOverBezier(const GraphNodeLayout& layout, ImVec2 from, ImVec2 to)
     const ImVec2 c2 = {to.x - 70.0f * zoom, to.y};
     for (int i = 0; i <= sampleCount; ++i) {
         const float t = static_cast<float>(i) / static_cast<float>(sampleCount);
-        if (pointInsideRect(cubicBezierPoint(from, c1, c2, to, t), min, max)) {
+        if (ui::pointInsideRect(cubicBezierPoint(from, c1, c2, to, t), min, max)) {
             return true;
         }
     }
@@ -131,13 +126,6 @@ bool activeOutputNodeExists(const SdfGraph& graph)
 {
     const SdfGraphNode* outputNode = graph.node(graph.outputNode());
     return outputNode != nullptr && outputNode->payload.type == SdfNodeType::Output;
-}
-
-float distanceSquared(ImVec2 a, ImVec2 b)
-{
-    const float x = a.x - b.x;
-    const float y = a.y - b.y;
-    return x * x + y * y;
 }
 
 std::optional<SdfGraphLink> linkToInput(const SdfGraph& graph, SdfGraphNodeId node, const std::string& socket)
@@ -231,15 +219,14 @@ void drawLinkInsertionPreview(
 
     const ImU32 previewWire = IM_COL32(255, 210, 110, 235);
     const ImU32 dimWire = IM_COL32(120, 126, 140, 130);
-    const float handle = scaleValue(frame, 70.0f);
-    frame.drawList->AddBezierCubic(*originalFrom, {originalFrom->x + handle, originalFrom->y}, {originalTo->x - handle, originalTo->y}, *originalTo, dimWire, scaleValue(frame, 5.0f));
-    frame.drawList->AddBezierCubic(*originalFrom, {originalFrom->x + handle, originalFrom->y}, {insertedInput->x - handle, insertedInput->y}, *insertedInput, previewWire, scaleValue(frame, 3.0f));
-    frame.drawList->AddBezierCubic(*insertedOutput, {insertedOutput->x + handle, insertedOutput->y}, {originalTo->x - handle, originalTo->y}, *originalTo, previewWire, scaleValue(frame, 3.0f));
+    ui::drawGraphBezier(frame, *originalFrom, *originalTo, dimWire, 5.0f);
+    ui::drawGraphBezier(frame, *originalFrom, *insertedInput, previewWire);
+    ui::drawGraphBezier(frame, *insertedOutput, *originalTo, previewWire);
 
     const ImVec2 nodeEnd = {layout.position.x + layout.size.x, layout.position.y + layout.size.y};
     frame.drawList->AddRect(layout.position, nodeEnd, previewWire, scaleValue(frame, 6.0f), 0, scaleValue(frame, 3.0f));
-    frame.drawList->AddCircleFilled(*insertedInput, scaleValue(frame, 7.0f), previewWire);
-    frame.drawList->AddCircleFilled(*insertedOutput, scaleValue(frame, 7.0f), previewWire);
+    ui::drawGraphSocket(frame, *insertedInput, previewWire, 7.0f);
+    ui::drawGraphSocket(frame, *insertedOutput, previewWire, 7.0f);
 }
 
 bool mouseNearBezier(ImVec2 mouse, ImVec2 from, ImVec2 to)

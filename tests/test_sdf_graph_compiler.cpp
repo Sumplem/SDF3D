@@ -145,6 +145,7 @@ void testGraphCompilerMaterialOverride(std::vector<TestFailure>& failures)
     if (sdf3d::SdfGraphNode* node = graph.node(material)) {
         if (sdf3d::MaterialDefinition* definition = graph.materials().material(node->payload.materialId)) {
             definition->material.albedo = {0.25f, 0.5f, 0.75f};
+            definition->graph = sdf3d::makeMaterialGraphFromMaterial(definition->material);
         }
     }
     graph.link(sphere, "sdf", materialOverride, "sdf");
@@ -155,10 +156,8 @@ void testGraphCompilerMaterialOverride(std::vector<TestFailure>& failures)
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
-    expect(result.materials.size() == 2, testName, "Expected default plus graph material override.", failures);
-    if (result.materials.size() == 2) {
-        expect(result.materials[1].material.albedo.y == 0.5f, testName, "Expected graph material override payload.", failures);
-    }
+    expect(contains(result.glsl, "sdf3d_material_"), testName, "Expected material graph helper emitted.", failures);
+    expect(contains(result.glsl, "0.500000"), testName, "Expected graph material override payload in GLSL.", failures);
 }
 
 void testGraphCompilerValueNoiseMaterial(std::vector<TestFailure>& failures)
@@ -172,6 +171,7 @@ void testGraphCompilerValueNoiseMaterial(std::vector<TestFailure>& failures)
         if (sdf3d::MaterialDefinition* definition = graph.materials().material(node->payload.materialId)) {
             definition->material.secondaryAlbedo = {0.1f, 0.2f, 0.3f};
             definition->material.patternScale = 11.0f;
+            definition->graph = sdf3d::makeMaterialGraphFromMaterial(definition->material);
         }
     }
     graph.link(sphere, "sdf", materialOverride, "sdf");
@@ -182,12 +182,8 @@ void testGraphCompilerValueNoiseMaterial(std::vector<TestFailure>& failures)
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
-    expect(result.materials.size() == 2, testName, "Expected default plus value-noise material.", failures);
-    if (result.materials.size() == 2) {
-        expect(result.materials[1].material.type == sdf3d::SdfMaterialType::ValueNoise, testName, "Expected value-noise material type.", failures);
-        expect(result.materials[1].material.secondaryAlbedo.z == 0.3f, testName, "Expected secondary color preserved.", failures);
-        expect(result.materials[1].material.patternScale == 11.0f, testName, "Expected pattern scale preserved.", failures);
-    }
+    expect(contains(result.glsl, "sdf3d_valueNoise3d(p * max(11.000000"), testName, "Expected value-noise material graph to sample p with scale.", failures);
+    expect(contains(result.glsl, "0.300000"), testName, "Expected secondary color preserved in material graph GLSL.", failures);
 }
 
 void testGraphNodeDefinitionMaterialOverride(std::vector<TestFailure>& failures)

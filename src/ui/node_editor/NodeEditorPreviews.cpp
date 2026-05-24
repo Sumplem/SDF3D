@@ -45,8 +45,7 @@ void drawInactiveNodePreview(
 
     // AGENT: Compiler bypasses incomplete boolean nodes in these cases; this
     // virtual wire shows that effective path without mutating graph links.
-    const float handle = scaleValue(frame, 90.0f);
-    frame.drawList->AddBezierCubic(*from, {from->x + handle, from->y}, {to->x - handle, to->y}, *to, IM_COL32(255, 180, 80, 180), scaleValue(frame, 2.0f));
+    ui::drawGraphBezier(frame, *from, *to, IM_COL32(255, 180, 80, 180), 2.0f, 90.0f);
 }
 
 } // namespace sdf3d::node_editor
