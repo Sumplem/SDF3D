@@ -61,7 +61,6 @@ public:
     };
 
     struct GpuNodeParam {
-        glm::uvec4 id = {0u, 0u, 0u, 0u};
         glm::vec4 data0 = {0.0f, 0.0f, 0.0f, 0.0f};
     };
 

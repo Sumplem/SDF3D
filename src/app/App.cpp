@@ -2,6 +2,7 @@
 
 #include "sdf3d/core/ResourceManager.h"
 #include "sdf3d/math/Math.h"
+#include "sdf3d/renderer/ShaderManager.h"
 #include "sdf3d/systems/GraphSystem.h"
 
 #include <filesystem>
@@ -122,6 +123,9 @@ bool App::init()
         }
         m_ui.resetActiveGraph();
         m_eventBus.emit(SceneDirtyEvent{});
+    });
+    m_eventBus.subscribe<ExportCompiledGlslEvent>([this](const ExportCompiledGlslEvent& event) {
+        exportCompiledGlsl(event);
     });
 
     if (!recompileScene(false)) {
@@ -284,6 +288,49 @@ bool App::refreshMaterials()
 void App::refreshNodeParams()
 {
     m_renderer.setNodeParams(GraphSystem::collectNodeParams(m_ui.activeGraph(m_sceneGraph, m_groupRegistry), m_groupRegistry));
+}
+
+void App::exportCompiledGlsl(const ExportCompiledGlslEvent& event)
+{
+    const SdfCompileResult sceneGlsl = compileScene(m_ui.activeGraph(m_sceneGraph, m_groupRegistry), m_groupRegistry, m_sdfCompiler);
+    for (const std::string& error : sceneGlsl.errors) {
+        m_diagnostics.add(DiagnosticSeverity::Warning, "SdfCompiler", error);
+        std::cerr << "[SDF3D][SdfCompiler] " << error << '\n';
+    }
+
+    const std::filesystem::path outputDirectory = event.outputDirectory.empty()
+        ? std::filesystem::path("compiled_glsl")
+        : std::filesystem::path(event.outputDirectory);
+    const std::filesystem::path shaderRoot = ResourceManager::instance().assetsPath("shaders");
+    const std::filesystem::path editOutput = outputDirectory / "raymarch_edit.compiled.frag";
+    const std::filesystem::path pathTraceOutput = outputDirectory / "raymarch_pathtrace.compiled.frag";
+
+    std::string errorLog;
+    const bool editWritten = ShaderManager::writeInjectedFragmentSource(
+        shaderRoot / "raymarch_edit.frag",
+        sceneGlsl.glsl,
+        editOutput,
+        errorLog);
+    if (!editWritten) {
+        m_diagnostics.add(DiagnosticSeverity::Error, "GLSL Export", errorLog);
+        std::cerr << "[SDF3D][GLSL Export] " << errorLog << '\n';
+        return;
+    }
+
+    const bool pathWritten = ShaderManager::writeInjectedFragmentSource(
+        shaderRoot / "raymarch_pathtrace.frag",
+        sceneGlsl.glsl,
+        pathTraceOutput,
+        errorLog);
+    if (!pathWritten) {
+        m_diagnostics.add(DiagnosticSeverity::Error, "GLSL Export", errorLog);
+        std::cerr << "[SDF3D][GLSL Export] " << errorLog << '\n';
+        return;
+    }
+
+    const std::string message = "Exported compiled GLSL to " + outputDirectory.string();
+    m_diagnostics.add(DiagnosticSeverity::Info, "GLSL Export", message);
+    std::cerr << "[SDF3D][GLSL Export] " << message << '\n';
 }
 
 } // namespace sdf3d

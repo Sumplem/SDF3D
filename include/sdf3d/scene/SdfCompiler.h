@@ -21,6 +21,7 @@ struct SdfCompiledMaterial {
 /// Runtime node parameters uploaded beside generated GLSL for edit-time fast updates.
 struct SdfCompiledNodeParam {
     uint64_t nodeId = 0;
+    uint32_t slot = 0;
     std::array<float, 4> data0 = {0.0f, 0.0f, 0.0f, 0.0f};
 };
 

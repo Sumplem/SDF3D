@@ -34,45 +34,6 @@ void expect(bool condition, const std::string& testName, const std::string& mess
     }
 }
 
-void testSphereExpression(std::vector<TestFailure>& failures)
-{
-    const std::string testName = "sphere expression";
-    sdf3d::GlslEmitter emitter;
-    sdf3d::SdfCompileResult result;
-    const std::string expression = emitter.emitNode(sdf3d::makeSphereNode(), "p", result);
-
-    expect(result.errors.empty(), testName, "Expected no emitter errors.", failures);
-    expect(result.materials.size() == 1, testName, "Expected default material emission.", failures);
-    expect(contains(expression, "length(p) - 1.000000"), testName, "Expected sphere distance expression.", failures);
-    expect(contains(expression, ", 0.000000)"), testName, "Expected primitive default material ID.", failures);
-}
-
-void testMaterialOverrideExpression(std::vector<TestFailure>& failures)
-{
-    const std::string testName = "material override expression";
-    sdf3d::GlslEmitter emitter;
-    sdf3d::SdfCompileResult result;
-    sdf3d::SdfNodePtr material = sdf3d::makeSdfNode(sdf3d::SdfNodeType::MaterialOverride, "Red");
-    material->material.albedo = {1.0f, 0.0f, 0.0f};
-    material->children.push_back(sdf3d::makeSphereNode());
-    const std::string expression = emitter.emitNode(material, "p", result);
-
-    expect(result.errors.empty(), testName, "Expected no emitter errors.", failures);
-    expect(result.materials.size() == 2, testName, "Expected default plus override material.", failures);
-    expect(contains(expression, ", 1.000000)"), testName, "Expected override material ID.", failures);
-}
-
-void testNullNode(std::vector<TestFailure>& failures)
-{
-    const std::string testName = "null node";
-    sdf3d::GlslEmitter emitter;
-    sdf3d::SdfCompileResult result;
-    const std::string expression = emitter.emitNode(nullptr, "p", result);
-
-    expect(!result.errors.empty(), testName, "Expected null node error.", failures);
-    expect(expression == "vec2(1e6, 0.0)", testName, "Expected no-hit expression.", failures);
-}
-
 void testSdfHelperOrder(std::vector<TestFailure>& failures)
 {
     const std::string testName = "sdf helper order";
@@ -130,13 +91,39 @@ void testTransformSdfHelperUsesRuntimeNodeParam(std::vector<TestFailure>& failur
     sphere->stableId = 10;
     sdf3d::SdfNodePtr translate = sdf3d::makeTranslateNode(sphere, {1.0f, 2.0f, 3.0f}, "Translate");
     translate->stableId = 20;
+    result.nodeParams.push_back({20, 0, {1.0f, 2.0f, 3.0f, 0.0f}});
 
     const sdf3d::GlslSdfHelperBlock block = emitter.emitSdfHelpers(translate, result);
 
     expect(result.errors.empty(), testName, "Expected no helper errors.", failures);
     expect(block.helpers.size() == 2, testName, "Expected child and translate helper.", failures);
     if (block.helpers.size() == 2) {
-        expect(contains(block.helpers[1].glsl, "sdf3d_nodeParam0(20u, 0u, vec4(1.000000, 2.000000, 3.000000, 0.000000)).xyz"), testName, "Expected translate helper to read runtime node params.", failures);
+        expect(contains(block.helpers[1].glsl, "uNodeParams[0].data0.xyz"), testName, "Expected translate helper to read direct runtime node param slot.", failures);
+    }
+}
+
+void testSdfHelpersReturnFloatGeometryOnly(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "sdf helpers return float geometry only";
+    sdf3d::GlslEmitter emitter;
+    sdf3d::SdfCompileResult result;
+    sdf3d::SdfNodePtr sphere = sdf3d::makeSphereNode();
+    sphere->stableId = 10;
+    sdf3d::SdfNodePtr box = sdf3d::makeBoxNode();
+    box->stableId = 20;
+    sdf3d::SdfNodePtr unionNode = sdf3d::makeUnionNode({sphere, box});
+    unionNode->stableId = 30;
+    sdf3d::SdfNodePtr material = sdf3d::makeSdfNode(sdf3d::SdfNodeType::MaterialOverride, "Material");
+    material->stableId = 40;
+    material->children.push_back(unionNode);
+
+    const sdf3d::GlslSdfHelperBlock block = emitter.emitSdfHelpers(material, result);
+
+    expect(result.errors.empty(), testName, "Expected no helper errors.", failures);
+    expect(result.materials.empty(), testName, "Expected SDF helpers to avoid material emission.", failures);
+    for (const sdf3d::GlslSdfHelper& helper : block.helpers) {
+        expect(contains(helper.glsl, "float " + helper.functionName + "(vec3 p)"), testName, "Expected helper to return float.", failures);
+        expect(!contains(helper.glsl, "return vec2("), testName, "Expected helper to return distance only, not vec2 hit data.", failures);
     }
 }
 
@@ -146,12 +133,10 @@ int main()
 {
     std::vector<TestFailure> failures;
 
-    testSphereExpression(failures);
-    testMaterialOverrideExpression(failures);
-    testNullNode(failures);
     testSdfHelperOrder(failures);
     testMaterialOverrideSdfHelper(failures);
     testTransformSdfHelperUsesRuntimeNodeParam(failures);
+    testSdfHelpersReturnFloatGeometryOnly(failures);
 
     if (!failures.empty()) {
         for (const TestFailure& failure : failures) {

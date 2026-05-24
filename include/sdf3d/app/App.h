@@ -42,6 +42,7 @@ private:
     bool recompileScene(bool keepPreviousProgramOnFailure);
     bool refreshMaterials();
     void refreshNodeParams();
+    void exportCompiledGlsl(const ExportCompiledGlslEvent& event);
 
     GLFWwindow* m_window = nullptr;
     Renderer m_renderer;

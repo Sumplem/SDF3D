@@ -75,18 +75,21 @@ void testPackedValueNoiseMaterialType(std::vector<TestFailure>& failures)
 void testPackedNodeParamLayout(std::vector<TestFailure>& failures)
 {
     const std::string testName = "packed node param layout";
-    std::vector<sdf3d::SdfCompiledNodeParam> params(1);
+    std::vector<sdf3d::SdfCompiledNodeParam> params(2);
     params[0].nodeId = (static_cast<uint64_t>(2) << 32u) | 7u;
+    params[0].slot = 1;
     params[0].data0 = {1.0f, 2.0f, 3.0f, 4.0f};
+    params[1].nodeId = 3;
+    params[1].slot = 0;
+    params[1].data0 = {5.0f, 6.0f, 7.0f, 8.0f};
 
     const std::vector<sdf3d::UniformUploader::GpuNodeParam> packed = sdf3d::UniformUploader::packNodeParams(params);
 
-    expect(sizeof(sdf3d::UniformUploader::GpuNodeParam) == sizeof(float) * 8, testName, "Expected two vec4 node param layout.", failures);
-    expect(packed.size() == 1, testName, "Expected one node param packed.", failures);
-    if (packed.size() == 1) {
-        expect(packed[0].id.x == 7u, testName, "Expected low node id packed.", failures);
-        expect(packed[0].id.y == 2u, testName, "Expected high node id packed.", failures);
-        expect(packed[0].data0.z == 3.0f, testName, "Expected data vec packed.", failures);
+    expect(sizeof(sdf3d::UniformUploader::GpuNodeParam) == sizeof(float) * 4, testName, "Expected one vec4 node param layout.", failures);
+    expect(packed.size() == 2, testName, "Expected slot-sized node params packed.", failures);
+    if (packed.size() == 2) {
+        expect(packed[0].data0.z == 7.0f, testName, "Expected slot zero data packed.", failures);
+        expect(packed[1].data0.z == 3.0f, testName, "Expected slot one data packed.", failures);
     }
 }
 

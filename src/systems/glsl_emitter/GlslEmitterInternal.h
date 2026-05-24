@@ -7,10 +7,15 @@
 #include <string>
 #include <unordered_map>
 
+namespace sdf3d {
+class MaterialSystem;
+}
+
 namespace sdf3d::glsl_emitter {
 
 struct SdfHelperEmitContext {
     std::unordered_map<const SdfNode*, uint64_t>& generatedIds;
+    const std::unordered_map<uint64_t, uint32_t>& nodeParamSlotByNodeId;
     uint64_t& nextGeneratedId;
     GlslEmitMode mode = GlslEmitMode::Runtime;
 };
@@ -25,6 +30,12 @@ std::string emitPrimitiveGeometryExpression(const SdfNodePtr& node, const std::s
 std::string emitBooleanGeometryExpression(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result, SdfHelperEmitContext& context);
 std::string emitDomainGeometryExpression(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result, SdfHelperEmitContext& context);
 std::string emitMaterialGeometryExpression(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result, SdfHelperEmitContext& context);
-std::string emitMaterialFor(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result, const GlslSdfHelperBlock& sdfHelpers, GlslEmitMode mode);
+std::string emitMaterialBodyFor(
+    const SdfNodePtr& node,
+    const std::string& pointExpr,
+    SdfCompileResult& result,
+    const GlslSdfHelperBlock& sdfHelpers,
+    GlslEmitMode mode,
+    const sdf3d::MaterialSystem& materialSystem);
 
 } // namespace sdf3d::glsl_emitter

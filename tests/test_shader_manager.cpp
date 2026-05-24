@@ -1,7 +1,9 @@
 #include "sdf3d/renderer/ShaderManager.h"
 
+#include <fstream>
 #include <filesystem>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -89,6 +91,39 @@ void testEditShaderHasGizmoInjectionShape(std::vector<TestFailure>& failures)
     expect(contains(injected, "float sceneSDF"), testName, "Expected scene block injected.", failures);
 }
 
+void testWriteInjectedFragmentSource(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "write injected fragment source";
+    const std::filesystem::path outputDirectory = std::filesystem::path("build") / "shader_manager_export_test";
+    const std::filesystem::path templatePath = outputDirectory / "template.frag";
+    const std::filesystem::path outputPath = outputDirectory / "compiled.frag";
+    std::filesystem::create_directories(outputDirectory);
+
+    {
+        std::ofstream shaderTemplate(templatePath);
+        shaderTemplate
+            << "prefix\n"
+            << "// SDF3D_SCENE_BEGIN\n"
+            << "old\n"
+            << "// SDF3D_SCENE_END\n"
+            << "suffix\n";
+    }
+
+    std::string error;
+    const bool written = sdf3d::ShaderManager::writeInjectedFragmentSource(templatePath, "float sceneSDF(vec3 p) { return 1e6; }\n", outputPath, error);
+    expect(written, testName, error.empty() ? "Expected export write success." : error, failures);
+    expect(error.empty(), testName, "Expected no export error.", failures);
+
+    std::ifstream output(outputPath);
+    std::ostringstream contents;
+    contents << output.rdbuf();
+    const std::string exported = contents.str();
+    expect(contains(exported, "float sceneSDF(vec3 p)"), testName, "Expected injected scene GLSL in exported file.", failures);
+    expect(contains(exported, "prefix"), testName, "Expected template prefix preserved.", failures);
+    expect(contains(exported, "suffix"), testName, "Expected template suffix preserved.", failures);
+    expect(!contains(exported, "old"), testName, "Expected old scene block removed.", failures);
+}
+
 void testPathTraceShaderCompiles(std::vector<TestFailure>& failures)
 {
     const std::string testName = "path trace shader compiles";
@@ -138,6 +173,7 @@ int main()
     testInjectSceneSource(failures);
     testInjectMissingMarkers(failures);
     testEditShaderHasGizmoInjectionShape(failures);
+    testWriteInjectedFragmentSource(failures);
     testPathTraceShaderCompiles(failures);
 
     if (!failures.empty()) {

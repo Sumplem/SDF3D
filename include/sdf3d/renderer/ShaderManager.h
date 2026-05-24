@@ -38,6 +38,13 @@ public:
     /// Replaces the scene block inside a fragment shader template.
     static std::string injectSceneSource(const std::string& fragmentSource, const std::string& sceneGlsl, std::string& errorLog);
 
+    /// Writes one fragment shader template after injecting compiled scene GLSL.
+    static bool writeInjectedFragmentSource(
+        const std::filesystem::path& fragmentTemplatePath,
+        const std::string& sceneGlsl,
+        const std::filesystem::path& outputPath,
+        std::string& errorLog);
+
 private:
     bool loadProgram(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, unsigned int& program);
     bool loadProgramFromSources(const std::string& vertexSource, const std::string& fragmentSource, unsigned int& program);

@@ -126,8 +126,9 @@ void testGraphCompilerRuntimePrimitiveUsesNodeParam(std::vector<TestFailure>& fa
 
     expect(runtime.errors.empty(), testName, "Expected no runtime compiler errors.", failures);
     expect(contains(runtime.glsl, "layout(std430, binding = 1) readonly buffer NodeParamBuffer"), testName, "Expected runtime node-param SSBO.", failures);
-    expect(contains(runtime.glsl, "sdf3d_nodeParam0(" + std::to_string(sphere) + "u, 0u, vec4(2.000000"), testName, "Expected sphere radius runtime lookup.", failures);
-    expect(runtime.nodeParams.size() == 1 && runtime.nodeParams[0].data0[0] == 2.0f, testName, "Expected sphere radius packed.", failures);
+    expect(contains(runtime.glsl, "uNodeParams[0].data0.x"), testName, "Expected sphere radius direct slot lookup.", failures);
+    expect(!contains(runtime.glsl, "sdf3d_nodeParam0("), testName, "Expected no linear node-param lookup helper.", failures);
+    expect(runtime.nodeParams.size() == 1 && runtime.nodeParams[0].slot == 0 && runtime.nodeParams[0].data0[0] == 2.0f, testName, "Expected sphere radius packed in slot zero.", failures);
     expect(baked.errors.empty(), testName, "Expected no baked compiler errors.", failures);
     expect(!contains(baked.glsl, "NodeParamBuffer"), testName, "Expected baked GLSL without node-param SSBO.", failures);
     expect(contains(baked.glsl, "length(p) - 2.000000"), testName, "Expected baked radius literal.", failures);
@@ -221,8 +222,8 @@ void testGraphCompilerLinkedTransform(std::vector<TestFailure>& failures)
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
-    expect(contains(result.glsl, "sdf3d_nodeParam0("), testName, "Expected runtime node param lookup.", failures);
-    expect(contains(result.glsl, "vec4(3.000000, 0.000000, -1.000000, 0.000000)).xyz"), testName, "Expected linked transform fallback expression.", failures);
+    expect(contains(result.glsl, "uNodeParams["), testName, "Expected runtime direct node param lookup.", failures);
+    expect(!contains(result.glsl, "sdf3d_nodeParam0("), testName, "Expected no linear node-param lookup helper.", failures);
     expect(result.nodeParams.size() == 2, testName, "Expected primitive and transform node params.", failures);
     expect(contains(result.glsl, "float sceneNodeSDF(int nodeId, vec3 p)"), testName, "Expected node highlight SDF entry point.", failures);
     expect(contains(result.glsl, "case "), testName, "Expected node highlight SDF switch cases.", failures);
@@ -247,10 +248,13 @@ void testGraphCompilerNonUniformScale(std::vector<TestFailure>& failures)
     const sdf3d::SdfCompileResult result = compiler.compile(graph);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
-    expect(contains(result.glsl, "vec4(2.000000, 3.000000, 4.000000, 2.000000)"), testName, "Expected non-uniform scale fallback params.", failures);
+    expect(contains(result.glsl, "uNodeParams["), testName, "Expected non-uniform scale direct slot params.", failures);
     expect(contains(result.glsl, ".xyz"), testName, "Expected runtime scale vector expression.", failures);
     expect(contains(result.glsl, ".w"), testName, "Expected runtime min-axis distance rescale expression.", failures);
     expect(result.nodeParams.size() == 2, testName, "Expected primitive and scale node params.", failures);
+    if (result.nodeParams.size() == 2) {
+        expect(result.nodeParams[1].data0[0] == 2.0f && result.nodeParams[1].data0[3] == 2.0f, testName, "Expected non-uniform scale packed params.", failures);
+    }
 }
 
 void testGraphCompilerCollectsGroupTransformParams(std::vector<TestFailure>& failures)

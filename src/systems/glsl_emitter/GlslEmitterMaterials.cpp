@@ -3,35 +3,12 @@
 #include "GlslEmitterFormatting.h"
 #include "GlslEmitterInternal.h"
 #include "GlslEmitterMath.h"
-#include "sdf3d/scene/SdfRotationParams.h"
 #include "sdf3d/scene/SdfNodeTraits.h"
 #include "sdf3d/systems/GlslNodeNames.h"
 #include "sdf3d/systems/MaterialSystem.h"
 
 #include <algorithm>
-
-namespace sdf3d {
-
-std::string GlslEmitter::emitMaterialNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const
-{
-    using namespace glsl_emitter;
-
-    if (node->children.empty()) {
-        result.errors.push_back("MaterialOverride node has no SDF input.");
-        return glslNoHit();
-    }
-    if (node->children.size() > 2 || (node->children.size() > 1 && !isSdfMaterialNode(node->children[1]->type))) {
-        result.errors.push_back("MaterialOverride node ignores extra children.");
-    }
-
-    const MaterialSystem materialSystem;
-    const SdfNodePtr materialNode = node->children.size() > 1 && node->children[1] && isSdfMaterialNode(node->children[1]->type) ? node->children[1] : nullptr;
-    const int materialId = materialSystem.appendMaterial(result, materialNode ? materialNode->material : node->material);
-    const std::string child = emitNode(node->children.front(), pointExpr, result);
-    return "vec2(" + hitDistance(child) + ", " + glslFloat(static_cast<float>(materialId)) + ")";
-}
-
-} // namespace sdf3d
+#include <sstream>
 
 namespace sdf3d::glsl_emitter {
 namespace {
@@ -63,22 +40,95 @@ std::string helperDistanceFor(
     return it->second + "(" + pointExpr + ")";
 }
 
-std::string smoothnessExpr(const SdfNode& node, GlslEmitMode mode, uint64_t nodeId)
+std::string smoothnessExpr(const SdfNode& node, GlslEmitMode mode, uint64_t nodeId, const GlslSdfHelperBlock& sdfHelpers)
 {
     const float smoothness = std::max(parameterOr(node, "smoothness", 0.25f), 0.0001f);
     if (mode == GlslEmitMode::Baked || nodeId == 0) {
         return glslFloat(smoothness);
     }
-    return "max(" + glslNodeParamComponent(mode, nodeId, glslVec4(smoothness, 0.0f, 0.0f, 0.0f), 'x') + ", 0.000100)";
+    return "max(" + glslNodeParamComponent(mode, nodeId, glslVec4(smoothness, 0.0f, 0.0f, 0.0f), 'x', sdfHelpers.nodeParamSlotByNodeId) + ", 0.000100)";
 }
 
-std::string strengthExpr(const SdfNode& node, GlslEmitMode mode, uint64_t nodeId, float fallback)
+struct MaterialEval {
+    std::string statements;
+    std::string expression;
+    std::string distance;
+};
+
+struct MaterialEvalContext {
+    const MaterialSystem& materialSystem;
+    int nextTemp = 0;
+};
+
+std::string nextTempName(MaterialEvalContext& context, const std::string& prefix)
 {
-    const float strength = parameterOr(node, "strength", fallback);
-    if (mode == GlslEmitMode::Baked || nodeId == 0) {
-        return glslFloat(strength);
+    return "sdf3d_" + prefix + std::to_string(context.nextTemp++);
+}
+
+void appendStatements(std::ostringstream& statements, const MaterialEval& eval)
+{
+    statements << eval.statements;
+}
+
+std::string emitTemp(std::ostringstream& statements, MaterialEvalContext& context, const std::string& type, const std::string& prefix, const std::string& expression)
+{
+    const std::string name = nextTempName(context, prefix);
+    statements << "    " << type << " " << name << " = " << expression << ";\n";
+    return name;
+}
+
+MaterialEval emitMaterialEvalFor(
+    const SdfNodePtr& node,
+    const std::string& pointExpr,
+    SdfCompileResult& result,
+    const GlslSdfHelperBlock& sdfHelpers,
+    GlslEmitMode mode,
+    MaterialEvalContext& context);
+
+MaterialEval emitBooleanMaterialEval(
+    const SdfNodePtr& node,
+    const std::string& pointExpr,
+    SdfCompileResult& result,
+    const GlslSdfHelperBlock& sdfHelpers,
+    GlslEmitMode mode,
+    MaterialEvalContext& context,
+    bool useMax)
+{
+    if (node->children.empty()) {
+        result.errors.push_back(glslNodeTypeName(node->type) + " node has no children.");
+        return {"", defaultMaterial(pointExpr), "1e6"};
     }
-    return glslNodeParamComponent(mode, nodeId, glslVec4(strength, 0.0f, 0.0f, 0.0f), 'x');
+
+    const bool smooth = node->type == SdfNodeType::SmoothUnion || node->type == SdfNodeType::SmoothIntersect;
+    const std::string smoothness = smoothnessExpr(*node, mode, node->stableId, sdfHelpers);
+    std::ostringstream statements;
+
+    MaterialEval materialEval = emitMaterialEvalFor(node->children.front(), pointExpr, result, sdfHelpers, mode, context);
+    appendStatements(statements, materialEval);
+    std::string distance = emitTemp(statements, context, "float", "distance", materialEval.distance);
+    std::string material = emitTemp(statements, context, "SdfMaterialSample", "material", materialEval.expression);
+
+    for (size_t i = 1; i < node->children.size(); ++i) {
+        MaterialEval childMaterialEval = emitMaterialEvalFor(node->children[i], pointExpr, result, sdfHelpers, mode, context);
+        appendStatements(statements, childMaterialEval);
+        const std::string childDistance = emitTemp(statements, context, "float", "distance", childMaterialEval.distance);
+        const std::string childMaterial = emitTemp(statements, context, "SdfMaterialSample", "material", childMaterialEval.expression);
+        if (smooth && !useMax) {
+            const std::string blend = emitTemp(statements, context, "float", "blend", "clamp(0.5 + 0.5 * (" + childDistance + " - " + distance + ") / " + smoothness + ", 0.0, 1.0)");
+            material = emitTemp(statements, context, "SdfMaterialSample", "material", "mixMaterial(" + childMaterial + ", " + material + ", " + blend + ")");
+            distance = emitTemp(statements, context, "float", "distance", "sdf3d_smin(" + distance + ", " + childDistance + ", " + smoothness + ")");
+        } else if (smooth) {
+            const std::string blend = emitTemp(statements, context, "float", "blend", "clamp(0.5 + 0.5 * (" + distance + " - " + childDistance + ") / " + smoothness + ", 0.0, 1.0)");
+            material = emitTemp(statements, context, "SdfMaterialSample", "material", "mixMaterial(" + childMaterial + ", " + material + ", " + blend + ")");
+            distance = emitTemp(statements, context, "float", "distance", "(-sdf3d_smin(-(" + distance + "), -(" + childDistance + "), " + smoothness + "))");
+        } else {
+            const std::string chooseFirst = distance + (useMax ? " > " : " < ") + childDistance;
+            material = emitTemp(statements, context, "SdfMaterialSample", "material", "selectMaterial(" + chooseFirst + ", " + material + ", " + childMaterial + ")");
+            distance = emitTemp(statements, context, "float", "distance", std::string(useMax ? "max(" : "min(") + distance + ", " + childDistance + ")");
+        }
+    }
+
+    return {statements.str(), material, distance};
 }
 
 } // namespace
@@ -95,201 +145,185 @@ std::string emitMaterialGeometryExpression(const SdfNodePtr& node, const std::st
     return helperCallFor(node->children.front(), pointExpr, context);
 }
 
-std::string emitMaterialNodeSample(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result)
+std::string emitMaterialNodeSample(
+    const SdfNodePtr& node,
+    const std::string& pointExpr,
+    SdfCompileResult& result,
+    const MaterialSystem& materialSystem)
 {
-    const MaterialSystem materialSystem;
     const int materialId = materialSystem.appendMaterial(result, node->material);
     return sampleMaterialCall(materialId, pointExpr);
 }
 
-std::string emitMaterialFor(
+namespace {
+
+MaterialEval emitMaterialEvalFor(
     const SdfNodePtr& node,
     const std::string& pointExpr,
     SdfCompileResult& result,
     const GlslSdfHelperBlock& sdfHelpers,
-    GlslEmitMode mode)
+    GlslEmitMode mode,
+    MaterialEvalContext& context)
 {
     if (!node) {
         result.errors.push_back("Encountered a null SDF node while emitting material evaluation.");
-        return defaultMaterial(pointExpr);
+        return {"", defaultMaterial(pointExpr), "1e6"};
     }
 
     switch (node->type) {
     case SdfNodeType::SolidMaterial:
     case SdfNodeType::CheckerMaterial:
     case SdfNodeType::ValueNoiseMaterial:
-        return emitMaterialNodeSample(node, pointExpr, result);
+        return {"", emitMaterialNodeSample(node, pointExpr, result, context.materialSystem), "1e6"};
 
     case SdfNodeType::Sphere:
     case SdfNodeType::Box:
     case SdfNodeType::Cylinder:
     case SdfNodeType::Torus:
     case SdfNodeType::Plane:
-        return defaultMaterial(pointExpr);
+        return {"", defaultMaterial(pointExpr), helperDistanceFor(node, pointExpr, result, sdfHelpers)};
 
     case SdfNodeType::MaterialOverride: {
         if (node->children.empty()) {
             result.errors.push_back("MaterialOverride node has no SDF input.");
-            return defaultMaterial(pointExpr);
+            return {"", defaultMaterial(pointExpr), "1e6"};
         }
         if (node->children.size() > 2 || (node->children.size() > 1 && !isSdfMaterialNode(node->children[1]->type))) {
             result.errors.push_back("MaterialOverride node ignores extra children.");
         }
 
-        const MaterialSystem materialSystem;
         if (node->children.size() > 1 && isSdfMaterialNode(node->children[1]->type)) {
-            return emitMaterialFor(node->children[1], pointExpr, result, sdfHelpers, mode);
+            MaterialEval material = emitMaterialEvalFor(node->children[1], pointExpr, result, sdfHelpers, mode, context);
+            material.distance = helperDistanceFor(node, pointExpr, result, sdfHelpers);
+            return material;
         }
-        const int materialId = materialSystem.appendMaterial(result, node->material);
-        return sampleMaterialCall(materialId, pointExpr);
+        const int materialId = context.materialSystem.appendMaterial(result, node->material);
+        return {"", sampleMaterialCall(materialId, pointExpr), helperDistanceFor(node, pointExpr, result, sdfHelpers)};
     }
     case SdfNodeType::Group:
         if (node->children.empty()) {
             result.errors.push_back("Group node references a missing definition.");
-            return defaultMaterial(pointExpr);
+            return {"", defaultMaterial(pointExpr), "1e6"};
         }
         if (node->children.size() > 1) {
             result.errors.push_back("Group node ignores extra children.");
         }
-        return emitMaterialFor(node->children.front(), pointExpr, result, sdfHelpers, mode);
+        {
+            MaterialEval child = emitMaterialEvalFor(node->children.front(), pointExpr, result, sdfHelpers, mode, context);
+            child.distance = helperDistanceFor(node, pointExpr, result, sdfHelpers);
+            return child;
+        }
     case SdfNodeType::Translate: {
         if (node->children.empty()) {
             result.errors.push_back("Translate node has no child.");
-            return defaultMaterial(pointExpr);
+            return {"", defaultMaterial(pointExpr), "1e6"};
         }
         if (node->children.size() > 1) {
             result.errors.push_back("Translate node ignores extra children.");
         }
 
-        const float x = parameterOr(*node, "x", 0.0f);
-        const float y = parameterOr(*node, "y", 0.0f);
-        const float z = parameterOr(*node, "z", 0.0f);
-        const std::string translate = glslNodeParam0(mode, node->stableId, glslVec4(x, y, z, 0.0f)) + ".xyz";
-        const std::string translatedPoint = "(" + pointExpr + " - " + translate + ")";
-        return emitMaterialFor(node->children.front(), translatedPoint, result, sdfHelpers, mode);
+        const std::string translatedPoint = translatedPointFor(*node, node->stableId, mode, pointExpr, sdfHelpers.nodeParamSlotByNodeId);
+        {
+            MaterialEval child = emitMaterialEvalFor(node->children.front(), translatedPoint, result, sdfHelpers, mode, context);
+            child.distance = helperDistanceFor(node, pointExpr, result, sdfHelpers);
+            return child;
+        }
     }
     case SdfNodeType::Rotate: {
         if (node->children.empty()) {
             result.errors.push_back("Rotate node has no child.");
-            return defaultMaterial(pointExpr);
+            return {"", defaultMaterial(pointExpr), "1e6"};
         }
         if (node->children.size() > 1) {
             result.errors.push_back("Rotate node ignores extra children.");
         }
 
-        const glm::vec4 fallback = rotationQuaternionForNode(*node);
-        const std::string rotation = glslNodeParam0(mode, node->stableId, glslVec4(fallback.x, fallback.y, fallback.z, fallback.w));
-        const std::string rotatedPoint = "(transpose(sdf3d_rotationQuat(" + rotation + ")) * " + pointExpr + ")";
-        return emitMaterialFor(node->children.front(), rotatedPoint, result, sdfHelpers, mode);
+        const std::string rotatedPoint = rotatedPointFor(*node, node->stableId, mode, pointExpr, sdfHelpers.nodeParamSlotByNodeId);
+        {
+            MaterialEval child = emitMaterialEvalFor(node->children.front(), rotatedPoint, result, sdfHelpers, mode, context);
+            child.distance = helperDistanceFor(node, pointExpr, result, sdfHelpers);
+            return child;
+        }
     }
     case SdfNodeType::Scale: {
         if (node->children.empty()) {
             result.errors.push_back("Scale node has no child.");
-            return defaultMaterial(pointExpr);
+            return {"", defaultMaterial(pointExpr), "1e6"};
         }
         if (node->children.size() > 1) {
             result.errors.push_back("Scale node ignores extra children.");
         }
 
-        const float uniformScale = parameterOr(*node, "scale", 1.0f);
-        const float x = std::max(parameterOr(*node, "x", uniformScale), 0.0001f);
-        const float y = std::max(parameterOr(*node, "y", uniformScale), 0.0001f);
-        const float z = std::max(parameterOr(*node, "z", uniformScale), 0.0001f);
-        const float distanceScale = std::min({x, y, z});
-        const std::string scaleParam = glslNodeParam0(mode, node->stableId, glslVec4(x, y, z, distanceScale));
-        const std::string scale = "(" + scaleParam + ".xyz)";
-        const std::string scaledPoint = "(" + pointExpr + " / " + scale + ")";
-        return emitMaterialFor(node->children.front(), scaledPoint, result, sdfHelpers, mode);
+        const std::string scaledPoint = scaledPointFor(*node, node->stableId, mode, pointExpr, sdfHelpers.nodeParamSlotByNodeId);
+        {
+            MaterialEval child = emitMaterialEvalFor(node->children.front(), scaledPoint, result, sdfHelpers, mode, context);
+            child.distance = helperDistanceFor(node, pointExpr, result, sdfHelpers);
+            return child;
+        }
     }
     case SdfNodeType::Repeat: {
         if (node->children.empty()) {
             result.errors.push_back("Repeat node has no child.");
-            return defaultMaterial(pointExpr);
+            return {"", defaultMaterial(pointExpr), "1e6"};
         }
         if (node->children.size() > 1) {
             result.errors.push_back("Repeat node ignores extra children.");
         }
 
-        const std::string repeatedPoint = repeatedPointFor(*node, node->stableId, mode, pointExpr);
-        return emitMaterialFor(node->children.front(), repeatedPoint, result, sdfHelpers, mode);
+        const std::string repeatedPoint = repeatedPointFor(*node, node->stableId, mode, pointExpr, sdfHelpers.nodeParamSlotByNodeId);
+        return emitMaterialEvalFor(node->children.front(), repeatedPoint, result, sdfHelpers, mode, context);
     }
     case SdfNodeType::Mirror: {
         if (node->children.empty()) {
             result.errors.push_back("Mirror node has no child.");
-            return defaultMaterial(pointExpr);
+            return {"", defaultMaterial(pointExpr), "1e6"};
         }
         if (node->children.size() > 1) {
             result.errors.push_back("Mirror node ignores extra children.");
         }
 
         const std::string mirroredPoint = mirroredPointFor(*node, pointExpr);
-        return emitMaterialFor(node->children.front(), mirroredPoint, result, sdfHelpers, mode);
+        return emitMaterialEvalFor(node->children.front(), mirroredPoint, result, sdfHelpers, mode, context);
     }
     case SdfNodeType::Twist: {
         if (node->children.empty()) {
             result.errors.push_back("Twist node has no child.");
-            return defaultMaterial(pointExpr);
+            return {"", defaultMaterial(pointExpr), "1e6"};
         }
         if (node->children.size() > 1) {
             result.errors.push_back("Twist node ignores extra children.");
         }
 
-        const std::string strength = strengthExpr(*node, mode, node->stableId, 1.0f);
-        const int axis = axisIndexFor(*node, 1.0f);
-        const std::string axisCoord = axis == 0 ? pointExpr + ".x" : (axis == 1 ? pointExpr + ".y" : pointExpr + ".z");
-        const std::string angle = "(" + axisCoord + " * " + strength + ")";
-        const std::string c = "cos(" + angle + ")";
-        const std::string s = "sin(" + angle + ")";
-        const std::string twistedPoint = rotatePointAroundAxis(pointExpr, axis, c, s);
-        return emitMaterialFor(node->children.front(), twistedPoint, result, sdfHelpers, mode);
+        const DomainWarpExpr warp = domainWarpFor(*node, node->stableId, mode, pointExpr, sdfHelpers.nodeParamSlotByNodeId);
+        {
+            MaterialEval child = emitMaterialEvalFor(node->children.front(), warp.point, result, sdfHelpers, mode, context);
+            child.distance = "(" + child.distance + " / " + warp.correction + ")";
+            return child;
+        }
     }
     case SdfNodeType::Bend: {
         if (node->children.empty()) {
             result.errors.push_back("Bend node has no child.");
-            return defaultMaterial(pointExpr);
+            return {"", defaultMaterial(pointExpr), "1e6"};
         }
         if (node->children.size() > 1) {
             result.errors.push_back("Bend node ignores extra children.");
         }
 
-        const std::string strength = strengthExpr(*node, mode, node->stableId, 0.5f);
-        const int axis = axisIndexFor(*node, 0.0f);
-        const std::string axisCoord = axis == 0 ? pointExpr + ".x" : (axis == 1 ? pointExpr + ".y" : pointExpr + ".z");
-        const std::string angle = "(" + axisCoord + " * " + strength + ")";
-        const std::string c = "cos(" + angle + ")";
-        const std::string s = "sin(" + angle + ")";
-        const std::string bentPoint = rotatePointAroundAxis(pointExpr, axis, c, s);
-        return emitMaterialFor(node->children.front(), bentPoint, result, sdfHelpers, mode);
+        const DomainWarpExpr warp = domainWarpFor(*node, node->stableId, mode, pointExpr, sdfHelpers.nodeParamSlotByNodeId);
+        {
+            MaterialEval child = emitMaterialEvalFor(node->children.front(), warp.point, result, sdfHelpers, mode, context);
+            child.distance = "(" + child.distance + " / " + warp.correction + ")";
+            return child;
+        }
     }
     case SdfNodeType::Union:
-    case SdfNodeType::SmoothUnion: {
-        if (node->children.empty()) {
-            result.errors.push_back(glslNodeTypeName(node->type) + " node has no children.");
-            return defaultMaterial(pointExpr);
-        }
-
-        const bool smooth = node->type == SdfNodeType::SmoothUnion;
-        const std::string smoothness = smoothnessExpr(*node, mode, node->stableId);
-        std::string distance = helperDistanceFor(node->children.front(), pointExpr, result, sdfHelpers);
-        std::string material = emitMaterialFor(node->children.front(), pointExpr, result, sdfHelpers, mode);
-        for (size_t i = 1; i < node->children.size(); ++i) {
-            const std::string childDistance = helperDistanceFor(node->children[i], pointExpr, result, sdfHelpers);
-            const std::string childMaterial = emitMaterialFor(node->children[i], pointExpr, result, sdfHelpers, mode);
-            if (smooth) {
-                const std::string blend = "clamp(0.5 + 0.5 * (" + childDistance + " - " + distance + ") / " + smoothness + ", 0.0, 1.0)";
-                material = "mixMaterial(" + childMaterial + ", " + material + ", " + blend + ")";
-                distance = "sdf3d_smin(" + distance + ", " + childDistance + ", " + smoothness + ")";
-            } else {
-                material = "selectMaterial(" + distance + " < " + childDistance + ", " + material + ", " + childMaterial + ")";
-                distance = "min(" + distance + ", " + childDistance + ")";
-            }
-        }
-        return material;
-    }
+    case SdfNodeType::SmoothUnion:
+        return emitBooleanMaterialEval(node, pointExpr, result, sdfHelpers, mode, context, false);
     case SdfNodeType::Subtract: {
         if (node->children.empty()) {
             result.errors.push_back("Subtract node requires a base child.");
-            return defaultMaterial(pointExpr);
+            return {"", defaultMaterial(pointExpr), "1e6"};
         }
         if (node->children.size() == 1) {
             result.errors.push_back("Subtract node is missing a cutter child; bypassing to base.");
@@ -297,58 +331,61 @@ std::string emitMaterialFor(
         if (node->children.size() > 2) {
             result.errors.push_back("Subtract node ignores extra children beyond base and cutter.");
         }
-        return emitMaterialFor(node->children.front(), pointExpr, result, sdfHelpers, mode);
+        return emitMaterialEvalFor(node->children.front(), pointExpr, result, sdfHelpers, mode, context);
     }
     case SdfNodeType::SmoothSubtract: {
         if (node->children.empty()) {
             result.errors.push_back("SmoothSubtract node requires a base child.");
-            return defaultMaterial(pointExpr);
+            return {"", defaultMaterial(pointExpr), "1e6"};
         }
         if (node->children.size() == 1) {
             result.errors.push_back("SmoothSubtract node is missing a cutter child; bypassing to base.");
-            return emitMaterialFor(node->children.front(), pointExpr, result, sdfHelpers, mode);
+            return emitMaterialEvalFor(node->children.front(), pointExpr, result, sdfHelpers, mode, context);
         }
         if (node->children.size() > 2) {
             result.errors.push_back("SmoothSubtract node ignores extra children beyond base and cutter.");
         }
 
-        const std::string smoothness = smoothnessExpr(*node, mode, node->stableId);
-        const std::string baseDistance = helperDistanceFor(node->children[0], pointExpr, result, sdfHelpers);
-        const std::string cutterDistance = helperDistanceFor(node->children[1], pointExpr, result, sdfHelpers);
-        const std::string baseMaterial = emitMaterialFor(node->children[0], pointExpr, result, sdfHelpers, mode);
-        const std::string cutterMaterial = emitMaterialFor(node->children[1], pointExpr, result, sdfHelpers, mode);
-        const std::string blend = "clamp(0.5 + 0.5 * (" + cutterDistance + " + " + baseDistance + ") / " + smoothness + ", 0.0, 1.0)";
-        return "mixMaterial(" + cutterMaterial + ", " + baseMaterial + ", " + blend + ")";
+        const std::string smoothness = smoothnessExpr(*node, mode, node->stableId, sdfHelpers);
+        std::ostringstream statements;
+        MaterialEval baseMaterialEval = emitMaterialEvalFor(node->children[0], pointExpr, result, sdfHelpers, mode, context);
+        appendStatements(statements, baseMaterialEval);
+        MaterialEval cutterMaterialEval = emitMaterialEvalFor(node->children[1], pointExpr, result, sdfHelpers, mode, context);
+        appendStatements(statements, cutterMaterialEval);
+        const std::string baseDistance = emitTemp(statements, context, "float", "distance", baseMaterialEval.distance);
+        const std::string cutterDistance = emitTemp(statements, context, "float", "distance", cutterMaterialEval.distance);
+        const std::string baseMaterial = emitTemp(statements, context, "SdfMaterialSample", "material", baseMaterialEval.expression);
+        const std::string cutterMaterial = emitTemp(statements, context, "SdfMaterialSample", "material", cutterMaterialEval.expression);
+        const std::string blend = emitTemp(statements, context, "float", "blend", "clamp(0.5 + 0.5 * (" + cutterDistance + " + " + baseDistance + ") / " + smoothness + ", 0.0, 1.0)");
+        const std::string material = emitTemp(statements, context, "SdfMaterialSample", "material", "mixMaterial(" + cutterMaterial + ", " + baseMaterial + ", " + blend + ")");
+        return {statements.str(), material, "(-sdf3d_smin(-(" + baseDistance + "), " + cutterDistance + ", " + smoothness + "))"};
     }
     case SdfNodeType::Intersect:
-    case SdfNodeType::SmoothIntersect: {
-        if (node->children.empty()) {
-            result.errors.push_back(glslNodeTypeName(node->type) + " node has no children.");
-            return defaultMaterial(pointExpr);
-        }
-
-        const bool smooth = node->type == SdfNodeType::SmoothIntersect;
-        const std::string smoothness = smoothnessExpr(*node, mode, node->stableId);
-        std::string distance = helperDistanceFor(node->children.front(), pointExpr, result, sdfHelpers);
-        std::string material = emitMaterialFor(node->children.front(), pointExpr, result, sdfHelpers, mode);
-        for (size_t i = 1; i < node->children.size(); ++i) {
-            const std::string childDistance = helperDistanceFor(node->children[i], pointExpr, result, sdfHelpers);
-            const std::string childMaterial = emitMaterialFor(node->children[i], pointExpr, result, sdfHelpers, mode);
-            if (smooth) {
-                const std::string blend = "clamp(0.5 + 0.5 * (" + distance + " - " + childDistance + ") / " + smoothness + ", 0.0, 1.0)";
-                material = "mixMaterial(" + childMaterial + ", " + material + ", " + blend + ")";
-                distance = "(-sdf3d_smin(-(" + distance + "), -(" + childDistance + "), " + smoothness + "))";
-            } else {
-                material = "selectMaterial(" + distance + " > " + childDistance + ", " + material + ", " + childMaterial + ")";
-                distance = "max(" + distance + ", " + childDistance + ")";
-            }
-        }
-        return material;
-    }
+    case SdfNodeType::SmoothIntersect:
+        return emitBooleanMaterialEval(node, pointExpr, result, sdfHelpers, mode, context, true);
     default:
         result.errors.push_back("Unsupported SDF node type in material evaluation: " + glslNodeTypeName(node->type));
-        return defaultMaterial(pointExpr);
+        return {"", defaultMaterial(pointExpr), "1e6"};
     }
+}
+
+} // namespace
+
+std::string emitMaterialBodyFor(
+    const SdfNodePtr& node,
+    const std::string& pointExpr,
+    SdfCompileResult& result,
+    const GlslSdfHelperBlock& sdfHelpers,
+    GlslEmitMode mode,
+    const MaterialSystem& materialSystem)
+{
+    MaterialEvalContext context{materialSystem};
+    const MaterialEval eval = emitMaterialEvalFor(node, pointExpr, result, sdfHelpers, mode, context);
+
+    std::ostringstream body;
+    body << eval.statements;
+    body << "    return " << eval.expression << ";\n";
+    return body.str();
 }
 
 } // namespace sdf3d::glsl_emitter

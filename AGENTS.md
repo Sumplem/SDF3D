@@ -3,33 +3,28 @@
 ## State
 
 - Edit shader `raymarch_edit.frag` active always during editing; `raymarch_scene.frag` for export only
-- Translate/Rotate/Scale gizmos live; edit gizmos/selection highlight/GPU hover highlight force direct preview even when path-trace mode is selected
+- Translate/Rotate/Scale gizmos live; edit overlays force direct preview even when path-trace mode is selected
 - Canonical branch order: Scale -> Rotate -> Translate; ensure-wrapper reuses existing nodes in chain
-- `SdfNodeTraits.h` centralizes node taxonomy; `GraphSystemTransforms.cpp` owns transform wrapper logic
-- `GlslEmitter` consolidated to 8 files by engineering concern: dispatch, primitives, booleans, domain, materials, scene assembly, math, formatting
+- `GlslEmitter` is 8 concern files; shared math owns domain transform expressions used by geometry and material emitters
 - `SdfNodeDefinition` metadata owns parameter type: Float, Bool, Enum; UI must not infer bool/enum from numeric ranges
 - MaterialRegistry owns reusable graph materials; SolidMaterial/CheckerMaterial nodes hold stable `materialId`
 - MaterialOverride consumes `sdf` + `material`; inline material fallback remains legacy-only
-- ValueNoiseMaterial exists as first procedural noise material beyond Checker; future noise nodes must use specific names, not generic NoiseMaterial
 - Node groups exist: App-owned `GraphGroupRegistry`, `SdfNodeType::Group`, root JSON `definitions`, Ctrl+G grouping shortcut
-- Entered group subgraph is active editor/viewport/compiler/UI Add/SceneOutliner/Properties target; breadcrumbs clear transient editor state
-- Group display names resolve through registry definitions; group-internal lowered node IDs and runtime params are scoped by definition ID
-- Viewport picking uses GPU node-id buffer (`GL_R32I`) and single-pixel reads; CPU graph raymarch picking is removed
-- `scenePickId(vec3 p)` is compiler-emitted with scene GLSL; groups pick as root Group instance IDs; transform wrappers pick as visible wrapper IDs
-- Viewport hover highlight reads the GPU node-id buffer through a cached/throttled readback path, then maps picked node through the same highlight target logic as selection
-- Shader highlight is gated by visible GPU pick ID plus `sceneNodeContains`; mask samples the visible node SDF to avoid multi-object bleed
-- Runtime GLSL mode reads all Float node params from SSBO binding 1; Baked mode emits literals and no node-param SSBO
-- UI Float parameter edits mark param-dirty and refresh node-param SSBO only; Bool/Enum/topology still mark scene-dirty
-- Union/SmoothUnion/Intersect/SmoothIntersect use one vertical pill-shaped `inputs` multi-input SDF socket with one empty spare slot, hover feedback, separate anchors, and exact-slot drag starts
-- Viewport Add appends new primitives to an output-root Union/SmoothUnion multi-input; otherwise it creates a Union as needed
-- Right-click Union/SmoothUnion/Intersect/SmoothIntersect can change type in place within the same multi-input boolean family
-- Path-trace shader has stochastic GI bounces, Russian Roulette after secondary bounces, solid-color environment lighting, GGX VNDF glossy sampling, direct light shadow checks, emissive contribution, and progressive accumulation
-- Path-trace environment color is renderer/viewport state and resets accumulation on change
-- Build/tests: full Debug app build pass; all test executables pass after Full GI Tier 1
+- Entered group subgraph is active editor/viewport/compiler/UI Add/SceneOutliner/Properties target
+- Group names resolve through registry definitions; group-internal lowered node IDs and runtime params are scoped by definition ID
+- Viewport picking uses GPU node-id buffer (`GL_R32I`); CPU graph raymarch picking is removed
+- `scenePickId(vec3 p)` is compiler-emitted; groups pick as root Group instance IDs; transform wrappers pick as visible wrapper IDs
+- Viewport hover highlight uses cached/throttled GPU readback; shader highlight is gated by visible GPU pick ID plus `sceneNodeContains`
+- Runtime GLSL mode reads Float node params from SSBO binding 1; Float edits refresh SSBO only, Bool/Enum/topology recompile
+- Union/SmoothUnion/Intersect/SmoothIntersect use one vertical pill-shaped `inputs` multi-input SDF socket and can change type in place
+- Viewport Add appends primitives to output-root Union/SmoothUnion multi-input; otherwise it creates a Union as needed
+- Path-trace shader has GI bounces, Russian Roulette, solid environment color, GGX VNDF glossy sampling, direct shadows, emissive contribution, and accumulation
+- GlslEmitter perf batch complete: direct node-param SSBO slots, root `sceneSDFWithId`, and threaded material distances
+- Build/tests: full Debug app build, all test executables, and hidden GUI smoke pass after GlslEmitter perf batch
 
 ## Active
 
-Full GI Tier 1 complete: Russian Roulette was already in the path-trace bounce loop and is now named with constants; misses return editable solid `uEnvColor`; glossy/metal sampling now uses GGX VNDF half-vector sampling instead of power-cosine reflection. Review gates open for Items 1-3.
+GlslEmitter performance batch complete: runtime node params use direct SSBO slot reads, `sceneSDF`/`scenePickId` share root `sceneSDFWithId`, and `sceneMaterial` reuses threaded branch distance locals instead of re-calling helpers.
 
 ## Decisions
 
@@ -99,6 +94,16 @@ Full GI Tier 1 complete: Russian Roulette was already in the path-trace bounce l
 - 2026-05 - Viewport hover pick readback is cached and throttled because per-frame `glReadPixels` on hover causes GPU/CPU sync stalls; click selection still reads immediately
 - 2026-05 - Float parameter UI edits route to param-dirty SSBO refresh; Bool/Enum edits route to scene-dirty because they change GLSL structure
 - 2026-05 - Full GI Tier 1 stays renderer/shader-owned: path-trace shader owns Russian Roulette and GGX VNDF sampling, renderer/viewport own solid environment color uniform and accumulation reset
+- 2026-05 - GlslEmitter SDF helpers return float distance-only geometry; material IDs live in deferred `sceneMaterial`, not helper return values
+- 2026-05 - Boolean material evaluation emits `sceneMaterial` body locals so child distance helpers are evaluated once and reused for material selection/blending
+- 2026-05 - Domain transform GLSL expression construction is shared through `GlslEmitterMath` because geometry and deferred material evaluation must stay identical
+- 2026-05 - Deferred material emission receives `MaterialSystem` explicitly from compiler orchestration; material registration behavior is not constructed inside `emitMaterialFor` recursion
+- 2026-05 - Twist/Bend GLSL default strength and axis values are named constants in `GlslEmitterMath`; avoid raw axis floats in domain emitter logic
+- 2026-05 - Legacy material-aware `GlslEmitter::emitNode` path was deleted because compiler output uses float SDF helpers plus deferred `sceneMaterial`
+- 2026-05 - Compiled GLSL export writes full injected edit and path-trace fragment sources from App orchestration; renderer remains graph-free
+- 2026-05 - Runtime node-param GLSL indexes `uNodeParams[slot].data0` directly; compiler and GraphSystem assign deterministic slots and Baked mode stays SSBO-free
+- 2026-05 - `sceneSDFWithId` is the only root-level vec2 distance/id path; per-node `sdf_node_<id>` helpers stay float and `sceneSDF`/`scenePickId` are wrappers
+- 2026-05 - Deferred material evaluation threads distance expressions with material samples so boolean material selection does not re-call the same branch helper twice
 
 ## Constraints
 
@@ -130,4 +135,4 @@ Full GI Tier 1 complete: Russian Roulette was already in the path-trace bounce l
 
 ## Next
 
-Review Full GI Tier 1, then choose Full GI Tier 2 or next procedural material node.
+Next backlog item: Full GI Tier 2 design/review gate before implementation.

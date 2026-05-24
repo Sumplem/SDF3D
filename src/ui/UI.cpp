@@ -8,6 +8,7 @@ namespace sdf3d {
 namespace {
 
 constexpr const char* DEFAULT_GRAPH_PATH = "sdf3d_graph.json";
+constexpr const char* DEFAULT_GLSL_EXPORT_DIR = "compiled_glsl";
 
 } // namespace
 
@@ -32,6 +33,11 @@ void UI::drawMainMenu(SceneGraph& sceneGraph, GraphGroupRegistry& groups)
         if (ImGui::MenuItem("Load Graph")) {
             if (m_eventBus != nullptr) {
                 m_eventBus->emit(LoadGraphEvent{DEFAULT_GRAPH_PATH});
+            }
+        }
+        if (ImGui::MenuItem("Export Compiled GLSL")) {
+            if (m_eventBus != nullptr) {
+                m_eventBus->emit(ExportCompiledGlslEvent{DEFAULT_GLSL_EXPORT_DIR});
             }
         }
         ImGui::Separator();

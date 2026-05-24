@@ -41,6 +41,11 @@ struct LoadGraphEvent {
     std::string path;
 };
 
+/// Requests export of current compiled edit/path GLSL fragment sources.
+struct ExportCompiledGlslEvent {
+    std::string outputDirectory;
+};
+
 /// Typed in-process pub/sub bus for decoupled runtime systems.
 class EventBus {
 public:

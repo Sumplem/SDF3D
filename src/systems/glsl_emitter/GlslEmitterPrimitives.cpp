@@ -3,9 +3,8 @@
 #include "GlslEmitterFormatting.h"
 #include "GlslEmitterInternal.h"
 #include "sdf3d/systems/GlslNodeNames.h"
-#include "sdf3d/systems/MaterialSystem.h"
 
-namespace sdf3d {
+namespace sdf3d::glsl_emitter {
 namespace {
 
 std::string primitiveParamVec4(const SdfNode& node)
@@ -32,9 +31,9 @@ std::string primitiveParamVec4(const SdfNode& node)
     }
 }
 
-std::string primitiveParamComponent(const SdfNode& node, GlslEmitMode mode, uint64_t nodeId, char component)
+std::string primitiveParamComponent(const SdfNode& node, const SdfHelperEmitContext& context, uint64_t nodeId, char component)
 {
-    if (mode == GlslEmitMode::Baked || nodeId == 0) {
+    if (context.mode == GlslEmitMode::Baked || nodeId == 0) {
         switch (node.type) {
         case SdfNodeType::Sphere:
             return glsl_emitter::glslFloat(glsl_emitter::parameterOr(node, "radius", 1.0f));
@@ -51,116 +50,71 @@ std::string primitiveParamComponent(const SdfNode& node, GlslEmitMode mode, uint
         }
     }
 
-    return glsl_emitter::glslNodeParamComponent(mode, nodeId, primitiveParamVec4(node), component);
+    return glsl_emitter::glslNodeParamComponent(context.mode, nodeId, primitiveParamVec4(node), component, context.nodeParamSlotByNodeId);
 }
 
-std::string primitiveVec3Param(const SdfNode& node, GlslEmitMode mode, uint64_t nodeId)
+std::string primitiveVec3Param(const SdfNode& node, const SdfHelperEmitContext& context, uint64_t nodeId)
 {
-    if (mode == GlslEmitMode::Baked || nodeId == 0) {
+    if (context.mode == GlslEmitMode::Baked || nodeId == 0) {
         return glsl_emitter::glslVec3(
             glsl_emitter::parameterOr(node, "x", 1.0f),
             glsl_emitter::parameterOr(node, "y", 1.0f),
             glsl_emitter::parameterOr(node, "z", 1.0f));
     }
 
-    return glsl_emitter::glslNodeParam0(mode, nodeId, primitiveParamVec4(node)) + ".xyz";
+    return glsl_emitter::glslNodeParam0(context.mode, nodeId, primitiveParamVec4(node), context.nodeParamSlotByNodeId) + ".xyz";
 }
 
-std::string planeNormalParam(const SdfNode& node, GlslEmitMode mode, uint64_t nodeId)
+std::string planeNormalParam(const SdfNode& node, const SdfHelperEmitContext& context, uint64_t nodeId)
 {
-    if (mode == GlslEmitMode::Baked || nodeId == 0) {
+    if (context.mode == GlslEmitMode::Baked || nodeId == 0) {
         return "normalize(" + glsl_emitter::glslVec3(
             glsl_emitter::parameterOr(node, "normalX", 0.0f),
             glsl_emitter::parameterOr(node, "normalY", 1.0f),
             glsl_emitter::parameterOr(node, "normalZ", 0.0f)) + ")";
     }
 
-    return "normalize(" + glsl_emitter::glslNodeParam0(mode, nodeId, primitiveParamVec4(node)) + ".xyz)";
+    return "normalize(" + glsl_emitter::glslNodeParam0(context.mode, nodeId, primitiveParamVec4(node), context.nodeParamSlotByNodeId) + ".xyz)";
 }
 
-std::string planeOffsetParam(const SdfNode& node, GlslEmitMode mode, uint64_t nodeId)
+std::string planeOffsetParam(const SdfNode& node, const SdfHelperEmitContext& context, uint64_t nodeId)
 {
-    if (mode == GlslEmitMode::Baked || nodeId == 0) {
+    if (context.mode == GlslEmitMode::Baked || nodeId == 0) {
         return glsl_emitter::glslFloat(glsl_emitter::parameterOr(node, "offset", 0.0f));
     }
 
-    return glsl_emitter::glslNodeParamComponent(mode, nodeId, primitiveParamVec4(node), 'w');
+    return glsl_emitter::glslNodeParamComponent(context.mode, nodeId, primitiveParamVec4(node), 'w', context.nodeParamSlotByNodeId);
 }
 
 } // namespace
-
-std::string GlslEmitter::emitPrimitiveNode(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result) const
-{
-    using namespace glsl_emitter;
-
-    const MaterialSystem materialSystem;
-    const int defaultMaterialId = materialSystem.ensureDefaultMaterial(result);
-
-    switch (node->type) {
-    case SdfNodeType::Sphere: {
-        const std::string radius = primitiveParamComponent(*node, m_mode, node->stableId, 'x');
-        return glslHit("(length(" + pointExpr + ") - " + radius + ")", defaultMaterialId);
-    }
-    case SdfNodeType::Box: {
-        result.usesBox = true;
-        const std::string box = primitiveVec3Param(*node, m_mode, node->stableId);
-        return glslHit("sdf3d_box(" + pointExpr + ", " + box + ")", defaultMaterialId);
-    }
-    case SdfNodeType::Cylinder: {
-        result.usesCylinder = true;
-        const std::string radius = primitiveParamComponent(*node, m_mode, node->stableId, 'x');
-        const std::string halfHeight = primitiveParamComponent(*node, m_mode, node->stableId, 'y');
-        return glslHit("sdf3d_cylinder(" + pointExpr + ", " + radius + ", " + halfHeight + ")", defaultMaterialId);
-    }
-    case SdfNodeType::Torus: {
-        const std::string majorRadius = primitiveParamComponent(*node, m_mode, node->stableId, 'x');
-        const std::string minorRadius = primitiveParamComponent(*node, m_mode, node->stableId, 'y');
-        return glslHit("(length(vec2(length(" + pointExpr + ".xz) - " + majorRadius + ", "
-                + pointExpr + ".y)) - " + minorRadius + ")",
-            defaultMaterialId);
-    }
-    case SdfNodeType::Plane: {
-        return glslHit("(dot(" + pointExpr + ", " + planeNormalParam(*node, m_mode, node->stableId) + ") + "
-                + planeOffsetParam(*node, m_mode, node->stableId) + ")",
-            defaultMaterialId);
-    }
-    default:
-        result.errors.push_back("Unsupported primitive node type in compiler: " + glslNodeTypeName(node->type));
-        return glslNoHit();
-    }
-}
-
-} // namespace sdf3d
-
-namespace sdf3d::glsl_emitter {
 
 std::string emitPrimitiveGeometryExpression(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result, SdfHelperEmitContext& context)
 {
     switch (node->type) {
     case SdfNodeType::Sphere: {
-        const std::string radius = primitiveParamComponent(*node, context.mode, runtimeParamIdFor(node), 'x');
+        const std::string radius = primitiveParamComponent(*node, context, runtimeParamIdFor(node), 'x');
         return "(length(" + pointExpr + ") - " + radius + ")";
     }
     case SdfNodeType::Box: {
         result.usesBox = true;
-        const std::string box = primitiveVec3Param(*node, context.mode, runtimeParamIdFor(node));
+        const std::string box = primitiveVec3Param(*node, context, runtimeParamIdFor(node));
         return "sdf3d_box(" + pointExpr + ", " + box + ")";
     }
     case SdfNodeType::Cylinder: {
         result.usesCylinder = true;
-        const std::string radius = primitiveParamComponent(*node, context.mode, runtimeParamIdFor(node), 'x');
-        const std::string halfHeight = primitiveParamComponent(*node, context.mode, runtimeParamIdFor(node), 'y');
+        const std::string radius = primitiveParamComponent(*node, context, runtimeParamIdFor(node), 'x');
+        const std::string halfHeight = primitiveParamComponent(*node, context, runtimeParamIdFor(node), 'y');
         return "sdf3d_cylinder(" + pointExpr + ", " + radius + ", " + halfHeight + ")";
     }
     case SdfNodeType::Torus: {
-        const std::string majorRadius = primitiveParamComponent(*node, context.mode, runtimeParamIdFor(node), 'x');
-        const std::string minorRadius = primitiveParamComponent(*node, context.mode, runtimeParamIdFor(node), 'y');
+        const std::string majorRadius = primitiveParamComponent(*node, context, runtimeParamIdFor(node), 'x');
+        const std::string minorRadius = primitiveParamComponent(*node, context, runtimeParamIdFor(node), 'y');
         return "(length(vec2(length(" + pointExpr + ".xz) - " + majorRadius + ", "
             + pointExpr + ".y)) - " + minorRadius + ")";
     }
     case SdfNodeType::Plane: {
-        return "(dot(" + pointExpr + ", " + planeNormalParam(*node, context.mode, runtimeParamIdFor(node)) + ") + "
-            + planeOffsetParam(*node, context.mode, runtimeParamIdFor(node)) + ")";
+        return "(dot(" + pointExpr + ", " + planeNormalParam(*node, context, runtimeParamIdFor(node)) + ") + "
+            + planeOffsetParam(*node, context, runtimeParamIdFor(node)) + ")";
     }
     default:
         result.errors.push_back("Unsupported primitive node type in geometry helper emission: " + glslNodeTypeName(node->type));

@@ -193,6 +193,49 @@ std::string ShaderManager::injectSceneSource(const std::string& fragmentSource, 
     return injected;
 }
 
+bool ShaderManager::writeInjectedFragmentSource(
+    const std::filesystem::path& fragmentTemplatePath,
+    const std::string& sceneGlsl,
+    const std::filesystem::path& outputPath,
+    std::string& errorLog)
+{
+    const std::string fragmentSource = readTextFile(fragmentTemplatePath);
+    if (fragmentSource.empty()) {
+        errorLog = "Failed to read shader template: " + fragmentTemplatePath.string();
+        return false;
+    }
+
+    const std::string injected = injectSceneSource(fragmentSource, sceneGlsl, errorLog);
+    if (injected.empty()) {
+        return false;
+    }
+
+    const std::filesystem::path parent = outputPath.parent_path();
+    if (!parent.empty()) {
+        std::error_code directoryError;
+        std::filesystem::create_directories(parent, directoryError);
+        if (directoryError) {
+            errorLog = "Failed to create shader export directory: " + parent.string();
+            return false;
+        }
+    }
+
+    std::ofstream output(outputPath);
+    if (!output) {
+        errorLog = "Failed to open shader export path: " + outputPath.string();
+        return false;
+    }
+
+    output << injected;
+    if (!output) {
+        errorLog = "Failed to write shader export path: " + outputPath.string();
+        return false;
+    }
+
+    errorLog.clear();
+    return true;
+}
+
 bool ShaderManager::loadProgram(const std::filesystem::path& vertexPath, const std::filesystem::path& fragmentPath, unsigned int& program)
 {
     const std::string vertexSource = readTextFile(vertexPath);

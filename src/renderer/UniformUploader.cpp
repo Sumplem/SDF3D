@@ -1,5 +1,8 @@
 #include "sdf3d/renderer/UniformUploader.h"
 
+#include <algorithm>
+#include <cstddef>
+
 #include <glad/gl.h>
 
 namespace sdf3d {
@@ -123,13 +126,16 @@ std::vector<UniformUploader::GpuMaterial> UniformUploader::packMaterials(const s
 
 std::vector<UniformUploader::GpuNodeParam> UniformUploader::packNodeParams(const std::vector<SdfCompiledNodeParam>& nodeParams)
 {
-    std::vector<GpuNodeParam> packed;
-    packed.reserve(nodeParams.size());
+    size_t packedSize = 0;
     for (const SdfCompiledNodeParam& nodeParam : nodeParams) {
-        packed.push_back({
-            {static_cast<uint32_t>(nodeParam.nodeId & 0xffffffffu), static_cast<uint32_t>(nodeParam.nodeId >> 32u), 0u, 0u},
+        packedSize = std::max(packedSize, static_cast<size_t>(nodeParam.slot) + 1);
+    }
+
+    std::vector<GpuNodeParam> packed(packedSize);
+    for (const SdfCompiledNodeParam& nodeParam : nodeParams) {
+        packed[nodeParam.slot] = {
             {nodeParam.data0[0], nodeParam.data0[1], nodeParam.data0[2], nodeParam.data0[3]},
-        });
+        };
     }
     return packed;
 }

@@ -194,6 +194,16 @@ void appendReachableGroupNodeParams(
     }
 }
 
+void assignNodeParamSlots(std::vector<SdfCompiledNodeParam>& params)
+{
+    std::sort(params.begin(), params.end(), [](const SdfCompiledNodeParam& left, const SdfCompiledNodeParam& right) {
+        return left.nodeId < right.nodeId;
+    });
+    for (std::size_t i = 0; i < params.size(); ++i) {
+        params[i].slot = static_cast<uint32_t>(i);
+    }
+}
+
 } // namespace
 
 void GraphSystem::initialize(SdfGraph& graph)
@@ -706,6 +716,7 @@ std::vector<SdfCompiledNodeParam> GraphSystem::collectNodeParams(const SdfGraph&
     params.reserve(graph.nodes().size());
     std::unordered_set<SdfGraphNodeId> packedIds;
     appendRuntimeNodeParams(graph, params, packedIds, 0);
+    assignNodeParamSlots(params);
 
     return params;
 }
@@ -718,6 +729,7 @@ std::vector<SdfCompiledNodeParam> GraphSystem::collectNodeParams(const SdfGraph&
     std::unordered_set<GroupDefId> visitedDefinitions;
     appendRuntimeNodeParams(graph, params, packedIds, 0);
     appendReachableGroupNodeParams(graph, groups, params, packedIds, visitedDefinitions);
+    assignNodeParamSlots(params);
     return params;
 }
 

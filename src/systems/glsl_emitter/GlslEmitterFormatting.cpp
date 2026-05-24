@@ -33,40 +33,23 @@ std::string glslVec4(float x, float y, float z, float w)
     return "vec4(" + glslFloat(x) + ", " + glslFloat(y) + ", " + glslFloat(z) + ", " + glslFloat(w) + ")";
 }
 
-std::string glslNodeParam0(uint64_t nodeId, const std::string& fallback)
-{
-    const uint32_t low = static_cast<uint32_t>(nodeId & 0xffffffffu);
-    const uint32_t high = static_cast<uint32_t>(nodeId >> 32u);
-    return "sdf3d_nodeParam0(" + std::to_string(low) + "u, " + std::to_string(high) + "u, " + fallback + ")";
-}
-
-std::string glslNodeParam0(GlslEmitMode mode, uint64_t nodeId, const std::string& fallback)
+std::string glslNodeParam0(GlslEmitMode mode, uint64_t nodeId, const std::string& fallback, const std::unordered_map<uint64_t, uint32_t>& nodeParamSlotByNodeId)
 {
     if (mode == GlslEmitMode::Baked || nodeId == 0) {
         return fallback;
     }
 
-    return glslNodeParam0(nodeId, fallback);
+    const auto slot = nodeParamSlotByNodeId.find(nodeId);
+    if (slot == nodeParamSlotByNodeId.end()) {
+        return fallback;
+    }
+
+    return "uNodeParams[" + std::to_string(slot->second) + "].data0";
 }
 
-std::string glslNodeParamComponent(GlslEmitMode mode, uint64_t nodeId, const std::string& fallback, char component)
+std::string glslNodeParamComponent(GlslEmitMode mode, uint64_t nodeId, const std::string& fallback, char component, const std::unordered_map<uint64_t, uint32_t>& nodeParamSlotByNodeId)
 {
-    return glslNodeParam0(mode, nodeId, fallback) + "." + component;
-}
-
-std::string glslHit(const std::string& distanceExpr, int materialId)
-{
-    return "vec2(" + distanceExpr + ", " + glslFloat(static_cast<float>(materialId)) + ")";
-}
-
-std::string glslNoHit()
-{
-    return "vec2(1e6, 0.0)";
-}
-
-std::string hitDistance(const std::string& hitExpr)
-{
-    return "(" + hitExpr + ").x";
+    return glslNodeParam0(mode, nodeId, fallback, nodeParamSlotByNodeId) + "." + component;
 }
 
 } // namespace sdf3d::glsl_emitter
