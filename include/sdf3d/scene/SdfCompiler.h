@@ -37,6 +37,7 @@ struct SdfCompileResult {
     std::unordered_map<MaterialId, std::string> materialFunctionByRegistryId;
     bool usesBox = false;
     bool usesCylinder = false;
+    bool usesCappedCone = false;
     bool usesSmoothMin = false;
     bool usesRotate = false;
 };

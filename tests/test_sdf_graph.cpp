@@ -1,4 +1,5 @@
 #include "sdf3d/scene/SdfGraph.h"
+#include "sdf3d/scene/SdfGraphCompiler.h"
 #include "sdf3d/scene/SdfNodeDefinition.h"
 #include "sdf3d/scene/SdfRotationParams.h"
 #include "sdf3d/systems/GraphSystem.h"
@@ -10,6 +11,7 @@
 #include <iostream>
 #include <glm/glm.hpp>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -166,6 +168,80 @@ void testGraphSocketsAndTypedLinks(std::vector<TestFailure>& failures)
     expect(graph.link(sphere, "sdf", translate, "child"), testName, "Expected typed SDF link to succeed.", failures);
     expect(!graph.link(sphere, "missing", translate, "child"), testName, "Expected missing output socket to fail.", failures);
     expect(!graph.link(sphere, "sdf", translate, "missing"), testName, "Expected missing input socket to fail.", failures);
+}
+
+void testGraphAllowsAcyclicFanOutReuse(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph allows acyclic fan out reuse";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Shared Sphere");
+    const sdf3d::SdfGraphNodeId translate = graph.createNode(sdf3d::SdfNodeType::Translate, "Offset");
+    const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
+
+    expect(graph.link(sphere, "sdf", unionNode, "inputs"), testName, "Expected direct shared source branch.", failures);
+    expect(graph.link(sphere, "sdf", translate, "child"), testName, "Expected transformed shared source branch.", failures);
+    expect(graph.link(translate, "sdf", unionNode, "inputs"), testName, "Expected translated branch into union.", failures);
+    expect(graph.link(unionNode, "sdf", graph.outputNode(), "surface"), testName, "Expected union linked to output.", failures);
+
+    bool hasDirectBranch = false;
+    bool hasTransformChild = false;
+    bool hasTransformedBranch = false;
+    for (const sdf3d::SdfGraphLink& link : graph.links()) {
+        hasDirectBranch = hasDirectBranch || (link.fromNode == sphere && link.fromSocket == "sdf" && link.toNode == unionNode && link.toSocket == "inputs");
+        hasTransformChild = hasTransformChild || (link.fromNode == sphere && link.fromSocket == "sdf" && link.toNode == translate && link.toSocket == "child");
+        hasTransformedBranch = hasTransformedBranch || (link.fromNode == translate && link.fromSocket == "sdf" && link.toNode == unionNode && link.toSocket == "inputs");
+    }
+    expect(hasDirectBranch, testName, "Expected direct branch link to remain.", failures);
+    expect(hasTransformChild, testName, "Expected transform child link to remain.", failures);
+    expect(hasTransformedBranch, testName, "Expected transformed branch link to remain.", failures);
+
+    const sdf3d::SdfGraphLowerResult lowered = sdf3d::lowerSdfGraphToTree(graph);
+    expect(lowered.errors.empty(), testName, "Expected shared-source DAG lowering without errors.", failures);
+    expect(lowered.root != nullptr, testName, "Expected shared-source DAG lowered root.", failures);
+}
+
+void testGraphRejectsCycles(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph rejects cycles";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId translate = graph.createNode(sdf3d::SdfNodeType::Translate, "Translate");
+    const sdf3d::SdfGraphNodeId rotate = graph.createNode(sdf3d::SdfNodeType::Rotate, "Rotate");
+    const sdf3d::SdfGraphNodeId scale = graph.createNode(sdf3d::SdfNodeType::Scale, "Scale");
+    const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
+
+    expect(graph.link(translate, "sdf", scale, "child"), testName, "Expected first direct-cycle setup link.", failures);
+    expect(!graph.link(scale, "sdf", translate, "child"), testName, "Expected direct reverse cycle rejected.", failures);
+
+    expect(graph.link(sphere, "sdf", translate, "child"), testName, "Expected single-input acyclic replacement.", failures);
+    expect(graph.link(translate, "sdf", rotate, "child"), testName, "Expected longer-cycle setup link.", failures);
+    expect(!graph.link(rotate, "sdf", translate, "child"), testName, "Expected longer cycle rejected.", failures);
+    expect(!graph.link(translate, "sdf", translate, "child"), testName, "Expected self-link rejected.", failures);
+
+    expect(graph.link(sphere, "sdf", unionNode, "inputs"), testName, "Expected first multi-input link.", failures);
+    expect(!graph.link(sphere, "sdf", unionNode, "inputs"), testName, "Expected exact duplicate multi-input link rejected.", failures);
+}
+
+void testGraphReplaceDataRejectsCycles(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph replace data rejects cycles";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId translate = graph.createNode(sdf3d::SdfNodeType::Translate, "Translate");
+    const sdf3d::SdfGraphNodeId scale = graph.createNode(sdf3d::SdfNodeType::Scale, "Scale");
+    std::unordered_map<sdf3d::SdfGraphNodeId, sdf3d::SdfGraphNode> nodes(graph.nodes().begin(), graph.nodes().end());
+    std::vector<sdf3d::SdfGraphLink> links{
+        {translate, "sdf", scale, "child"},
+        {scale, "sdf", translate, "child"},
+    };
+
+    expect(
+        !sdf3d::GraphSystem::replaceGraphData(graph, graph.nextNodeIdForSerialization(), graph.outputNode(), 0, {}, std::move(nodes), std::move(links)),
+        testName,
+        "Expected cyclic serialized graph data rejected.",
+        failures);
 }
 
 void testGraphOutputNodeSockets(std::vector<TestFailure>& failures)
@@ -602,6 +678,52 @@ void testPhaseTwoDomainNodeDefinitions(std::vector<TestFailure>& failures)
     }
 }
 
+void testStubbedPrimitiveNodeDefinitions(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "stubbed primitive node definitions";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId capsule = graph.createNode(sdf3d::SdfNodeType::Capsule, "Capsule");
+    const sdf3d::SdfGraphNodeId cone = graph.createNode(sdf3d::SdfNodeType::Cone, "Cone");
+    const sdf3d::SdfGraphNodeId roundBox = graph.createNode(sdf3d::SdfNodeType::RoundBox, "Round Box");
+
+    const sdf3d::SdfGraphNode* capsuleNode = graph.node(capsule);
+    const sdf3d::SdfGraphNode* coneNode = graph.node(cone);
+    const sdf3d::SdfGraphNode* roundBoxNode = graph.node(roundBox);
+
+    expect(capsuleNode != nullptr, testName, "Expected capsule node.", failures);
+    expect(coneNode != nullptr, testName, "Expected cone node.", failures);
+    expect(roundBoxNode != nullptr, testName, "Expected round box node.", failures);
+    if (capsuleNode != nullptr) {
+        expect(capsuleNode->inputs.empty(), testName, "Expected capsule to have no inputs.", failures);
+        expect(capsuleNode->outputs.size() == 1 && capsuleNode->outputs[0].name == "sdf", testName, "Expected capsule SDF output.", failures);
+        expect(capsuleNode->payload.parameters.at("radius") == 0.35f, testName, "Expected capsule default radius.", failures);
+        expect(capsuleNode->payload.parameters.at("halfHeight") == 1.0f, testName, "Expected capsule default half height.", failures);
+    }
+    if (coneNode != nullptr) {
+        expect(coneNode->inputs.empty(), testName, "Expected cone to have no inputs.", failures);
+        expect(coneNode->outputs.size() == 1 && coneNode->outputs[0].name == "sdf", testName, "Expected cone SDF output.", failures);
+        expect(coneNode->payload.parameters.at("radius") == 1.0f, testName, "Expected cone default radius.", failures);
+        expect(coneNode->payload.parameters.at("halfHeight") == 1.0f, testName, "Expected cone default half height.", failures);
+    }
+    if (roundBoxNode != nullptr) {
+        expect(roundBoxNode->inputs.empty(), testName, "Expected round box to have no inputs.", failures);
+        expect(roundBoxNode->outputs.size() == 1 && roundBoxNode->outputs[0].name == "sdf", testName, "Expected round box SDF output.", failures);
+        expect(roundBoxNode->payload.parameters.at("x") == 1.0f, testName, "Expected round box default x.", failures);
+        expect(roundBoxNode->payload.parameters.at("radius") == 0.15f, testName, "Expected round box default radius.", failures);
+    }
+
+    bool sawCapsule = false;
+    bool sawCone = false;
+    bool sawRoundBox = false;
+    for (const sdf3d::SdfNodeType type : sdf3d::sdfNodeTypesForCategory(sdf3d::SdfNodeCategory::Primitive)) {
+        sawCapsule = sawCapsule || type == sdf3d::SdfNodeType::Capsule;
+        sawCone = sawCone || type == sdf3d::SdfNodeType::Cone;
+        sawRoundBox = sawRoundBox || type == sdf3d::SdfNodeType::RoundBox;
+    }
+    expect(sawCapsule && sawCone && sawRoundBox, testName, "Expected new primitives in primitive category.", failures);
+}
+
 void testNodeEditorAutoLayoutAllNodes(std::vector<TestFailure>& failures)
 {
     const std::string testName = "node editor auto layout all nodes";
@@ -761,6 +883,97 @@ void testNodeEditorAutoLayoutPreservesEmptyRowSlots(std::vector<TestFailure>& fa
     }
 }
 
+void testNodeEditorAutoLayoutUsesDepthFirstSubtreeRows(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "node editor auto layout uses depth-first subtree rows";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId upperSphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Upper Sphere");
+    const sdf3d::SdfGraphNodeId upperTranslate = graph.createNode(sdf3d::SdfNodeType::Translate, "Upper");
+    const sdf3d::SdfGraphNodeId lowerSphere = graph.createNode(sdf3d::SdfNodeType::Box, "Lower Box");
+    const sdf3d::SdfGraphNodeId lowerTranslate = graph.createNode(sdf3d::SdfNodeType::Translate, "Lower");
+    const sdf3d::SdfGraphNodeId lowerScale = graph.createNode(sdf3d::SdfNodeType::Scale, "Lower Next");
+    const sdf3d::SdfGraphNodeId join = graph.createNode(sdf3d::SdfNodeType::Union, "Join");
+
+    graph.link(upperSphere, "sdf", upperTranslate, "child");
+    graph.link(upperTranslate, "sdf", join, "inputs");
+    graph.link(lowerSphere, "sdf", lowerTranslate, "child");
+    graph.link(lowerTranslate, "sdf", lowerScale, "child");
+    graph.link(lowerScale, "sdf", join, "inputs");
+    graph.link(join, "sdf", graph.outputNode(), "surface");
+
+    sdf3d::node_editor::CanvasFrame frame;
+    frame.origin = {0.0f, 0.0f};
+    frame.end = {1000.0f, 800.0f};
+    frame.pan = {0.0f, 0.0f};
+    frame.zoom = 1.0f;
+
+    expect(sdf3d::node_editor::autoLayoutGraph(graph, frame, false), testName, "Expected layout to move nodes.", failures);
+
+    const sdf3d::SdfGraphNode* outputNode = graph.node(graph.outputNode());
+    const sdf3d::SdfGraphNode* upperSphereNode = graph.node(upperSphere);
+    const sdf3d::SdfGraphNode* upperTranslateNode = graph.node(upperTranslate);
+    const sdf3d::SdfGraphNode* lowerSphereNode = graph.node(lowerSphere);
+    const sdf3d::SdfGraphNode* lowerTranslateNode = graph.node(lowerTranslate);
+    const sdf3d::SdfGraphNode* lowerScaleNode = graph.node(lowerScale);
+    const sdf3d::SdfGraphNode* joinNode = graph.node(join);
+
+    expect(
+        outputNode != nullptr && upperSphereNode != nullptr && upperTranslateNode != nullptr && lowerSphereNode != nullptr && lowerTranslateNode != nullptr
+            && lowerScaleNode != nullptr && joinNode != nullptr,
+        testName,
+        "Expected all layout nodes.",
+        failures);
+    if (outputNode != nullptr && upperSphereNode != nullptr && upperTranslateNode != nullptr && lowerSphereNode != nullptr && lowerTranslateNode != nullptr
+        && lowerScaleNode != nullptr && joinNode != nullptr) {
+        expect(outputNode->editorX > joinNode->editorX && joinNode->editorX > upperTranslateNode->editorX, testName, "Expected output to stay rightmost.", failures);
+        expect(joinNode->editorY == upperTranslateNode->editorY && upperTranslateNode->editorY == upperSphereNode->editorY, testName, "Expected first branch to share base row.", failures);
+        expect(lowerScaleNode->editorY > upperTranslateNode->editorY, testName, "Expected second branch below first branch subtree.", failures);
+        expect(lowerSphereNode->editorY == lowerTranslateNode->editorY && lowerTranslateNode->editorY == lowerScaleNode->editorY, testName, "Expected lower branch descendants aligned in subtree row.", failures);
+    }
+}
+
+void testNodeEditorAutoLayoutStacksDisconnectedIslands(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "node editor auto layout stacks disconnected islands";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId mainSphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Main Sphere");
+    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Material");
+    const sdf3d::SdfGraphNodeId islandSphere = graph.createNode(sdf3d::SdfNodeType::Box, "Island Source");
+    const sdf3d::SdfGraphNodeId islandTranslate = graph.createNode(sdf3d::SdfNodeType::Translate, "Island Sink");
+
+    graph.link(mainSphere, "sdf", material, "sdf");
+    graph.link(material, "sdf", graph.outputNode(), "surface");
+    graph.link(islandSphere, "sdf", islandTranslate, "child");
+
+    sdf3d::node_editor::CanvasFrame frame;
+    frame.origin = {0.0f, 0.0f};
+    frame.end = {1000.0f, 800.0f};
+    frame.pan = {0.0f, 0.0f};
+    frame.zoom = 1.0f;
+
+    expect(sdf3d::node_editor::autoLayoutGraph(graph, frame, false), testName, "Expected layout to move nodes.", failures);
+
+    const sdf3d::SdfGraphNode* outputNode = graph.node(graph.outputNode());
+    const sdf3d::SdfGraphNode* mainSphereNode = graph.node(mainSphere);
+    const sdf3d::SdfGraphNode* materialNode = graph.node(material);
+    const sdf3d::SdfGraphNode* islandSphereNode = graph.node(islandSphere);
+    const sdf3d::SdfGraphNode* islandTranslateNode = graph.node(islandTranslate);
+
+    expect(
+        outputNode != nullptr && mainSphereNode != nullptr && materialNode != nullptr && islandSphereNode != nullptr && islandTranslateNode != nullptr,
+        testName,
+        "Expected all layout nodes.",
+        failures);
+    if (outputNode != nullptr && mainSphereNode != nullptr && materialNode != nullptr && islandSphereNode != nullptr && islandTranslateNode != nullptr) {
+        expect(mainSphereNode->editorY == materialNode->editorY && materialNode->editorY == outputNode->editorY, testName, "Expected main output chain to keep one DFS row.", failures);
+        expect(islandSphereNode->editorY > outputNode->editorY && islandTranslateNode->editorY == islandSphereNode->editorY, testName, "Expected disconnected island below main tree.", failures);
+        expect(islandSphereNode->editorX < islandTranslateNode->editorX, testName, "Expected island to keep local source-to-sink flow.", failures);
+        expect(outputNode->editorX > materialNode->editorX && materialNode->editorX > mainSphereNode->editorX, testName, "Expected output tree columns unchanged by island.", failures);
+    }
+}
+
 } // namespace
 
 int main()
@@ -773,6 +986,9 @@ int main()
     testGraphMultiSelectionDeleteCleanup(failures);
     testGraphExactUnlink(failures);
     testGraphSocketsAndTypedLinks(failures);
+    testGraphAllowsAcyclicFanOutReuse(failures);
+    testGraphRejectsCycles(failures);
+    testGraphReplaceDataRejectsCycles(failures);
     testGraphOutputNodeSockets(failures);
     testGraphOutputAndSelectionValidation(failures);
     testGraphSystemCreatesTranslateWrapper(failures);
@@ -790,10 +1006,13 @@ int main()
     testGraphSystemPlacePrimitiveUnionsExistingOutput(failures);
     testGraphSystemPlacePrimitiveAppendsToOutputUnion(failures);
     testPhaseTwoDomainNodeDefinitions(failures);
+    testStubbedPrimitiveNodeDefinitions(failures);
     testNodeEditorAutoLayoutAllNodes(failures);
     testNodeEditorAutoLayoutSelectedOnly(failures);
     testNodeEditorAutoLayoutOrdersRowsByParentRow(failures);
     testNodeEditorAutoLayoutPreservesEmptyRowSlots(failures);
+    testNodeEditorAutoLayoutUsesDepthFirstSubtreeRows(failures);
+    testNodeEditorAutoLayoutStacksDisconnectedIslands(failures);
 
     if (!failures.empty()) {
         for (const TestFailure& failure : failures) {

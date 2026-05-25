@@ -56,6 +56,9 @@ const std::vector<SdfNodeDefinition>& definitions()
         {SdfNodeType::Cylinder, SdfNodeCategory::Primitive, "Cylinder", {floatParameter("radius", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("halfHeight", 1.0f, 0.001f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
         {SdfNodeType::Torus, SdfNodeCategory::Primitive, "Torus", {floatParameter("majorRadius", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("minorRadius", 0.25f, 0.001f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
         {SdfNodeType::Plane, SdfNodeCategory::Primitive, "Plane", {floatParameter("normalX", 0.0f, -1.0f, 1.0f, 0.01f), floatParameter("normalY", 1.0f, -1.0f, 1.0f, 0.01f), floatParameter("normalZ", 0.0f, -1.0f, 1.0f, 0.01f), floatParameter("offset", 0.0f, -100.0f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
+        {SdfNodeType::Capsule, SdfNodeCategory::Primitive, "Capsule", {floatParameter("radius", 0.35f, 0.001f, 100.0f, 0.01f), floatParameter("halfHeight", 1.0f, 0.001f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
+        {SdfNodeType::Cone, SdfNodeCategory::Primitive, "Cone", {floatParameter("radius", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("halfHeight", 1.0f, 0.001f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
+        {SdfNodeType::RoundBox, SdfNodeCategory::Primitive, "Round Box", {floatParameter("x", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("y", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("z", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("radius", 0.15f, 0.001f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
 
         {SdfNodeType::Union, SdfNodeCategory::Boolean, "Union", {}, {inputSocket("inputs", SdfSocketType::Sdf, true)}, {outputSocket("sdf")}},
         {SdfNodeType::Subtract, SdfNodeCategory::Boolean, "Subtract", {}, {inputSocket("base"), inputSocket("cutter")}, {outputSocket("sdf")}},

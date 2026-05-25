@@ -161,6 +161,44 @@ void assignNodeParamSlots(std::vector<SdfCompiledNodeParam>& params)
     }
 }
 
+bool reachesNode(const std::vector<SdfGraphLink>& links, SdfGraphNodeId start, SdfGraphNodeId target, std::unordered_set<SdfGraphNodeId>& visited)
+{
+    if (start == target) {
+        return true;
+    }
+    if (!visited.insert(start).second) {
+        return false;
+    }
+
+    for (const SdfGraphLink& link : links) {
+        if (link.fromNode == start && reachesNode(links, link.toNode, target, visited)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool wouldCreateCycle(
+    const std::vector<SdfGraphLink>& links,
+    SdfGraphNodeId fromNode,
+    SdfGraphNodeId toNode,
+    const std::string& toSocket,
+    bool replaceTargetInput)
+{
+    std::vector<SdfGraphLink> candidateLinks;
+    candidateLinks.reserve(links.size() + 1);
+    for (const SdfGraphLink& link : links) {
+        if (replaceTargetInput && link.toNode == toNode && link.toSocket == toSocket) {
+            continue;
+        }
+        candidateLinks.push_back(link);
+    }
+
+    std::unordered_set<SdfGraphNodeId> visited;
+    return reachesNode(candidateLinks, toNode, fromNode, visited);
+}
+
 } // namespace
 
 void GraphSystem::initialize(SdfGraph& graph)
@@ -583,6 +621,10 @@ bool GraphSystem::link(SdfGraph& graph, SdfGraphNodeId fromNode, std::string fro
                 && link.toSocket == toSocket;
         });
     if (existing != graph.m_links.end()) {
+        return false;
+    }
+
+    if (wouldCreateCycle(graph.m_links, fromNode, toNode, toSocket, !input->multiInput)) {
         return false;
     }
 

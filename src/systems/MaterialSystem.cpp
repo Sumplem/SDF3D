@@ -19,6 +19,9 @@ void collectNodeMaterials(const SdfNodePtr& node, SdfCompileResult& result, cons
     case SdfNodeType::Cylinder:
     case SdfNodeType::Torus:
     case SdfNodeType::Plane:
+    case SdfNodeType::Capsule:
+    case SdfNodeType::Cone:
+    case SdfNodeType::RoundBox:
         return;
 
     case SdfNodeType::MaterialOverride:

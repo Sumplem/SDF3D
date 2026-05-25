@@ -178,6 +178,9 @@ MaterialEval emitMaterialEvalFor(
     case SdfNodeType::Cylinder:
     case SdfNodeType::Torus:
     case SdfNodeType::Plane:
+    case SdfNodeType::Capsule:
+    case SdfNodeType::Cone:
+    case SdfNodeType::RoundBox:
         return {"", defaultMaterial(pointExpr), helperDistanceFor(node, pointExpr, result, sdfHelpers)};
 
     case SdfNodeType::MaterialOverride: {

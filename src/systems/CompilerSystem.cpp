@@ -21,30 +21,39 @@
 namespace sdf3d {
 namespace {
 
-void collectDescendantHelperIds(const SdfNodePtr& node, const GlslSdfHelperBlock& sdfHelpers, std::vector<uint64_t>& ids)
+void collectDescendantHelperIds(
+    const SdfNodePtr& node,
+    const GlslSdfHelperBlock& sdfHelpers,
+    std::vector<uint64_t>& ids,
+    std::unordered_set<uint64_t>& seenIds)
 {
     if (!node) {
         return;
     }
     const auto it = sdfHelpers.nodeIdByNode.find(node.get());
-    if (it != sdfHelpers.nodeIdByNode.end()) {
+    if (it != sdfHelpers.nodeIdByNode.end() && seenIds.insert(it->second).second) {
         ids.push_back(it->second);
     }
     for (const SdfNodePtr& child : node->children) {
-        collectDescendantHelperIds(child, sdfHelpers, ids);
+        collectDescendantHelperIds(child, sdfHelpers, ids, seenIds);
     }
 }
 
-void emitSceneNodeContainsCase(std::ostringstream& glsl, const SdfNodePtr& node, const GlslSdfHelperBlock& sdfHelpers)
+void emitSceneNodeContainsCase(
+    std::ostringstream& glsl,
+    const SdfNodePtr& node,
+    const GlslSdfHelperBlock& sdfHelpers,
+    std::unordered_set<uint64_t>& emittedCases)
 {
     if (!node) {
         return;
     }
 
     const auto nodeIt = sdfHelpers.nodeIdByNode.find(node.get());
-    if (nodeIt != sdfHelpers.nodeIdByNode.end()) {
+    if (nodeIt != sdfHelpers.nodeIdByNode.end() && emittedCases.insert(nodeIt->second).second) {
         std::vector<uint64_t> ids;
-        collectDescendantHelperIds(node, sdfHelpers, ids);
+        std::unordered_set<uint64_t> seenIds;
+        collectDescendantHelperIds(node, sdfHelpers, ids, seenIds);
         glsl << "    case " << nodeIt->second << ": return ";
         for (std::size_t i = 0; i < ids.size(); ++i) {
             if (i != 0) {
@@ -56,7 +65,7 @@ void emitSceneNodeContainsCase(std::ostringstream& glsl, const SdfNodePtr& node,
     }
 
     for (const SdfNodePtr& child : node->children) {
-        emitSceneNodeContainsCase(glsl, child, sdfHelpers);
+        emitSceneNodeContainsCase(glsl, child, sdfHelpers, emittedCases);
     }
 }
 
@@ -292,6 +301,19 @@ SdfCompileResult CompilerSystem::compileTree(
         glsl << "}\n\n";
     }
 
+    if (result.usesCappedCone) {
+        glsl << "float sdf3d_capped_cone(vec3 p, float radius, float halfHeight)\n";
+        glsl << "{\n";
+        glsl << "    vec2 q = vec2(length(p.xz), p.y);\n";
+        glsl << "    vec2 k1 = vec2(0.0, halfHeight);\n";
+        glsl << "    vec2 k2 = vec2(-radius, 2.0 * halfHeight);\n";
+        glsl << "    vec2 ca = vec2(q.x - min(q.x, q.y < 0.0 ? radius : 0.0), abs(q.y) - halfHeight);\n";
+        glsl << "    vec2 cb = q - k1 + k2 * clamp(dot(k1 - q, k2) / dot(k2, k2), 0.0, 1.0);\n";
+        glsl << "    float s = (cb.x < 0.0 && ca.y < 0.0) ? -1.0 : 1.0;\n";
+        glsl << "    return s * sqrt(min(dot(ca, ca), dot(cb, cb)));\n";
+        glsl << "}\n\n";
+    }
+
     if (result.usesSmoothMin) {
         glsl << "float sdf3d_smin(float a, float b, float k)\n";
         glsl << "{\n";
@@ -338,7 +360,8 @@ SdfCompileResult CompilerSystem::compileTree(
     glsl << "bool sceneNodeContains(int nodeId, int visibleNodeId)\n";
     glsl << "{\n";
     glsl << "    switch (visibleNodeId) {\n";
-    emitSceneNodeContainsCase(glsl, root, sdfHelpers);
+    std::unordered_set<uint64_t> emittedContainsCases;
+    emitSceneNodeContainsCase(glsl, root, sdfHelpers, emittedContainsCases);
     glsl << "    default: return nodeId == visibleNodeId;\n";
     glsl << "    }\n";
     glsl << "}\n\n";

@@ -41,6 +41,17 @@ bool hasDuplicateSdfHelperNames(const std::string& glsl)
     return false;
 }
 
+int countOccurrences(const std::string& text, const std::string& expected)
+{
+    int count = 0;
+    std::size_t offset = 0;
+    while ((offset = text.find(expected, offset)) != std::string::npos) {
+        ++count;
+        offset += expected.size();
+    }
+    return count;
+}
+
 void expect(bool condition, const std::string& testName, const std::string& message, std::vector<TestFailure>& failures)
 {
     if (!condition) {
@@ -134,6 +145,62 @@ void testGraphCompilerRuntimePrimitiveUsesNodeParam(std::vector<TestFailure>& fa
     expect(!contains(baked.glsl, "NodeParamBuffer"), testName, "Expected baked GLSL without node-param SSBO.", failures);
     expect(contains(baked.glsl, "length(p) - 2.000000"), testName, "Expected baked radius literal.", failures);
     expect(baked.nodeParams.empty(), testName, "Expected baked compile to skip node params.", failures);
+}
+
+void testGraphCompilerStubbedPrimitives(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph compiler stubbed primitives";
+
+    {
+        sdf3d::SdfGraph graph;
+        const sdf3d::SdfGraphNodeId capsule = graph.createNode(sdf3d::SdfNodeType::Capsule, "Capsule");
+        graph.link(capsule, "sdf", graph.outputNode(), "surface");
+
+        const sdf3d::SdfCompiler compiler;
+        const sdf3d::SdfCompileResult baked = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
+        const sdf3d::SdfCompileResult runtime = compiler.compile(graph);
+
+        expect(baked.errors.empty(), testName, "Expected capsule baked compile without errors.", failures);
+        expect(contains(baked.glsl, "clamp(p.y, -1.000000, 1.000000)"), testName, "Expected capsule baked half-height.", failures);
+        expect(contains(baked.glsl, "- 0.350000"), testName, "Expected capsule baked radius.", failures);
+        expect(runtime.errors.empty(), testName, "Expected capsule runtime compile without errors.", failures);
+        expect(contains(runtime.glsl, "uNodeParams[0].data0.x"), testName, "Expected capsule runtime radius.", failures);
+        expect(contains(runtime.glsl, "uNodeParams[0].data0.y"), testName, "Expected capsule runtime half-height.", failures);
+        expect(runtime.nodeParams.size() == 1 && runtime.nodeParams[0].data0[0] == 0.35f && runtime.nodeParams[0].data0[1] == 1.0f, testName, "Expected capsule params packed.", failures);
+    }
+
+    {
+        sdf3d::SdfGraph graph;
+        const sdf3d::SdfGraphNodeId cone = graph.createNode(sdf3d::SdfNodeType::Cone, "Cone");
+        graph.link(cone, "sdf", graph.outputNode(), "surface");
+
+        const sdf3d::SdfCompiler compiler;
+        const sdf3d::SdfCompileResult baked = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
+        const sdf3d::SdfCompileResult runtime = compiler.compile(graph);
+
+        expect(baked.errors.empty(), testName, "Expected cone baked compile without errors.", failures);
+        expect(contains(baked.glsl, "float sdf3d_capped_cone(vec3 p, float radius, float halfHeight)"), testName, "Expected cone helper.", failures);
+        expect(contains(baked.glsl, "sdf3d_capped_cone(p, 1.000000, 1.000000)"), testName, "Expected cone baked call.", failures);
+        expect(runtime.errors.empty(), testName, "Expected cone runtime compile without errors.", failures);
+        expect(contains(runtime.glsl, "sdf3d_capped_cone(p, uNodeParams[0].data0.x, uNodeParams[0].data0.y)"), testName, "Expected cone runtime params.", failures);
+        expect(runtime.nodeParams.size() == 1 && runtime.nodeParams[0].data0[0] == 1.0f && runtime.nodeParams[0].data0[1] == 1.0f, testName, "Expected cone params packed.", failures);
+    }
+
+    {
+        sdf3d::SdfGraph graph;
+        const sdf3d::SdfGraphNodeId roundBox = graph.createNode(sdf3d::SdfNodeType::RoundBox, "Round Box");
+        graph.link(roundBox, "sdf", graph.outputNode(), "surface");
+
+        const sdf3d::SdfCompiler compiler;
+        const sdf3d::SdfCompileResult baked = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
+        const sdf3d::SdfCompileResult runtime = compiler.compile(graph);
+
+        expect(baked.errors.empty(), testName, "Expected round box baked compile without errors.", failures);
+        expect(contains(baked.glsl, "sdf3d_box(p, vec3(1.000000, 1.000000, 1.000000)) - 0.150000"), testName, "Expected round box baked expression.", failures);
+        expect(runtime.errors.empty(), testName, "Expected round box runtime compile without errors.", failures);
+        expect(contains(runtime.glsl, "sdf3d_box(p, uNodeParams[0].data0.xyz) - uNodeParams[0].data0.w"), testName, "Expected round box runtime params.", failures);
+        expect(runtime.nodeParams.size() == 1 && runtime.nodeParams[0].data0[0] == 1.0f && runtime.nodeParams[0].data0[3] == 0.15f, testName, "Expected round box params packed.", failures);
+    }
 }
 
 void testGraphCompilerMaterialOverride(std::vector<TestFailure>& failures)
@@ -320,21 +387,45 @@ void testGraphCompilerNamespacesGroupHelperIds(std::vector<TestFailure>& failure
     expect(!hasDuplicateSdfHelperNames(result.glsl), testName, "Expected no duplicate sdf_node helper function names.", failures);
 }
 
+void testGraphCompilerSharedSourceDagHasUniqueSwitchCases(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "graph compiler shared source dag has unique switch cases";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Shared Sphere");
+    const sdf3d::SdfGraphNodeId translate = graph.createNode(sdf3d::SdfNodeType::Translate, "Offset");
+    const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
+    expect(graph.link(sphere, "sdf", unionNode, "inputs"), testName, "Expected direct branch.", failures);
+    expect(graph.link(sphere, "sdf", translate, "child"), testName, "Expected transformed branch child.", failures);
+    expect(graph.link(translate, "sdf", unionNode, "inputs"), testName, "Expected transformed branch.", failures);
+    expect(graph.link(unionNode, "sdf", graph.outputNode(), "surface"), testName, "Expected output branch.", failures);
+
+    const sdf3d::SdfCompiler compiler;
+    const sdf3d::SdfCompileResult result = compiler.compile(graph);
+
+    expect(result.errors.empty(), testName, "Expected shared-source DAG compile without errors.", failures);
+    expect(!hasDuplicateSdfHelperNames(result.glsl), testName, "Expected one helper per shared node id.", failures);
+    expect(countOccurrences(result.glsl, "case " + std::to_string(sphere) + ": return") == 2, testName, "Expected one sphere case in each node-id switch.", failures);
+    expect(countOccurrences(result.glsl, "case " + std::to_string(translate) + ": return") == 2, testName, "Expected one translate case in each node-id switch.", failures);
+    expect(contains(result.glsl, "nodeId == " + std::to_string(sphere)), testName, "Expected contains helper to include shared source.", failures);
+}
+
 void testGraphCompilerCycle(std::vector<TestFailure>& failures)
 {
     const std::string testName = "graph compiler cycle";
     sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
     const sdf3d::SdfGraphNodeId a = graph.createNode(sdf3d::SdfNodeType::Union, "A");
     const sdf3d::SdfGraphNodeId b = graph.createNode(sdf3d::SdfNodeType::Union, "B");
-    graph.link(a, b, "inputs");
-    graph.link(b, a, "inputs");
-    graph.link(a, "sdf", graph.outputNode(), "surface");
+    expect(graph.link(sphere, a, "inputs"), testName, "Expected acyclic source link.", failures);
+    expect(graph.link(a, b, "inputs"), testName, "Expected acyclic branch link.", failures);
+    expect(!graph.link(b, a, "inputs"), testName, "Expected live graph cycle link rejected.", failures);
+    graph.link(b, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
     const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
-    expect(!result.errors.empty(), testName, "Expected cycle compiler error.", failures);
-    expect(contains(result.errors.front(), "Cycle"), testName, "Expected cycle error text.", failures);
+    expect(result.errors.empty(), testName, "Expected compile to stay acyclic after rejected cycle link.", failures);
 }
 
 void testGraphCompilerSocketOrdering(std::vector<TestFailure>& failures)
@@ -617,6 +708,7 @@ int main()
     testGraphCompilerEmpty(failures);
     testGraphCompilerPrimitive(failures);
     testGraphCompilerRuntimePrimitiveUsesNodeParam(failures);
+    testGraphCompilerStubbedPrimitives(failures);
     testGraphCompilerMaterialOverride(failures);
     testGraphCompilerValueNoiseMaterial(failures);
     testGraphNodeDefinitionMaterialOverride(failures);
@@ -624,6 +716,7 @@ int main()
     testGraphCompilerNonUniformScale(failures);
     testGraphCompilerCollectsGroupTransformParams(failures);
     testGraphCompilerNamespacesGroupHelperIds(failures);
+    testGraphCompilerSharedSourceDagHasUniqueSwitchCases(failures);
     testGraphCompilerCycle(failures);
     testGraphCompilerSocketOrdering(failures);
     testGraphCompilerIncompleteUnion(failures);

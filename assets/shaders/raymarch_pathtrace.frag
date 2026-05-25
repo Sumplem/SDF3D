@@ -38,6 +38,7 @@ const vec3 DIRECT_LIGHT_RADIANCE = vec3(1.15, 1.10, 1.0);
 const float DIRECT_LIGHT_PDF = 1.0;
 const float MIN_PDF = 0.0001;
 const float MAX_EMISSIVE_RADIANCE = 16.0;
+const int EMISSIVE_AREA_LIGHT_SAMPLES = 1;
 
 struct SdfMaterialSample {
     vec3 albedo;
@@ -332,6 +333,13 @@ float bsdfPdfEstimate(vec3 normal, vec3 direction, SdfMaterialSample material)
     return mix(diffusePdf, max(glossyPdf, MIN_PDF), material.metallic);
 }
 
+vec3 brdfEstimate(vec3 normal, vec3 viewDirection, vec3 lightDirection, SdfMaterialSample material)
+{
+    vec3 brdf = diffuseBrdf(material) * (1.0 - material.metallic);
+    brdf += glossyLobeEstimate(normal, viewDirection, lightDirection, material);
+    return brdf;
+}
+
 bool lightVisible(vec3 origin, vec3 direction, float maxDistance)
 {
     float traveled = SURFACE_EPSILON * 4.0;
@@ -348,7 +356,7 @@ bool lightVisible(vec3 origin, vec3 direction, float maxDistance)
     return true;
 }
 
-vec3 nextEventEstimate(vec3 hitPosition, vec3 normal, vec3 viewDirection, SdfMaterialSample material)
+vec3 directionalLightEstimate(vec3 hitPosition, vec3 normal, vec3 viewDirection, SdfMaterialSample material)
 {
     vec3 lightDirection = DIRECT_LIGHT_DIRECTION;
     float nDotL = max(dot(normal, lightDirection), 0.0);
@@ -356,11 +364,53 @@ vec3 nextEventEstimate(vec3 hitPosition, vec3 normal, vec3 viewDirection, SdfMat
         return vec3(0.0);
     }
 
-    vec3 brdf = diffuseBrdf(material) * (1.0 - material.metallic);
-    brdf += glossyLobeEstimate(normal, viewDirection, lightDirection, material);
+    vec3 brdf = brdfEstimate(normal, viewDirection, lightDirection, material);
     float bsdfPdf = bsdfPdfEstimate(normal, lightDirection, material);
     float misWeight = powerHeuristic(DIRECT_LIGHT_PDF, bsdfPdf);
     return DIRECT_LIGHT_RADIANCE * brdf * nDotL * misWeight / DIRECT_LIGHT_PDF;
+}
+
+vec3 emissiveAreaLightEstimate(vec3 hitPosition, vec3 normal, vec3 viewDirection, SdfMaterialSample material, inout uint rng)
+{
+    vec3 estimate = vec3(0.0);
+    for (int i = 0; i < EMISSIVE_AREA_LIGHT_SAMPLES; ++i) {
+        vec3 lightDirection = cosineHemisphere(normal, rng);
+        float lightPdf = cosineHemispherePdf(normal, lightDirection);
+        if (lightPdf <= MIN_PDF) {
+            continue;
+        }
+
+        vec3 lightHitPosition = vec3(0.0);
+        float lightDistance = raymarch(hitPosition + normal * SURFACE_EPSILON * 4.0, lightDirection, lightHitPosition);
+        if (lightDistance < 0.0) {
+            continue;
+        }
+
+        SdfMaterialSample lightMaterial = sceneMaterial(lightHitPosition);
+        vec3 lightRadiance = emissiveRadiance(lightMaterial);
+        if (max(max(lightRadiance.r, lightRadiance.g), lightRadiance.b) <= 0.0) {
+            continue;
+        }
+
+        vec3 lightNormal = estimateNormal(lightHitPosition);
+        if (dot(lightNormal, -lightDirection) <= 0.0) {
+            continue;
+        }
+
+        float nDotL = max(dot(normal, lightDirection), 0.0);
+        vec3 brdf = brdfEstimate(normal, viewDirection, lightDirection, material);
+        float bsdfPdf = bsdfPdfEstimate(normal, lightDirection, material);
+        float misWeight = powerHeuristic(lightPdf, bsdfPdf);
+        estimate += lightRadiance * brdf * nDotL * misWeight / lightPdf;
+    }
+    return estimate / float(EMISSIVE_AREA_LIGHT_SAMPLES);
+}
+
+vec3 nextEventEstimate(vec3 hitPosition, vec3 normal, vec3 viewDirection, SdfMaterialSample material, inout uint rng)
+{
+    vec3 estimate = directionalLightEstimate(hitPosition, normal, viewDirection, material);
+    estimate += emissiveAreaLightEstimate(hitPosition, normal, viewDirection, material, rng);
+    return estimate;
 }
 
 vec3 tracePath(vec3 rayOrigin, vec3 rayDirection, inout uint rng)
@@ -389,7 +439,7 @@ vec3 tracePath(vec3 rayOrigin, vec3 rayDirection, inout uint rng)
         SdfMaterialSample material = sceneMaterial(hitPosition);
         vec3 viewDirection = normalize(-rayDirection);
         radiance += throughput * emissiveRadiance(material);
-        radiance += throughput * nextEventEstimate(hitPosition, normal, viewDirection, material);
+        radiance += throughput * nextEventEstimate(hitPosition, normal, viewDirection, material, rng);
 
         bool sampleMetal = random01(rng) < material.metallic;
         if (sampleMetal) {

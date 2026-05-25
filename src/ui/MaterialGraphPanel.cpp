@@ -739,27 +739,6 @@ bool drawMaterialGraphCanvas(
     return dirty;
 }
 
-void drawNodeProperties(MaterialGraph& graph, MaterialGraphNode& node, EditorDirtyState& dirty)
-{
-    if (drawName("Node Name", node.name)) {
-        dirty.material = true;
-    }
-    ImGui::TextDisabled("%s", displayName(node.type));
-    if (node.type != MaterialGraphNodeType::MaterialOutput && ImGui::Button("Delete Node")) {
-        if (graph.deleteNode(node.id)) {
-            dirty.scene = true;
-        }
-    }
-}
-
-void addNodeButton(MaterialGraph& graph, MaterialGraphNodeType type, EditorDirtyState& dirty)
-{
-    if (ImGui::Button(displayName(type))) {
-        (void)addMaterialNodeAt(graph, type, {80.0f, 80.0f});
-        dirty.scene = true;
-    }
-}
-
 } // namespace
 
 EditorDirtyState MaterialGraphPanel::draw(SdfGraph& graph)
@@ -772,45 +751,12 @@ EditorDirtyState MaterialGraphPanel::draw(SdfGraph& graph)
         m_selectedMaterial = materials.empty() ? 0 : materials.front().id;
     }
 
-    if (ImGui::BeginChild("material-assets", {220.0f, 0.0f}, true)) {
-        if (ImGui::Button("+ Material")) {
-            m_selectedMaterial = createMaterialAsset(graph, "Material", SdfMaterial{});
-            dirty.scene = true;
-        }
-        ImGui::Separator();
+    const float materialListWidth = 240.0f;
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    const float availableWidth = ImGui::GetContentRegionAvail().x;
+    const float graphWidth = std::max(1.0f, availableWidth - materialListWidth - spacing);
 
-        MaterialId pendingDelete = 0;
-        for (const MaterialDefinition& material : graph.materials().materials()) {
-            ImGui::PushID(static_cast<int>(material.id));
-            const bool selected = material.id == m_selectedMaterial;
-            ImGui::ColorButton("##swatch", {material.material.albedo.x, material.material.albedo.y, material.material.albedo.z, 1.0f});
-            ImGui::SameLine();
-            if (ImGui::Selectable(material.name.c_str(), selected)) {
-                m_selectedMaterial = material.id;
-            }
-            const bool canDelete = GraphSystem::canDeleteMaterial(graph, material.id);
-            if (!canDelete) {
-                ImGui::BeginDisabled();
-            }
-            if (ImGui::SmallButton("Delete")) {
-                pendingDelete = material.id;
-            }
-            if (!canDelete) {
-                ImGui::EndDisabled();
-            }
-            ImGui::PopID();
-        }
-        if (pendingDelete != 0 && GraphSystem::deleteMaterial(graph, pendingDelete)) {
-            if (m_selectedMaterial == pendingDelete) {
-                m_selectedMaterial = 0;
-            }
-            dirty.scene = true;
-        }
-    }
-    ImGui::EndChild();
-
-    ImGui::SameLine();
-    if (ImGui::BeginChild("material-graph", {0.0f, 0.0f}, true)) {
+    if (ImGui::BeginChild("material-graph", {graphWidth, 0.0f}, true)) {
         MaterialDefinition* material = graph.materials().material(m_selectedMaterial);
         if (material != nullptr) {
             if (drawName("Material Name", material->name)) {
@@ -818,27 +764,6 @@ EditorDirtyState MaterialGraphPanel::draw(SdfGraph& graph)
                 dirty.material = true;
             }
 
-            ImGui::SeparatorText("Add Node");
-            addNodeButton(material->graph, MaterialGraphNodeType::PbrMaterial, dirty);
-            ImGui::SameLine();
-            addNodeButton(material->graph, MaterialGraphNodeType::ColorConstant, dirty);
-            ImGui::SameLine();
-            addNodeButton(material->graph, MaterialGraphNodeType::FloatConstant, dirty);
-            addNodeButton(material->graph, MaterialGraphNodeType::MixColor, dirty);
-            ImGui::SameLine();
-            addNodeButton(material->graph, MaterialGraphNodeType::MultiplyColor, dirty);
-            ImGui::SameLine();
-            addNodeButton(material->graph, MaterialGraphNodeType::ColorRamp, dirty);
-            addNodeButton(material->graph, MaterialGraphNodeType::AddColor, dirty);
-            ImGui::SameLine();
-            addNodeButton(material->graph, MaterialGraphNodeType::SubtractColor, dirty);
-            addNodeButton(material->graph, MaterialGraphNodeType::PowerFloat, dirty);
-            ImGui::SameLine();
-            addNodeButton(material->graph, MaterialGraphNodeType::ClampFloat, dirty);
-            addNodeButton(material->graph, MaterialGraphNodeType::CheckerPattern, dirty);
-            addNodeButton(material->graph, MaterialGraphNodeType::ValueNoise, dirty);
-
-            ImGui::SeparatorText("Graph");
             if (drawMaterialGraphCanvas(
                     material->graph,
                     m_canvasPanX,
@@ -859,13 +784,49 @@ EditorDirtyState MaterialGraphPanel::draw(SdfGraph& graph)
                 // AGENT: Material graph constants/topology compile into GLSL helpers; semantic edits must rebuild the scene shader.
                 dirty.scene = true;
             }
-
-            ImGui::SeparatorText("Selected Node");
-            if (MaterialGraphNode* node = material->graph.node(material->graph.selectedNode())) {
-                drawNodeProperties(material->graph, *node, dirty);
-            }
         } else {
             ImGui::TextUnformatted("No material selected.");
+        }
+    }
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+    if (ImGui::BeginChild("material-assets", {materialListWidth, 0.0f}, true)) {
+        if (ImGui::Button("+ Material")) {
+            m_selectedMaterial = createMaterialAsset(graph, "Material", SdfMaterial{});
+            dirty.scene = true;
+        }
+        ImGui::Separator();
+
+        MaterialId pendingDelete = 0;
+        for (const MaterialDefinition& material : graph.materials().materials()) {
+            ImGui::PushID(static_cast<int>(material.id));
+            const bool selected = material.id == m_selectedMaterial;
+            ImGui::ColorButton("##swatch", {material.material.albedo.x, material.material.albedo.y, material.material.albedo.z, 1.0f});
+            ImGui::SameLine();
+            const float deleteWidth = ImGui::CalcTextSize("Delete").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+            const float nameWidth = std::max(1.0f, ImGui::GetContentRegionAvail().x - deleteWidth - ImGui::GetStyle().ItemSpacing.x);
+            if (ImGui::Selectable(material.name.c_str(), selected, 0, {nameWidth, 0.0f})) {
+                m_selectedMaterial = material.id;
+            }
+            ImGui::SameLine();
+            const bool canDelete = GraphSystem::canDeleteMaterial(graph, material.id);
+            if (!canDelete) {
+                ImGui::BeginDisabled();
+            }
+            if (ImGui::SmallButton("Delete")) {
+                pendingDelete = material.id;
+            }
+            if (!canDelete) {
+                ImGui::EndDisabled();
+            }
+            ImGui::PopID();
+        }
+        if (pendingDelete != 0 && GraphSystem::deleteMaterial(graph, pendingDelete)) {
+            if (m_selectedMaterial == pendingDelete) {
+                m_selectedMaterial = 0;
+            }
+            dirty.scene = true;
         }
     }
     ImGui::EndChild();

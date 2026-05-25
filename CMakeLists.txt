@@ -133,8 +133,10 @@ endif()
 add_executable(sdf3d_graph_tests
     tests/test_sdf_graph.cpp
     src/scene/SdfGraph.cpp
+    src/scene/SdfGraphCompiler.cpp
     src/scene/SdfNodeDefinition.cpp
     src/systems/GraphSystem.cpp
+    src/systems/GraphSystemSerialization.cpp
     src/systems/GraphSystemTransforms.cpp
     src/systems/GraphSystemHighlight.cpp
     src/systems/GraphSystemValidity.cpp

@@ -7,10 +7,10 @@
 
 #include <algorithm>
 #include <cmath>
-#include <map>
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace sdf3d::node_editor {
@@ -25,6 +25,13 @@ struct LayoutEdges {
     std::unordered_map<SdfGraphNodeId, std::vector<SdfGraphLink>> outgoing;
     std::unordered_map<SdfGraphNodeId, std::vector<SdfGraphLink>> incoming;
     std::unordered_map<SdfGraphNodeId, int> indegree;
+};
+
+struct LayoutBlock {
+    std::vector<SdfGraphNodeId> nodes;
+    std::vector<SdfGraphNodeId> anchors;
+    size_t rowCount = 1;
+    int maxColumn = 0;
 };
 
 std::vector<SdfGraphNodeId> sortedLayoutNodeIds(const SdfGraph& graph, bool selectedOnly)
@@ -120,82 +127,76 @@ LayoutEdges buildIncludedEdges(const SdfGraph& graph, const std::vector<SdfGraph
     }
     for (auto& [node, links] : edges.incoming) {
         (void)node;
-        std::sort(links.begin(), links.end(), [](const SdfGraphLink& left, const SdfGraphLink& right) {
-            if (left.fromNode != right.fromNode) {
-                return left.fromNode < right.fromNode;
+        std::stable_sort(links.begin(), links.end(), [&](const SdfGraphLink& left, const SdfGraphLink& right) {
+            const int leftSocketOrder = inputSocketOrder(graph, left.toNode, left.toSocket);
+            const int rightSocketOrder = inputSocketOrder(graph, right.toNode, right.toSocket);
+            if (leftSocketOrder != rightSocketOrder) {
+                return leftSocketOrder < rightSocketOrder;
             }
-            return left.toSocket < right.toSocket;
+            if (left.toSocket != right.toSocket) {
+                return left.toSocket < right.toSocket;
+            }
+            return false;
         });
     }
 
     return edges;
 }
 
-std::vector<SdfGraphNodeId> topologicalOrder(
-    const std::vector<SdfGraphNodeId>& ids,
-    const LayoutEdges& edges,
-    std::unordered_map<SdfGraphNodeId, int>& columnByNode)
+std::vector<SdfGraphNodeId> sinkNodesInSet(const std::unordered_set<SdfGraphNodeId>& ids, const LayoutEdges& edges)
 {
-    std::unordered_map<SdfGraphNodeId, int> indegree = edges.indegree;
-
+    std::vector<SdfGraphNodeId> sinks;
     for (const SdfGraphNodeId id : ids) {
-        columnByNode[id] = 0;
+        bool hasOutgoingInSet = false;
+        const auto outgoing = edges.outgoing.find(id);
+        if (outgoing != edges.outgoing.end()) {
+            for (const SdfGraphLink& link : outgoing->second) {
+                if (ids.find(link.toNode) != ids.end()) {
+                    hasOutgoingInSet = true;
+                    break;
+                }
+            }
+        }
+        if (!hasOutgoingInSet) {
+            sinks.push_back(id);
+        }
     }
+    std::sort(sinks.begin(), sinks.end());
+    return sinks;
+}
 
-    std::priority_queue<SdfGraphNodeId, std::vector<SdfGraphNodeId>, std::greater<SdfGraphNodeId>> ready;
-    for (const SdfGraphNodeId id : ids) {
-        if (indegree[id] == 0) {
-            ready.push(id);
+std::vector<SdfGraphNodeId> collectIncomingReachable(
+    const std::vector<SdfGraphNodeId>& anchors,
+    const LayoutEdges& edges,
+    const std::unordered_set<SdfGraphNodeId>& allowed)
+{
+    std::vector<SdfGraphNodeId> result;
+    std::unordered_set<SdfGraphNodeId> visited;
+    std::queue<SdfGraphNodeId> pending;
+    for (const SdfGraphNodeId anchor : anchors) {
+        if (allowed.find(anchor) != allowed.end() && visited.insert(anchor).second) {
+            pending.push(anchor);
         }
     }
 
-    std::unordered_set<SdfGraphNodeId> processed;
-    std::vector<SdfGraphNodeId> order;
-    order.reserve(ids.size());
-    while (!ready.empty()) {
-        const SdfGraphNodeId id = ready.top();
-        ready.pop();
-        processed.insert(id);
-        order.push_back(id);
+    while (!pending.empty()) {
+        const SdfGraphNodeId id = pending.front();
+        pending.pop();
+        result.push_back(id);
 
-        const auto outgoing = edges.outgoing.find(id);
-        if (outgoing == edges.outgoing.end()) {
+        const auto incoming = edges.incoming.find(id);
+        if (incoming == edges.incoming.end()) {
             continue;
         }
-        for (const SdfGraphLink& link : outgoing->second) {
-            columnByNode[link.toNode] = std::max(columnByNode[link.toNode], columnByNode[id] + 1);
-            --indegree[link.toNode];
-            if (indegree[link.toNode] == 0) {
-                ready.push(link.toNode);
+        for (const SdfGraphLink& link : incoming->second) {
+            if (allowed.find(link.fromNode) != allowed.end() && visited.insert(link.fromNode).second) {
+                pending.push(link.fromNode);
             }
         }
     }
 
-    int fallbackColumn = 0;
-    for (const auto& [id, column] : columnByNode) {
-        (void)id;
-        fallbackColumn = std::max(fallbackColumn, column + 1);
-    }
-    for (const SdfGraphNodeId id : ids) {
-        if (processed.find(id) == processed.end()) {
-            columnByNode[id] = fallbackColumn++;
-            order.push_back(id);
-        }
-    }
-
-    return order;
-}
-
-std::vector<SdfGraphNodeId> sinkNodes(const std::vector<SdfGraphNodeId>& ids, const LayoutEdges& edges)
-{
-    std::vector<SdfGraphNodeId> sinks;
-    for (const SdfGraphNodeId id : ids) {
-        const auto outgoing = edges.outgoing.find(id);
-        if (outgoing == edges.outgoing.end() || outgoing->second.empty()) {
-            sinks.push_back(id);
-        }
-    }
-    return sinks;
+    std::sort(result.begin(), result.end());
+    return result;
 }
 
 void propagateReverseDepths(
@@ -232,131 +233,132 @@ void propagateReverseDepths(
     }
 }
 
-void assignColumnsFromOutput(
-    const SdfGraph& graph,
-    const std::vector<SdfGraphNodeId>& ids,
+int maxColumnForBlock(const std::vector<SdfGraphNodeId>& ids, const std::unordered_map<SdfGraphNodeId, int>& columnByNode)
+{
+    int maxColumn = 0;
+    for (const SdfGraphNodeId id : ids) {
+        const auto it = columnByNode.find(id);
+        if (it != columnByNode.end()) {
+            maxColumn = std::max(maxColumn, it->second);
+        }
+    }
+    return maxColumn;
+}
+
+void assignColumnsForBlock(
     const LayoutEdges& edges,
+    const LayoutBlock& block,
     std::unordered_map<SdfGraphNodeId, int>& columnByNode)
 {
     std::unordered_map<SdfGraphNodeId, int> reverseDepthByNode;
-    const SdfGraphNodeId output = graph.outputNode();
-    if (std::find(ids.begin(), ids.end(), output) != ids.end()) {
-        propagateReverseDepths(edges, {output}, reverseDepthByNode);
-    }
-
-    std::vector<SdfGraphNodeId> fallbackSinks;
-    for (const SdfGraphNodeId sink : sinkNodes(ids, edges)) {
-        if (reverseDepthByNode.find(sink) == reverseDepthByNode.end()) {
-            fallbackSinks.push_back(sink);
-        }
-    }
-    propagateReverseDepths(edges, fallbackSinks, reverseDepthByNode);
-
-    int fallbackDepth = 0;
-    for (const auto& [node, depth] : reverseDepthByNode) {
-        (void)node;
-        fallbackDepth = std::max(fallbackDepth, depth + 1);
-    }
-    for (const SdfGraphNodeId id : ids) {
-        if (reverseDepthByNode.find(id) == reverseDepthByNode.end()) {
-            reverseDepthByNode[id] = fallbackDepth++;
-        }
-    }
+    propagateReverseDepths(edges, block.anchors, reverseDepthByNode);
 
     int maxDepth = 0;
-    for (const auto& [node, depth] : reverseDepthByNode) {
-        (void)node;
-        maxDepth = std::max(maxDepth, depth);
+    for (const SdfGraphNodeId id : block.nodes) {
+        const auto it = reverseDepthByNode.find(id);
+        if (it != reverseDepthByNode.end()) {
+            maxDepth = std::max(maxDepth, it->second);
+        }
     }
-    for (const SdfGraphNodeId id : ids) {
-        columnByNode[id] = maxDepth - reverseDepthByNode[id];
+    for (const SdfGraphNodeId id : block.nodes) {
+        const auto it = reverseDepthByNode.find(id);
+        columnByNode[id] = it == reverseDepthByNode.end() ? 0 : maxDepth - it->second;
     }
 }
 
-std::map<int, std::vector<SdfGraphNodeId>> columnsFor(
-    const std::vector<SdfGraphNodeId>& topologicalIds,
-    const std::unordered_map<SdfGraphNodeId, int>& columnByNode)
-{
-    std::map<int, std::vector<SdfGraphNodeId>> columns;
-    for (const SdfGraphNodeId id : topologicalIds) {
-        columns[columnByNode.at(id)].push_back(id);
-    }
-    return columns;
-}
-
-size_t nextFreeRow(const std::unordered_set<size_t>& occupiedRows, size_t startRow)
-{
-    size_t row = startRow;
-    while (occupiedRows.find(row) != occupiedRows.end()) {
-        ++row;
-    }
-    return row;
-}
-
-void placeNodeInColumn(
+size_t assignDfsRows(
     SdfGraphNodeId id,
-    size_t preferredRow,
-    std::unordered_map<SdfGraphNodeId, size_t>& rowByNode,
-    std::unordered_set<size_t>& occupiedRows)
-{
-    if (rowByNode.find(id) != rowByNode.end()) {
-        return;
-    }
-
-    const size_t row = nextFreeRow(occupiedRows, preferredRow);
-    rowByNode[id] = row;
-    occupiedRows.insert(row);
-}
-
-void assignRows(
-    const std::map<int, std::vector<SdfGraphNodeId>>& columns,
-    const std::unordered_map<SdfGraphNodeId, int>& columnByNode,
+    size_t baseRow,
     const LayoutEdges& edges,
+    const std::unordered_set<SdfGraphNodeId>& blockNodes,
     std::unordered_map<SdfGraphNodeId, size_t>& rowByNode,
-    std::map<int, std::unordered_set<size_t>>& occupiedRowsByColumn)
+    std::unordered_set<SdfGraphNodeId>& visiting)
 {
-    for (const auto& [columnIndex, column] : columns) {
-        std::unordered_set<size_t>& occupiedRows = occupiedRowsByColumn[columnIndex];
-        for (const SdfGraphNodeId id : column) {
-            placeNodeInColumn(id, 0, rowByNode, occupiedRows);
-        }
+    if (blockNodes.find(id) == blockNodes.end()) {
+        return baseRow;
+    }
 
-        for (const SdfGraphNodeId id : column) {
-            const auto sourceRow = rowByNode.find(id);
-            if (sourceRow == rowByNode.end()) {
+    const auto existing = rowByNode.find(id);
+    if (existing != rowByNode.end()) {
+        return std::max(baseRow + 1, existing->second + 1);
+    }
+    if (!visiting.insert(id).second) {
+        rowByNode[id] = baseRow;
+        return baseRow + 1;
+    }
+
+    rowByNode[id] = baseRow;
+    size_t nextChildBaseRow = baseRow;
+    const auto incoming = edges.incoming.find(id);
+    if (incoming != edges.incoming.end()) {
+        for (const SdfGraphLink& link : incoming->second) {
+            if (blockNodes.find(link.fromNode) == blockNodes.end()) {
                 continue;
             }
-
-            const auto outgoing = edges.outgoing.find(id);
-            if (outgoing == edges.outgoing.end()) {
-                continue;
-            }
-
-            size_t childIndex = 0;
-            for (const SdfGraphLink& link : outgoing->second) {
-                const auto targetColumn = columnByNode.find(link.toNode);
-                if (targetColumn == columnByNode.end() || targetColumn->second <= columnIndex) {
-                    continue;
-                }
-
-                const size_t preferredRow = sourceRow->second + childIndex;
-                placeNodeInColumn(link.toNode, preferredRow, rowByNode, occupiedRowsByColumn[targetColumn->second]);
-                ++childIndex;
-            }
+            const size_t childEndRow = assignDfsRows(link.fromNode, nextChildBaseRow, edges, blockNodes, rowByNode, visiting);
+            nextChildBaseRow = std::max(nextChildBaseRow + 1, childEndRow);
         }
     }
+
+    visiting.erase(id);
+    return std::max(baseRow + 1, nextChildBaseRow);
 }
 
-size_t maxOccupiedRows(const std::map<int, std::unordered_set<size_t>>& occupiedRowsByColumn)
+size_t assignRowsForBlock(
+    const LayoutBlock& block,
+    size_t baseRow,
+    const LayoutEdges& edges,
+    std::unordered_map<SdfGraphNodeId, size_t>& rowByNode)
 {
-    size_t maxRows = 0;
-    for (const auto& [column, occupiedRows] : occupiedRowsByColumn) {
-        (void)column;
-        for (const size_t row : occupiedRows) {
-            maxRows = std::max(maxRows, row + 1);
+    const std::unordered_set<SdfGraphNodeId> blockNodes = nodeSetFor(block.nodes);
+    std::unordered_set<SdfGraphNodeId> visiting;
+    size_t nextBaseRow = baseRow;
+    for (const SdfGraphNodeId anchor : block.anchors) {
+        nextBaseRow = assignDfsRows(anchor, nextBaseRow, edges, blockNodes, rowByNode, visiting);
+    }
+    for (const SdfGraphNodeId id : block.nodes) {
+        if (rowByNode.find(id) == rowByNode.end()) {
+            nextBaseRow = assignDfsRows(id, nextBaseRow, edges, blockNodes, rowByNode, visiting);
         }
     }
-    return maxRows;
+    return std::max(baseRow + 1, nextBaseRow);
+}
+
+std::vector<LayoutBlock> buildLayoutBlocks(const SdfGraph& graph, const std::vector<SdfGraphNodeId>& ids, const LayoutEdges& edges, bool selectedOnly)
+{
+    std::vector<LayoutBlock> blocks;
+    std::unordered_set<SdfGraphNodeId> remaining = nodeSetFor(ids);
+
+    const SdfGraphNodeId output = graph.outputNode();
+    if (!selectedOnly && remaining.find(output) != remaining.end()) {
+        LayoutBlock block;
+        block.anchors = {output};
+        block.nodes = collectIncomingReachable(block.anchors, edges, remaining);
+        for (const SdfGraphNodeId id : block.nodes) {
+            remaining.erase(id);
+        }
+        blocks.push_back(std::move(block));
+    }
+
+    while (!remaining.empty()) {
+        std::vector<SdfGraphNodeId> anchors = sinkNodesInSet(remaining, edges);
+        if (anchors.empty()) {
+            anchors.push_back(*std::min_element(remaining.begin(), remaining.end()));
+        }
+
+        LayoutBlock block;
+        block.anchors = {anchors.front()};
+        block.nodes = collectIncomingReachable(block.anchors, edges, remaining);
+        if (block.nodes.empty()) {
+            block.nodes = block.anchors;
+        }
+        for (const SdfGraphNodeId id : block.nodes) {
+            remaining.erase(id);
+        }
+        blocks.push_back(std::move(block));
+    }
+
+    return blocks;
 }
 
 ImVec2 visibleCanvasCenterGraph(const CanvasFrame& frame)
@@ -422,37 +424,45 @@ bool autoLayoutGraph(SdfGraph& graph, const CanvasFrame& frame, bool selectedOnl
 
     const LayoutEdges edges = buildIncludedEdges(graph, ids);
     std::unordered_map<SdfGraphNodeId, int> columnByNode;
-    const std::vector<SdfGraphNodeId> topologicalIds = topologicalOrder(ids, edges, columnByNode);
-    assignColumnsFromOutput(graph, ids, edges, columnByNode);
-    const std::map<int, std::vector<SdfGraphNodeId>> columns = columnsFor(topologicalIds, columnByNode);
+    std::vector<LayoutBlock> blocks = buildLayoutBlocks(graph, ids, edges, selectedOnly);
+    if (blocks.empty()) {
+        return false;
+    }
+    for (LayoutBlock& block : blocks) {
+        assignColumnsForBlock(edges, block, columnByNode);
+        block.maxColumn = maxColumnForBlock(block.nodes, columnByNode);
+    }
 
     std::unordered_map<SdfGraphNodeId, size_t> rowByNode;
-    std::map<int, std::unordered_set<size_t>> occupiedRowsByColumn;
-    assignRows(columns, columnByNode, edges, rowByNode, occupiedRowsByColumn);
+    size_t nextBaseRow = 0;
+    for (LayoutBlock& block : blocks) {
+        const size_t blockStartRow = nextBaseRow;
+        nextBaseRow = assignRowsForBlock(block, blockStartRow, edges, rowByNode);
+        block.rowCount = std::max<size_t>(1, nextBaseRow - blockStartRow);
+    }
 
     const ImVec2 center = visibleCanvasCenterGraph(frame);
     const float columnSpacing = NODE_WIDTH + horizontalGap;
-    const float totalWidth = static_cast<float>(columns.size() - 1) * columnSpacing;
+    const float totalWidth = static_cast<float>(blocks.front().maxColumn) * columnSpacing;
     const float startX = center.x - totalWidth * 0.5f;
     const float nodeHeight = standardNodeHeight(graph, ids);
-    const size_t occupiedRows = std::max<size_t>(1, maxOccupiedRows(occupiedRowsByColumn));
+    const size_t occupiedRows = std::max<size_t>(1, nextBaseRow);
     const float totalHeight = static_cast<float>(occupiedRows) * (nodeHeight + verticalGap);
     const float topY = center.y - totalHeight * 0.5f;
 
     bool changed = false;
-    size_t visualColumn = 0;
-    for (const auto& [columnIndex, column] : columns) {
-        (void)columnIndex;
-        for (const SdfGraphNodeId id : column) {
+    for (const LayoutBlock& block : blocks) {
+        for (const SdfGraphNodeId id : block.nodes) {
+            const auto column = columnByNode.find(id);
+            const auto row = rowByNode.find(id);
             SdfGraphNode* node = graph.node(id);
-            if (node == nullptr) {
+            if (node == nullptr || column == columnByNode.end() || row == rowByNode.end()) {
                 continue;
             }
-            const float x = startX + static_cast<float>(visualColumn) * columnSpacing;
-            const float y = topY + static_cast<float>(rowByNode[id]) * (nodeHeight + verticalGap);
+            const float x = startX + static_cast<float>(column->second) * columnSpacing;
+            const float y = topY + static_cast<float>(row->second) * (nodeHeight + verticalGap);
             changed = setNodePosition(*node, x, y) || changed;
         }
-        ++visualColumn;
     }
 
     return changed;

@@ -1,41 +1,5 @@
 # AGENTS MEMORY
 
-<!-- CODEGRAPH_START -->
-## CodeGraph
-
-This project has a CodeGraph MCP server (`codegraph_*` tools) configured. CodeGraph is a tree-sitter-parsed knowledge graph of every symbol, edge, and file. Reads are sub-millisecond and return structural information grep cannot.
-
-### When to prefer codegraph over native search
-
-Use codegraph for **structural** questions — what calls what, what would break, where is X defined, what is X's signature. Use native grep/read only for **literal text** queries (string contents, comments, log messages) or after you already have a specific file open.
-
-| Question | Tool |
-|---|---|
-| "Where is X defined?" / "Find symbol named X" | `codegraph_search` |
-| "What calls function Y?" | `codegraph_callers` |
-| "What does Y call?" | `codegraph_callees` |
-| "How does X reach/become Y? / trace the flow from X to Y" | `codegraph_trace` (one call = the whole path, incl. callback/React/JSX dynamic hops) |
-| "What would break if I changed Z?" | `codegraph_impact` |
-| "Show me Y's signature / source / docstring" | `codegraph_node` |
-| "Give me focused context for a task/area" | `codegraph_context` |
-| "See several related symbols' source at once" | `codegraph_explore` |
-| "What files exist under path/" | `codegraph_files` |
-| "Is the index healthy?" | `codegraph_status` |
-
-### Rules of thumb
-
-- **Answer directly — don't delegate exploration.** For "how does X work" / architecture questions, answer with 2-3 codegraph calls: `codegraph_context` first, then ONE `codegraph_explore` for the source of the symbols it surfaces. For a specific **flow** ("how does X reach Y") start with `codegraph_trace` from→to — one call returns the whole path with dynamic hops bridged — then ONE `codegraph_explore` for the bodies; don't rebuild the path with `codegraph_search` + `codegraph_callers`. Codegraph IS the pre-built index, so spawning a separate file-reading sub-task/agent — or running a grep + read loop — repeats work codegraph already did and costs more for the same answer.
-- **Trust codegraph results.** They come from a full AST parse. Do NOT re-verify them with grep — that's slower, less accurate, and wastes context.
-- **Don't grep first** when looking up a symbol by name. `codegraph_search` is faster and returns kind + location + signature in one call.
-- **Don't chain `codegraph_search` + `codegraph_node`** when you just want context — `codegraph_context` is one call.
-- **Don't loop `codegraph_node` over many symbols** — one `codegraph_explore` call returns several symbols' source grouped in a single capped call, while each separate node/Read call re-reads the whole context and costs far more.
-- **Index lag**: the file watcher debounces ~500ms behind writes; don't re-query immediately after editing a file in the same turn.
-
-### If `.codegraph/` doesn't exist
-
-The MCP server returns "not initialized." Ask the user: *"I notice this project doesn't have CodeGraph initialized. Want me to run `codegraph init -i` to build the index?"*
-<!-- CODEGRAPH_END -->
-
 ## State
 
 - Edit shader `raymarch_edit.frag` active always during editing; `raymarch_scene.frag` for export only; edit overlays force direct preview in path-trace mode
@@ -45,23 +9,23 @@ The MCP server returns "not initialized." Ask the user: *"I notice this project 
 - MaterialOverride has one `sdf` input, applies registry assets by stable `materialId`, and selects registry materials directly from Properties/inline node UI
 - MaterialGraph assets compile through `MaterialGraphCompiler` into `SdfMaterialSample` helpers consumed by deferred `sceneMaterial`
 - MaterialGraph input defaults live on consuming nodes and are overridden by connected sockets; link compatibility uses socket value type
-- `MaterialGraphPanel` has canvas editing with pan, zoom, embedded inputs, Add popup, Delete, socket linking, input-detach rewiring, node collapse, drop feedback, layout-only dragging
-- MaterialGraph semantic edits mark scene dirty because material graph constants/topology compile into scene GLSL helpers
-- MaterialGraph nodes include core color/float shaping ops, `Checker` color+factor outputs, active `ValueNoise` factor output, and load-only legacy `ValueNoisePattern` migration
+- `MaterialGraphPanel` uses a scene-node-graph style canvas with pan, zoom, embedded inputs, Add popup, Delete, socket linking, input-detach rewiring, node collapse, drop feedback, layout-only dragging, and material list docked on the right
+- MaterialGraph semantic edits mark scene dirty; nodes include core color/float shaping ops, `Checker` color+factor outputs, active `ValueNoise`, and load-only legacy `ValueNoisePattern` migration
 - Shared `GraphCanvas`/`GraphEditorCore` own canvas frame behavior and reusable graph drawing/hit primitives
-- `GlslEmitter` is 8 concern files; shared math owns domain transform expressions used by geometry and material emitters
+- `GlslEmitter` is 8 concern files; shared math owns domain transforms; primitive emitter supports Sphere/Box/Cylinder/Torus/Plane/Capsule/Cone/RoundBox
 - `SdfNodeDefinition` metadata owns parameter type: Float, Bool, Enum; UI must not infer bool/enum from numeric ranges
 - Node groups use App-owned `GraphGroupRegistry`; entered group subgraph is active editor/viewport/compiler/UI target
 - Viewport picking uses GPU node-id buffer (`GL_R32I`) and compiler-emitted `scenePickId`; CPU graph raymarch picking is removed
+- SDF node auto-layout keeps output-backward columns and assigns rows by DFS subtree ranges; disconnected whole-graph islands stack below the output tree
+- SDF graph links allow acyclic DAG fan-out/reuse; `GraphSystem` rejects cycles during link creation and serialized graph load
 - Union/SmoothUnion/Intersect/SmoothIntersect use one multi-input `inputs` socket; Viewport Add appends to output-root Union/SmoothUnion when possible
 - Runtime GLSL mode reads Float node params from SSBO binding 1; Float edits refresh SSBO only, Bool/Enum/topology recompile
-- Path-trace shader has GI bounces, Russian Roulette, solid environment color, GGX VNDF glossy sampling, NEE/MIS direct light, clamped emissive contribution, and accumulation
-- GlslEmitter perf batch complete: direct node-param SSBO slots, root `sceneSDFWithId`, and threaded material distances
-- Build/tests: full Debug app build passes; all `build\Debug\*_tests.exe` pass after Checker factor output
+- Path-trace shader has GI bounces, Russian Roulette, solid environment color, GGX VNDF glossy sampling, NEE/MIS direct light, shader-owned emissive surface sampling, clamped emissive contribution, and accumulation
+- Build/tests: full Debug app build passes; all `build\Debug\*_tests.exe` pass after Capsule/Cone/RoundBox primitive enablement
 
 ## Active
 
-Checker factor output is ready for review: Checker now acts like a procedural mask node with both Color and Float outputs, so it can drive MixColor/ColorRamp/PBR Float inputs directly.
+Capsule/Cone/RoundBox primitive enablement is ready for review: the existing stubbed node types are now exposed as Primitive nodes and compile through baked/runtime GLSL.
 
 ## Decisions
 
@@ -167,6 +131,11 @@ Checker factor output is ready for review: Checker now acts like a procedural ma
 - 2026-05 - MaterialGraph core shaping nodes are graph-owned helpers: `ColorRamp`, `AddColor`, `SubtractColor`, `PowerFloat`, and `ClampFloat`; material asset creation returns to one plain PBR `+ Material`
 - 2026-05 - MaterialGraph semantic edits raise scene dirty because graph constants, links, and nodes are compiled into GLSL helpers; names and layout stay non-render semantics
 - 2026-05 - MaterialGraph `CheckerPattern` exposes both `color` and `factor` outputs because procedural masks must drive Float inputs directly while still supporting colorized checker output
+- 2026-05 - Path-trace emissive surface sampling is shader-owned stochastic next-event estimation over visible emissive SDF hits; no compiler, MaterialSystem, or LightSystem ownership is added in this slice
+- 2026-05 - MaterialGraphPanel keeps material assets in a right-side list while the left side behaves like the scene node graph canvas; node creation stays in the graph popup instead of a top button grid
+- 2026-05 - SDF node auto-layout rows are DFS-assigned from Output backward; each child subtree owns its row range, and whole-graph disconnected islands stack below the output-connected tree
+- 2026-05 - SDF graphs support acyclic DAG fan-out so one source can feed direct and transformed branches; `GraphSystem` rejects cycles on link creation and graph data replacement
+- 2026-05 - Capsule, Cone, and RoundBox are active primitive SDF nodes with metadata-driven UI and baked/runtime GLSL emission
 
 ## Constraints
 
@@ -187,6 +156,7 @@ Checker factor output is ready for review: Checker now acts like a procedural ma
 - Do not add a generic NoiseMaterial node because multiple noise algorithms will coexist and names must stay specific
 - Do not route material graph ownership through renderer because material graph compilation belongs to compiler/UI layers
 - Do not reintroduce scene graph material source nodes because material assets belong in MaterialRegistry/MaterialGraph and MaterialOverride references them by `materialId`
+- Never allow cyclic SDF graph links because compiler/layout/validity traversals assume directed acyclic graph flow
 
 ## Environment
 
@@ -200,4 +170,4 @@ Checker factor output is ready for review: Checker now acts like a procedural ma
 
 ## Next
 
-Waiting for review of the Checker factor-output material graph slice before starting another backlog item.
+Waiting for review of the Capsule/Cone/RoundBox primitive enablement.

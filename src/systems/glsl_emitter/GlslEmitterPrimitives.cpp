@@ -26,6 +26,12 @@ std::string primitiveParamVec4(const SdfNode& node)
             parameterOr(node, "normalY", 1.0f),
             parameterOr(node, "normalZ", 0.0f),
             parameterOr(node, "offset", 0.0f));
+    case SdfNodeType::Capsule:
+        return glslVec4(parameterOr(node, "radius", 0.35f), parameterOr(node, "halfHeight", 1.0f), 0.0f, 0.0f);
+    case SdfNodeType::Cone:
+        return glslVec4(parameterOr(node, "radius", 1.0f), parameterOr(node, "halfHeight", 1.0f), 0.0f, 0.0f);
+    case SdfNodeType::RoundBox:
+        return glslVec4(parameterOr(node, "x", 1.0f), parameterOr(node, "y", 1.0f), parameterOr(node, "z", 1.0f), parameterOr(node, "radius", 0.15f));
     default:
         return glslVec4(0.0f, 0.0f, 0.0f, 0.0f);
     }
@@ -45,6 +51,19 @@ std::string primitiveParamComponent(const SdfNode& node, const SdfHelperEmitCont
             return glsl_emitter::glslFloat(component == 'x'
                 ? glsl_emitter::parameterOr(node, "majorRadius", 1.0f)
                 : glsl_emitter::parameterOr(node, "minorRadius", 0.25f));
+        case SdfNodeType::Capsule:
+            return glsl_emitter::glslFloat(component == 'x'
+                ? glsl_emitter::parameterOr(node, "radius", 0.35f)
+                : glsl_emitter::parameterOr(node, "halfHeight", 1.0f));
+        case SdfNodeType::Cone:
+            return glsl_emitter::glslFloat(component == 'x'
+                ? glsl_emitter::parameterOr(node, "radius", 1.0f)
+                : glsl_emitter::parameterOr(node, "halfHeight", 1.0f));
+        case SdfNodeType::RoundBox:
+            if (component == 'w') {
+                return glsl_emitter::glslFloat(glsl_emitter::parameterOr(node, "radius", 0.15f));
+            }
+            break;
         default:
             break;
         }
@@ -115,6 +134,24 @@ std::string emitPrimitiveGeometryExpression(const SdfNodePtr& node, const std::s
     case SdfNodeType::Plane: {
         return "(dot(" + pointExpr + ", " + planeNormalParam(*node, context, runtimeParamIdFor(node)) + ") + "
             + planeOffsetParam(*node, context, runtimeParamIdFor(node)) + ")";
+    }
+    case SdfNodeType::Capsule: {
+        const std::string radius = primitiveParamComponent(*node, context, runtimeParamIdFor(node), 'x');
+        const std::string halfHeight = primitiveParamComponent(*node, context, runtimeParamIdFor(node), 'y');
+        return "(length(vec3(" + pointExpr + ".x, " + pointExpr + ".y - clamp(" + pointExpr + ".y, -"
+            + halfHeight + ", " + halfHeight + "), " + pointExpr + ".z)) - " + radius + ")";
+    }
+    case SdfNodeType::Cone: {
+        result.usesCappedCone = true;
+        const std::string radius = primitiveParamComponent(*node, context, runtimeParamIdFor(node), 'x');
+        const std::string halfHeight = primitiveParamComponent(*node, context, runtimeParamIdFor(node), 'y');
+        return "sdf3d_capped_cone(" + pointExpr + ", " + radius + ", " + halfHeight + ")";
+    }
+    case SdfNodeType::RoundBox: {
+        result.usesBox = true;
+        const std::string box = primitiveVec3Param(*node, context, runtimeParamIdFor(node));
+        const std::string radius = primitiveParamComponent(*node, context, runtimeParamIdFor(node), 'w');
+        return "(sdf3d_box(" + pointExpr + ", " + box + ") - " + radius + ")";
     }
     default:
         result.errors.push_back("Unsupported primitive node type in geometry helper emission: " + glslNodeTypeName(node->type));

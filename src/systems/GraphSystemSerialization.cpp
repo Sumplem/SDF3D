@@ -1,6 +1,7 @@
 #include "sdf3d/systems/GraphSystem.h"
 
 #include <algorithm>
+#include <unordered_set>
 #include <utility>
 
 namespace sdf3d {
@@ -64,6 +65,43 @@ bool linksRespectInputCardinality(const std::unordered_map<SdfGraphNodeId, SdfGr
     return true;
 }
 
+bool hasCycleFrom(
+    const std::vector<SdfGraphLink>& links,
+    SdfGraphNodeId id,
+    std::unordered_set<SdfGraphNodeId>& visiting,
+    std::unordered_set<SdfGraphNodeId>& visited)
+{
+    if (visited.find(id) != visited.end()) {
+        return false;
+    }
+    if (!visiting.insert(id).second) {
+        return true;
+    }
+
+    for (const SdfGraphLink& link : links) {
+        if (link.fromNode == id && hasCycleFrom(links, link.toNode, visiting, visited)) {
+            return true;
+        }
+    }
+
+    visiting.erase(id);
+    visited.insert(id);
+    return false;
+}
+
+bool linksHaveCycle(const std::unordered_map<SdfGraphNodeId, SdfGraphNode>& nodes, const std::vector<SdfGraphLink>& links)
+{
+    std::unordered_set<SdfGraphNodeId> visiting;
+    std::unordered_set<SdfGraphNodeId> visited;
+    for (const auto& [id, node] : nodes) {
+        (void)node;
+        if (hasCycleFrom(links, id, visiting, visited)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 bool GraphSystem::replaceGraphData(
@@ -114,6 +152,9 @@ bool GraphSystem::replaceGraphData(
         }
     }
     if (!linksRespectInputCardinality(nodes, links)) {
+        return false;
+    }
+    if (linksHaveCycle(nodes, links)) {
         return false;
     }
 
