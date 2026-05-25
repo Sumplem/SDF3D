@@ -151,24 +151,10 @@ std::string emitMaterialGeometryExpression(const SdfNodePtr& node, const std::st
         result.errors.push_back("MaterialOverride node has no SDF input.");
         return "1e6";
     }
-    if (node->children.size() > 2 || (node->children.size() > 1 && !isSdfMaterialNode(node->children[1]->type))) {
+    if (node->children.size() > 1) {
         result.errors.push_back("MaterialOverride node ignores extra children.");
     }
     return helperCallFor(node->children.front(), pointExpr, context);
-}
-
-std::string emitMaterialNodeSample(
-    const SdfNodePtr& node,
-    const std::string& pointExpr,
-    SdfCompileResult& result,
-    const MaterialSystem& materialSystem)
-{
-    const std::string graphCall = materialGraphCall(node, pointExpr, result);
-    if (!graphCall.empty()) {
-        return graphCall;
-    }
-    const int materialId = materialSystem.appendMaterial(result, node->material);
-    return sampleMaterialCall(materialId, pointExpr);
 }
 
 namespace {
@@ -187,11 +173,6 @@ MaterialEval emitMaterialEvalFor(
     }
 
     switch (node->type) {
-    case SdfNodeType::SolidMaterial:
-    case SdfNodeType::CheckerMaterial:
-    case SdfNodeType::ValueNoiseMaterial:
-        return {"", emitMaterialNodeSample(node, pointExpr, result, context.materialSystem), "1e6"};
-
     case SdfNodeType::Sphere:
     case SdfNodeType::Box:
     case SdfNodeType::Cylinder:
@@ -204,15 +185,10 @@ MaterialEval emitMaterialEvalFor(
             result.errors.push_back("MaterialOverride node has no SDF input.");
             return {"", defaultMaterial(pointExpr), "1e6"};
         }
-        if (node->children.size() > 2 || (node->children.size() > 1 && !isSdfMaterialNode(node->children[1]->type))) {
+        if (node->children.size() > 1) {
             result.errors.push_back("MaterialOverride node ignores extra children.");
         }
 
-        if (node->children.size() > 1 && isSdfMaterialNode(node->children[1]->type)) {
-            MaterialEval material = emitMaterialEvalFor(node->children[1], pointExpr, result, sdfHelpers, mode, context);
-            material.distance = helperDistanceFor(node, pointExpr, result, sdfHelpers);
-            return material;
-        }
         const std::string graphCall = materialGraphCall(node, pointExpr, result);
         if (!graphCall.empty()) {
             return {"", graphCall, helperDistanceFor(node, pointExpr, result, sdfHelpers)};

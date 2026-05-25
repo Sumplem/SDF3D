@@ -70,6 +70,9 @@ public:
     /// Deletes one unreferenced registry material by stable ID.
     static bool deleteMaterial(SdfGraph& graph, MaterialId id);
 
+    /// Assigns a registry material to a MaterialOverride node.
+    static bool assignMaterialToNode(SdfGraph& graph, SdfGraphNodeId nodeId, MaterialId materialId);
+
     /// Connects one node output to a named input socket on another node.
     static bool link(SdfGraph& graph, SdfGraphNodeId fromNode, SdfGraphNodeId toNode, std::string toSocket);
 

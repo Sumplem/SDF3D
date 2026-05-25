@@ -211,16 +211,15 @@ void testMaterialRegistryRenameAndSafeDelete(std::vector<TestFailure>& failures)
     const std::string testName = "material registry rename and safe delete";
     sdf3d::SdfGraph graph;
 
-    const sdf3d::SdfGraphNodeId materialNodeId = graph.createNode(sdf3d::SdfNodeType::SolidMaterial, "Paint");
-    sdf3d::SdfGraphNode* materialNode = graph.node(materialNodeId);
-    expect(materialNode != nullptr && materialNode->payload.materialId != 0, testName, "Expected material node with registry id.", failures);
-    if (materialNode == nullptr) {
-        return;
-    }
+    sdf3d::SdfMaterial material;
+    material.albedo = {0.2f, 0.3f, 0.4f};
+    const sdf3d::MaterialId referencedId = graph.materials().createMaterial("Paint", material);
+    const sdf3d::SdfGraphNodeId overrideNodeId = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Apply Paint");
+    expect(sdf3d::GraphSystem::assignMaterialToNode(graph, overrideNodeId, referencedId), testName, "Expected material assignment.", failures);
 
-    const sdf3d::MaterialId referencedId = materialNode->payload.materialId;
     expect(sdf3d::GraphSystem::renameMaterial(graph, referencedId, "Renamed Paint"), testName, "Expected material rename.", failures);
-    expect(materialNode->payload.name == "Renamed Paint", testName, "Expected material node name to follow registry rename.", failures);
+    const sdf3d::SdfGraphNode* overrideNode = graph.node(overrideNodeId);
+    expect(overrideNode != nullptr && overrideNode->payload.name == "Renamed Paint", testName, "Expected override name to follow registry rename.", failures);
     const sdf3d::MaterialDefinition* renamed = graph.materials().material(referencedId);
     expect(renamed != nullptr && renamed->name == "Renamed Paint", testName, "Expected registry name updated.", failures);
 
@@ -228,98 +227,55 @@ void testMaterialRegistryRenameAndSafeDelete(std::vector<TestFailure>& failures)
     expect(!sdf3d::GraphSystem::deleteMaterial(graph, referencedId), testName, "Expected referenced material delete to fail.", failures);
     expect(graph.materials().material(referencedId) != nullptr, testName, "Expected referenced material preserved.", failures);
 
+    expect(graph.deleteNode(overrideNodeId), testName, "Expected override delete.", failures);
+    expect(graph.materials().material(referencedId) == nullptr, testName, "Expected unreferenced assigned material auto-removed.", failures);
+
     const sdf3d::MaterialId orphanId = graph.materials().createMaterial("Orphan");
     expect(sdf3d::GraphSystem::canDeleteMaterial(graph, orphanId), testName, "Expected orphan material deletable.", failures);
     expect(sdf3d::GraphSystem::deleteMaterial(graph, orphanId), testName, "Expected orphan material delete.", failures);
     expect(graph.materials().material(orphanId) == nullptr, testName, "Expected orphan material removed.", failures);
 }
 
-void testMaterialSourceDeleteCleansUnreferencedRegistryEntry(std::vector<TestFailure>& failures)
+void testAssignMaterialToOverrideUsesRegistryMaterial(std::vector<TestFailure>& failures)
 {
-    const std::string testName = "material source delete cleans unreferenced registry entry";
+    const std::string testName = "assign material to override uses registry material";
     sdf3d::SdfGraph graph;
 
-    const sdf3d::SdfGraphNodeId materialNodeId = graph.createNode(sdf3d::SdfNodeType::CheckerMaterial, "Paint");
-    const sdf3d::SdfGraphNode* materialNode = graph.node(materialNodeId);
-    expect(materialNode != nullptr && materialNode->payload.materialId != 0, testName, "Expected material node with registry id.", failures);
-    if (materialNode == nullptr) {
-        return;
-    }
-
-    const sdf3d::MaterialId materialId = materialNode->payload.materialId;
-    expect(graph.materials().material(materialId) != nullptr, testName, "Expected registry material before delete.", failures);
-    expect(graph.deleteNode(materialNodeId), testName, "Expected material node delete.", failures);
-    expect(graph.materials().material(materialId) == nullptr, testName, "Expected unreferenced registry material removed.", failures);
-}
-
-void testMaterialSourceDeleteKeepsRegistryEntryReferencedByOverride(std::vector<TestFailure>& failures)
-{
-    const std::string testName = "material source delete keeps registry entry referenced by override";
-    sdf3d::SdfGraph graph;
-
-    const sdf3d::SdfGraphNodeId materialNodeId = graph.createNode(sdf3d::SdfNodeType::SolidMaterial, "Paint");
-    const sdf3d::SdfGraphNodeId linkedOverrideNodeId = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Apply Paint");
-    const sdf3d::SdfGraphNodeId otherOverrideNodeId = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Other Paint");
-    const sdf3d::SdfGraphNode* materialNode = graph.node(materialNodeId);
-    expect(materialNode != nullptr && materialNode->payload.materialId != 0, testName, "Expected material node with registry id.", failures);
-    if (materialNode == nullptr) {
-        return;
-    }
-
-    const sdf3d::MaterialId materialId = materialNode->payload.materialId;
-    if (sdf3d::SdfGraphNode* otherOverride = graph.node(otherOverrideNodeId)) {
-        otherOverride->payload.materialId = materialId;
-    }
-    expect(graph.link(materialNodeId, "material", linkedOverrideNodeId, "material"), testName, "Expected material link.", failures);
-    const sdf3d::SdfGraphNode* linkedOverride = graph.node(linkedOverrideNodeId);
-    expect(linkedOverride != nullptr && linkedOverride->payload.materialId == materialId, testName, "Expected linked override to reference material id.", failures);
-    expect(graph.deleteNode(materialNodeId), testName, "Expected material node delete.", failures);
-    expect(graph.materials().material(materialId) != nullptr, testName, "Expected referenced registry material preserved.", failures);
-    linkedOverride = graph.node(linkedOverrideNodeId);
-    const sdf3d::SdfGraphNode* otherOverride = graph.node(otherOverrideNodeId);
-    expect(linkedOverride != nullptr && linkedOverride->payload.materialId == 0, testName, "Expected directly linked override cleared.", failures);
-    expect(otherOverride != nullptr && otherOverride->payload.materialId == materialId, testName, "Expected other override still referencing material.", failures);
-    expect(graph.deleteNode(otherOverrideNodeId), testName, "Expected other override delete.", failures);
-    expect(graph.materials().material(materialId) == nullptr, testName, "Expected unreferenced registry material removed.", failures);
-}
-
-void testMaterialSourceDeleteClearsDirectOverrideReference(std::vector<TestFailure>& failures)
-{
-    const std::string testName = "material source delete clears direct override reference";
-    sdf3d::SdfGraph graph;
-
-    const sdf3d::SdfGraphNodeId materialNodeId = graph.createNode(sdf3d::SdfNodeType::SolidMaterial, "Paint");
     const sdf3d::SdfGraphNodeId overrideNodeId = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Apply Paint");
-    const sdf3d::SdfGraphNode* materialNode = graph.node(materialNodeId);
-    expect(materialNode != nullptr && materialNode->payload.materialId != 0, testName, "Expected material node with registry id.", failures);
-    if (materialNode == nullptr) {
-        return;
+    sdf3d::SdfMaterial paint;
+    paint.albedo = {0.15f, 0.25f, 0.35f};
+    const sdf3d::MaterialId materialId = graph.materials().createMaterial("Assigned Paint", paint);
+    if (sdf3d::MaterialDefinition* material = graph.materials().material(materialId)) {
+        material->name = "Assigned Paint";
     }
 
-    const sdf3d::MaterialId materialId = materialNode->payload.materialId;
-    expect(graph.link(materialNodeId, "material", overrideNodeId, "material"), testName, "Expected material link.", failures);
-    expect(graph.deleteNode(materialNodeId), testName, "Expected material node delete.", failures);
+    expect(sdf3d::GraphSystem::assignMaterialToNode(graph, overrideNodeId, materialId), testName, "Expected material assignment.", failures);
     const sdf3d::SdfGraphNode* overrideNode = graph.node(overrideNodeId);
-    expect(overrideNode != nullptr && overrideNode->payload.materialId == 0, testName, "Expected override reset to default material.", failures);
-    expect(graph.materials().material(materialId) == nullptr, testName, "Expected registry material removed.", failures);
+    expect(overrideNode != nullptr && overrideNode->payload.materialId == materialId, testName, "Expected override material id assigned.", failures);
+    expect(overrideNode != nullptr && overrideNode->payload.material.albedo.z == 0.35f, testName, "Expected override material payload synced.", failures);
+    expect(overrideNode != nullptr && overrideNode->payload.name == "Assigned Paint", testName, "Expected override display name synced.", failures);
 }
 
-void testUnlinkMaterialInputClearsOverrideMaterial(std::vector<TestFailure>& failures)
+void testAssignMaterialToOverrideReassignsRegistryMaterial(std::vector<TestFailure>& failures)
 {
-    const std::string testName = "unlink material input clears override material";
+    const std::string testName = "assign material to override reassigns registry material";
     sdf3d::SdfGraph graph;
 
-    const sdf3d::SdfGraphNodeId materialNodeId = graph.createNode(sdf3d::SdfNodeType::SolidMaterial, "Paint");
     const sdf3d::SdfGraphNodeId overrideNodeId = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Apply Paint");
-    const sdf3d::SdfGraphNode* materialNode = graph.node(materialNodeId);
-    const sdf3d::MaterialId materialId = materialNode != nullptr ? materialNode->payload.materialId : 0;
-    expect(graph.link(materialNodeId, "material", overrideNodeId, "material"), testName, "Expected material link.", failures);
-    const sdf3d::SdfGraphNode* linkedOverride = graph.node(overrideNodeId);
-    expect(linkedOverride != nullptr && linkedOverride->payload.materialId == materialId, testName, "Expected linked override material.", failures);
+    sdf3d::SdfMaterial first;
+    first.albedo = {1.0f, 0.0f, 0.0f};
+    sdf3d::SdfMaterial second;
+    second.albedo = {0.0f, 0.0f, 1.0f};
+    const sdf3d::MaterialId firstId = graph.materials().createMaterial("First", first);
+    const sdf3d::MaterialId secondId = graph.materials().createMaterial("Second", second);
 
-    expect(graph.unlink(materialNodeId, "material", overrideNodeId, "material"), testName, "Expected material unlink.", failures);
-    const sdf3d::SdfGraphNode* unlinkedOverride = graph.node(overrideNodeId);
-    expect(unlinkedOverride != nullptr && unlinkedOverride->payload.materialId == 0, testName, "Expected override to use default material.", failures);
+    expect(sdf3d::GraphSystem::assignMaterialToNode(graph, overrideNodeId, firstId), testName, "Expected first material assignment.", failures);
+    expect(sdf3d::GraphSystem::assignMaterialToNode(graph, overrideNodeId, secondId), testName, "Expected second material assignment.", failures);
+    const sdf3d::SdfGraphNode* overrideNode = graph.node(overrideNodeId);
+    expect(overrideNode != nullptr && overrideNode->payload.materialId == secondId, testName, "Expected reassigned material id.", failures);
+    expect(overrideNode != nullptr && overrideNode->payload.material.albedo.z == 1.0f, testName, "Expected reassigned material payload.", failures);
+    expect(overrideNode != nullptr && overrideNode->payload.name == "Second", testName, "Expected reassigned display name.", failures);
+    expect(!sdf3d::GraphSystem::assignMaterialToNode(graph, overrideNodeId, 999), testName, "Expected missing material rejected.", failures);
 }
 
 void testCollectNodeParamsPacksTransformValues(std::vector<TestFailure>& failures)
@@ -692,10 +648,8 @@ int main()
     testLoweredRequiredInputRules(failures);
     testChangeMultiInputBooleanTypePreservesLinks(failures);
     testMaterialRegistryRenameAndSafeDelete(failures);
-    testMaterialSourceDeleteCleansUnreferencedRegistryEntry(failures);
-    testMaterialSourceDeleteKeepsRegistryEntryReferencedByOverride(failures);
-    testMaterialSourceDeleteClearsDirectOverrideReference(failures);
-    testUnlinkMaterialInputClearsOverrideMaterial(failures);
+    testAssignMaterialToOverrideUsesRegistryMaterial(failures);
+    testAssignMaterialToOverrideReassignsRegistryMaterial(failures);
     testCollectNodeParamsPacksTransformValues(failures);
     testCollectNodeParamsNormalizesRotateQuaternion(failures);
     testCollectNodeParamsPacksPrimitiveAndSmoothValues(failures);

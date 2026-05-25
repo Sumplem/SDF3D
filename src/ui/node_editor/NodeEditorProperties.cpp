@@ -89,6 +89,30 @@ bool drawMaterialTypeCombo(const std::string& id, SdfMaterial& material)
     return true;
 }
 
+bool drawMaterialAssignmentCombo(const std::string& id, SdfGraph& graph, SdfGraphNodeId nodeId, MaterialId currentMaterialId)
+{
+    const MaterialDefinition* current = graph.materials().material(currentMaterialId);
+    const std::string preview = current == nullptr ? "None" : current->name;
+    if (!ImGui::BeginCombo(id.c_str(), preview.c_str())) {
+        return false;
+    }
+
+    bool changed = false;
+    for (const MaterialDefinition& material : graph.materials().materials()) {
+        const bool selected = material.id == currentMaterialId;
+        const std::string label = material.name + " #" + std::to_string(material.id);
+        if (ImGui::Selectable(label.c_str(), selected)) {
+            changed = GraphSystem::assignMaterialToNode(graph, nodeId, material.id);
+        }
+        if (selected) {
+            ImGui::SetItemDefaultFocus();
+        }
+    }
+
+    ImGui::EndCombo();
+    return changed;
+}
+
 std::vector<std::string> orderedParameterKeys(const SdfNode& node, std::unordered_map<std::string, SdfParameterDefinition>& parameterDefinitions)
 {
     std::vector<std::string> keys;
@@ -165,88 +189,11 @@ EditorDirtyState drawNodeInlineProperties(SdfGraph& graph, GraphGroupRegistry& g
     ImGui::PopStyleVar();
     y += rowHeight;
 
-    if (isSdfMaterialNode(node.type)) {
-        SdfMaterial* material = &node.material;
-        MaterialDefinition* selectedDefinition = nullptr;
-        if (node.materialId != 0) {
-            if (MaterialDefinition* definition = graph.materials().material(node.materialId)) {
-                selectedDefinition = definition;
-                material = &definition->material;
-            }
-        }
-
-        material->type = sdfMaterialTypeForNode(node.type);
-
-        drawLabel(frame, {layout.contentPosition.x, y + scaleValue(frame, 3.0f)}, "Albedo");
+    if (node.type == SdfNodeType::MaterialOverride) {
+        drawLabel(frame, {layout.contentPosition.x, y + scaleValue(frame, 3.0f)}, "Material");
         setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
-        if (ImGui::ColorEdit3(("##node-albedo-" + std::to_string(layout.id)).c_str(), &material->albedo.x, ImGuiColorEditFlags_NoInputs)) {
-            node.material = *material;
-            if (selectedDefinition != nullptr) {
-                selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
-            }
-            dirty.material = true;
-        }
-        ImGui::PopStyleVar();
-        y += rowHeight;
-
-        if (isSdfPatternMaterialNode(node.type)) {
-            drawLabel(frame, {layout.contentPosition.x, y + scaleValue(frame, 3.0f)}, "Secondary");
-            setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
-            if (ImGui::ColorEdit3(("##node-secondary-" + std::to_string(layout.id)).c_str(), &material->secondaryAlbedo.x, ImGuiColorEditFlags_NoInputs)) {
-                node.material = *material;
-                if (selectedDefinition != nullptr) {
-                    selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
-                }
-                dirty.material = true;
-            }
-            ImGui::PopStyleVar();
-            y += rowHeight;
-
-            drawLabel(frame, {layout.contentPosition.x, y + scaleValue(frame, 3.0f)}, "Pattern");
-            setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
-            if (ImGui::DragFloat(("##node-pattern-scale-" + std::to_string(layout.id)).c_str(), &material->patternScale, 0.1f, 0.001f, 100.0f, "%.2f")) {
-                node.material = *material;
-                if (selectedDefinition != nullptr) {
-                    selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
-                }
-                dirty.material = true;
-            }
-            ImGui::PopStyleVar();
-            y += rowHeight;
-        }
-
-        drawLabel(frame, {layout.contentPosition.x, y + scaleValue(frame, 3.0f)}, "Roughness");
-        setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
-        if (ImGui::DragFloat(("##node-roughness-" + std::to_string(layout.id)).c_str(), &material->roughness, 0.01f, 0.0f, 1.0f, "%.2f")) {
-            node.material = *material;
-            if (selectedDefinition != nullptr) {
-                selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
-            }
-            dirty.material = true;
-        }
-        ImGui::PopStyleVar();
-        y += rowHeight;
-
-        drawLabel(frame, {layout.contentPosition.x, y + scaleValue(frame, 3.0f)}, "Metallic");
-        setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
-        if (ImGui::DragFloat(("##node-metallic-" + std::to_string(layout.id)).c_str(), &material->metallic, 0.01f, 0.0f, 1.0f, "%.2f")) {
-            node.material = *material;
-            if (selectedDefinition != nullptr) {
-                selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
-            }
-            dirty.material = true;
-        }
-        ImGui::PopStyleVar();
-        y += rowHeight;
-
-        drawLabel(frame, {layout.contentPosition.x, y + scaleValue(frame, 3.0f)}, "Emission");
-        setInlineFieldCursor({fieldX, y}, fieldWidth, fieldHeight);
-        if (ImGui::DragFloat(("##node-emission-" + std::to_string(layout.id)).c_str(), &material->emission, 0.01f, 0.0f, 100.0f, "%.2f")) {
-            node.material = *material;
-            if (selectedDefinition != nullptr) {
-                selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
-            }
-            dirty.material = true;
+        if (drawMaterialAssignmentCombo(("##node-material-asset-" + std::to_string(layout.id)).c_str(), graph, layout.id, node.materialId)) {
+            dirty.scene = true;
         }
         ImGui::PopStyleVar();
         y += rowHeight;

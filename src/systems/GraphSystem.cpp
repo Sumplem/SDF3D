@@ -50,49 +50,6 @@ float parameterOr(const SdfNode& node, const std::string& key, float fallback)
     return it == node.parameters.end() ? fallback : it->second;
 }
 
-void clearMaterialOverrideIfMaterialInputRemoved(
-    std::unordered_map<SdfGraphNodeId, SdfGraphNode>& nodes,
-    SdfGraphNodeId toNode,
-    const std::string& toSocket)
-{
-    if (toSocket != "material") {
-        return;
-    }
-
-    const auto it = nodes.find(toNode);
-    if (it == nodes.end() || it->second.payload.type != SdfNodeType::MaterialOverride) {
-        return;
-    }
-
-    it->second.payload.materialId = 0;
-    it->second.payload.material = {};
-}
-
-std::vector<SdfGraphNodeId> materialOverridesUsingDeletedSource(
-    const std::unordered_map<SdfGraphNodeId, SdfGraphNode>& nodes,
-    const std::vector<SdfGraphLink>& links,
-    SdfGraphNodeId sourceId,
-    MaterialId materialId)
-{
-    std::vector<SdfGraphNodeId> overrideIds;
-    if (materialId == 0) {
-        return overrideIds;
-    }
-
-    for (const SdfGraphLink& link : links) {
-        if (link.fromNode != sourceId || link.fromSocket != "material" || link.toSocket != "material") {
-            continue;
-        }
-
-        const auto it = nodes.find(link.toNode);
-        if (it != nodes.end() && it->second.payload.type == SdfNodeType::MaterialOverride && it->second.payload.materialId == materialId) {
-            overrideIds.push_back(link.toNode);
-        }
-    }
-
-    return overrideIds;
-}
-
 bool nodeHasSdfOutput(const SdfGraphNode& node)
 {
     return findSocket(node.outputs, "sdf", SdfSocketDirection::Output) != nullptr;
@@ -226,13 +183,7 @@ SdfGraphNodeId GraphSystem::createNode(SdfGraph& graph, SdfNodeType type, std::s
         payload->name = std::move(name);
     }
     payload->stableId = id;
-    if (isSdfMaterialNode(type)) {
-        payload->material.type = sdfMaterialTypeForNode(type);
-    }
     SdfGraphNode graphNode{id, *payload, 0.0f, 0.0f};
-    if (isSdfMaterialNode(type)) {
-        graphNode.payload.materialId = graph.m_materials.createMaterial(graphNode.payload.name.empty() ? "Material" : graphNode.payload.name, graphNode.payload.material);
-    }
     graphNode.inputs = defaultInputsFor(type);
     graphNode.outputs = defaultOutputsFor(type);
 
@@ -522,23 +473,10 @@ bool GraphSystem::deleteNode(SdfGraph& graph, SdfGraphNodeId id)
     if (nodeIt == graph.m_nodes.end()) {
         return false;
     }
-    if (isSdfMaterialNode(nodeIt->second.payload.type)
-        || nodeIt->second.payload.type == SdfNodeType::MaterialOverride) {
+    if (nodeIt->second.payload.type == SdfNodeType::MaterialOverride) {
         materialIdToCleanup = nodeIt->second.payload.materialId;
     }
-    const std::vector<SdfGraphNodeId> linkedOverridesToClear = isSdfMaterialNode(nodeIt->second.payload.type)
-        ? materialOverridesUsingDeletedSource(graph.m_nodes, graph.m_links, id, materialIdToCleanup)
-        : std::vector<SdfGraphNodeId>{};
-
     graph.m_nodes.erase(nodeIt);
-
-    for (const SdfGraphNodeId overrideId : linkedOverridesToClear) {
-        const auto overrideIt = graph.m_nodes.find(overrideId);
-        if (overrideIt != graph.m_nodes.end() && overrideIt->second.payload.materialId == materialIdToCleanup) {
-            overrideIt->second.payload.materialId = 0;
-            overrideIt->second.payload.material = {};
-        }
-    }
 
     graph.m_links.erase(std::remove_if(graph.m_links.begin(), graph.m_links.end(),
                             [id](const SdfGraphLink& link) {
@@ -600,6 +538,20 @@ bool GraphSystem::deleteMaterial(SdfGraph& graph, MaterialId id)
     return graph.m_materials.removeMaterial(id);
 }
 
+bool GraphSystem::assignMaterialToNode(SdfGraph& graph, SdfGraphNodeId nodeId, MaterialId materialId)
+{
+    SdfGraphNode* node = graph.node(nodeId);
+    const MaterialDefinition* material = graph.m_materials.material(materialId);
+    if (node == nullptr || material == nullptr || node->payload.type != SdfNodeType::MaterialOverride) {
+        return false;
+    }
+
+    node->payload.materialId = materialId;
+    node->payload.material = material->material;
+    node->payload.name = material->name;
+    return true;
+}
+
 bool GraphSystem::link(SdfGraph& graph, SdfGraphNodeId fromNode, SdfGraphNodeId toNode, std::string toSocket)
 {
     return link(graph, fromNode, "sdf", toNode, std::move(toSocket));
@@ -641,12 +593,6 @@ bool GraphSystem::link(SdfGraph& graph, SdfGraphNodeId fromNode, std::string fro
     // AGENT: Links carry both sockets, matching Geometry Nodes semantics
     // while preserving default `sdf` output path.
     graph.m_links.push_back({fromNode, std::move(fromSocket), toNode, std::move(toSocket)});
-    if (toIt->second.payload.type == SdfNodeType::MaterialOverride && graph.m_links.back().toSocket == "material") {
-        toIt->second.payload.materialId = fromIt->second.payload.materialId;
-        if (const MaterialDefinition* material = graph.m_materials.material(fromIt->second.payload.materialId)) {
-            toIt->second.payload.material = material->material;
-        }
-    }
     return true;
 }
 
@@ -659,9 +605,6 @@ bool GraphSystem::unlinkInput(SdfGraph& graph, SdfGraphNodeId toNode, const std:
                             }),
         graph.m_links.end());
 
-    if (graph.m_links.size() != oldSize) {
-        clearMaterialOverrideIfMaterialInputRemoved(graph.m_nodes, toNode, toSocket);
-    }
     return graph.m_links.size() != oldSize;
 }
 
@@ -677,9 +620,6 @@ bool GraphSystem::unlink(SdfGraph& graph, SdfGraphNodeId fromNode, const std::st
                             }),
         graph.m_links.end());
 
-    if (graph.m_links.size() != oldSize) {
-        clearMaterialOverrideIfMaterialInputRemoved(graph.m_nodes, toNode, toSocket);
-    }
     return graph.m_links.size() != oldSize;
 }
 

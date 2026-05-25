@@ -21,6 +21,10 @@ constexpr float SOCKET_LABEL_OFFSET_Y = 18.0f;
 constexpr float EMBEDDED_INPUT_OFFSET_Y = 24.0f;
 constexpr float MIN_ZOOM = 0.4f;
 constexpr float MAX_ZOOM = 2.0f;
+constexpr float SOCKET_HIT_RADIUS = 12.0f;
+constexpr float INPUT_DROP_ROW_PAD_X = 12.0f;
+constexpr float INPUT_DROP_ROW_PAD_Y = 14.0f;
+constexpr float COLLAPSED_SOCKET_SPACING = 14.0f;
 
 struct MaterialNodeLayout {
     MaterialGraphNodeId id = 0;
@@ -48,10 +52,24 @@ const char* displayName(MaterialGraphNodeType type)
         return "Float";
     case MaterialGraphNodeType::MixColor:
         return "Mix Color";
+    case MaterialGraphNodeType::MultiplyColor:
+        return "Multiply Color";
+    case MaterialGraphNodeType::ColorRamp:
+        return "Color Ramp";
+    case MaterialGraphNodeType::AddColor:
+        return "Add Color";
+    case MaterialGraphNodeType::SubtractColor:
+        return "Subtract Color";
+    case MaterialGraphNodeType::PowerFloat:
+        return "Power Float";
+    case MaterialGraphNodeType::ClampFloat:
+        return "Clamp Float";
     case MaterialGraphNodeType::CheckerPattern:
         return "Checker";
-    case MaterialGraphNodeType::ValueNoisePattern:
+    case MaterialGraphNodeType::ValueNoise:
         return "Value Noise";
+    case MaterialGraphNodeType::ValueNoisePattern:
+        return "Value Noise Legacy";
     case MaterialGraphNodeType::MaterialOutput:
         return "Material Output";
     }
@@ -96,13 +114,24 @@ bool drawName(const char* label, std::string& name)
     return true;
 }
 
+MaterialId createMaterialAsset(SdfGraph& graph, std::string name, SdfMaterial material)
+{
+    return graph.materials().createMaterial(std::move(name), material);
+}
+
 float nodeHeight(const MaterialGraphNode& node)
 {
+    if (node.editorCollapsed) {
+        const float rows = static_cast<float>(std::max(materialGraphInputs(node.type).size(), materialGraphOutputs(node.type).size()));
+        return TITLE_HEIGHT + 18.0f + std::max(1.0f, rows) * COLLAPSED_SOCKET_SPACING;
+    }
+
     const float inputRows = static_cast<float>(materialGraphInputs(node.type).size());
     const float outputRows = static_cast<float>(materialGraphOutputs(node.type).size());
     float rows = std::max(inputRows, outputRows);
     switch (node.type) {
     case MaterialGraphNodeType::ColorConstant:
+    case MaterialGraphNodeType::ColorRamp:
         rows += 2.0f;
         break;
     case MaterialGraphNodeType::FloatConstant:
@@ -134,6 +163,122 @@ bool hasInputLink(const MaterialGraph& graph, MaterialGraphNodeId node, const st
     return false;
 }
 
+float* embeddedFloatValue(MaterialGraphNode& node, const std::string& socketName)
+{
+    if (socketName == "roughness") {
+        return &node.roughness;
+    }
+    if (socketName == "metallic") {
+        return &node.metallic;
+    }
+    if (socketName == "emission") {
+        return &node.emission;
+    }
+    if (socketName == "exponent" || socketName == "min") {
+        return &node.secondaryValue;
+    }
+    if (socketName == "max") {
+        return &node.tertiaryValue;
+    }
+    return &node.value;
+}
+
+std::optional<MaterialGraphLink> inputLink(const MaterialGraph& graph, MaterialGraphNodeId node, const std::string& socket)
+{
+    for (const MaterialGraphLink& link : graph.links()) {
+        if (link.toNode == node && link.toSocket == socket) {
+            return link;
+        }
+    }
+    return std::nullopt;
+}
+
+bool materialSocketsCompatible(const MaterialGraph& graph, MaterialGraphNodeId fromNode, const std::string& fromSocket, MaterialGraphNodeId toNode, const std::string& toSocket)
+{
+    const MaterialGraphNode* from = graph.node(fromNode);
+    const MaterialGraphNode* to = graph.node(toNode);
+    if (from == nullptr || to == nullptr || fromNode == toNode) {
+        return false;
+    }
+
+    const std::vector<MaterialGraphSocket> outputs = materialGraphOutputs(from->type);
+    const std::vector<MaterialGraphSocket> inputs = materialGraphInputs(to->type);
+    const MaterialGraphSocket* output = findMaterialGraphSocket(outputs, fromSocket);
+    const MaterialGraphSocket* input = findMaterialGraphSocket(inputs, toSocket);
+    return output != nullptr && input != nullptr && output->type == input->type;
+}
+
+std::optional<MaterialGraphSocketType> materialInputType(const MaterialGraph& graph, MaterialGraphNodeId nodeId, const std::string& socketName)
+{
+    const MaterialGraphNode* node = graph.node(nodeId);
+    if (node == nullptr) {
+        return std::nullopt;
+    }
+
+    const std::vector<MaterialGraphSocket> inputs = materialGraphInputs(node->type);
+    const MaterialGraphSocket* socket = findMaterialGraphSocket(inputs, socketName);
+    if (socket == nullptr) {
+        return std::nullopt;
+    }
+    return socket->type;
+}
+
+std::optional<std::string> firstOutputSocketOfType(MaterialGraphNodeType type, MaterialGraphSocketType socketType)
+{
+    for (const MaterialGraphSocket& socket : materialGraphOutputs(type)) {
+        if (socket.type == socketType) {
+            return socket.name;
+        }
+    }
+    return std::nullopt;
+}
+
+bool canCreateNodeForInput(MaterialGraphNodeType type, MaterialGraphSocketType socketType)
+{
+    return firstOutputSocketOfType(type, socketType).has_value();
+}
+
+bool isDetachedPreviewLink(
+    const MaterialGraphLink& link,
+    MaterialGraphNodeId detachedToNode,
+    const std::string& detachedToSocket)
+{
+    return detachedToNode != 0 && link.toNode == detachedToNode && link.toSocket == detachedToSocket;
+}
+
+bool commitLinkDrop(
+    MaterialGraph& graph,
+    MaterialGraphNodeId fromNode,
+    const std::string& fromSocket,
+    MaterialGraphNodeId toNode,
+    const std::string& toSocket,
+    MaterialGraphNodeId detachedToNode,
+    const std::string& detachedToSocket)
+{
+    if (detachedToNode == toNode && detachedToSocket == toSocket) {
+        graph.setSelectedNode(toNode);
+        return false;
+    }
+
+    if (detachedToNode == 0) {
+        return graph.link(fromNode, fromSocket, toNode, toSocket);
+    }
+
+    const std::optional<MaterialGraphLink> oldLink = inputLink(graph, detachedToNode, detachedToSocket);
+    if (!oldLink) {
+        return graph.link(fromNode, fromSocket, toNode, toSocket);
+    }
+
+    // AGENT: Existing input detaches commit as move-on-release; failed drops restore the old edge.
+    graph.unlinkInput(detachedToNode, detachedToSocket);
+    if (graph.link(fromNode, fromSocket, toNode, toSocket)) {
+        return true;
+    }
+
+    (void)graph.link(oldLink->fromNode, oldLink->fromSocket, oldLink->toNode, oldLink->toSocket);
+    return false;
+}
+
 bool drawEmbeddedInput(MaterialGraph& graph, MaterialGraphNode& node, const MaterialGraphSocket& socket, ImVec2 position, float width, float zoom)
 {
     if (socket.type == MaterialGraphSocketType::Material) {
@@ -155,14 +300,7 @@ bool drawEmbeddedInput(MaterialGraph& graph, MaterialGraphNode& node, const Mate
         }
         dirty = ImGui::ColorEdit3(("##material-input-color-" + std::to_string(node.id) + socket.name).c_str(), &color->x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
     } else if (socket.type == MaterialGraphSocketType::Float) {
-        float* value = &node.value;
-        if (socket.name == "roughness") {
-            value = &node.roughness;
-        } else if (socket.name == "metallic") {
-            value = &node.metallic;
-        } else if (socket.name == "emission") {
-            value = &node.emission;
-        }
+        float* value = embeddedFloatValue(node, socket.name);
         dirty = ImGui::DragFloat(("##material-input-float-" + std::to_string(node.id) + socket.name).c_str(), value, 0.01f, -100.0f, 100.0f);
     }
 
@@ -203,19 +341,33 @@ void buildLayouts(
 
         const std::vector<MaterialGraphSocket> inputs = materialGraphInputs(node.type);
         for (std::size_t input = 0; input < inputs.size(); ++input) {
-            anchors.push_back({node.id, inputs[input].name, false, {position.x, position.y + ui::scaleValue(frame, TITLE_HEIGHT + SOCKET_LABEL_OFFSET_Y + static_cast<float>(input) * SOCKET_ROW_HEIGHT)}, inputs[input].type});
+            const float rowY = node.editorCollapsed
+                ? TITLE_HEIGHT + 16.0f + static_cast<float>(input) * COLLAPSED_SOCKET_SPACING
+                : TITLE_HEIGHT + SOCKET_LABEL_OFFSET_Y + static_cast<float>(input) * SOCKET_ROW_HEIGHT;
+            anchors.push_back({node.id, inputs[input].name, false, {position.x, position.y + ui::scaleValue(frame, rowY)}, inputs[input].type});
         }
         const std::vector<MaterialGraphSocket> outputs = materialGraphOutputs(node.type);
         for (std::size_t output = 0; output < outputs.size(); ++output) {
-            anchors.push_back({node.id, outputs[output].name, true, {position.x + size.x, position.y + ui::scaleValue(frame, TITLE_HEIGHT + SOCKET_LABEL_OFFSET_Y + static_cast<float>(output) * SOCKET_ROW_HEIGHT)}, outputs[output].type});
+            const float rowY = node.editorCollapsed
+                ? TITLE_HEIGHT + 16.0f + static_cast<float>(output) * COLLAPSED_SOCKET_SPACING
+                : TITLE_HEIGHT + SOCKET_LABEL_OFFSET_Y + static_cast<float>(output) * SOCKET_ROW_HEIGHT;
+            anchors.push_back({node.id, outputs[output].name, true, {position.x + size.x, position.y + ui::scaleValue(frame, rowY)}, outputs[output].type});
         }
     }
 }
 
-bool drawLinks(MaterialGraph& graph, const std::vector<MaterialSocketAnchor>& anchors, const ui::GraphCanvasFrame& frame)
+bool drawLinks(
+    MaterialGraph& graph,
+    const std::vector<MaterialSocketAnchor>& anchors,
+    const ui::GraphCanvasFrame& frame,
+    MaterialGraphNodeId detachedToNode,
+    const std::string& detachedToSocket)
 {
     bool dirty = false;
     for (const MaterialGraphLink& link : graph.links()) {
+        if (isDetachedPreviewLink(link, detachedToNode, detachedToSocket)) {
+            continue;
+        }
         const std::optional<MaterialSocketAnchor> from = findAnchor(anchors, link.fromNode, link.fromSocket, true);
         const std::optional<MaterialSocketAnchor> to = findAnchor(anchors, link.toNode, link.toSocket, false);
         if (!from || !to) {
@@ -244,6 +396,27 @@ MaterialGraphNodeId addMaterialNodeAt(MaterialGraph& graph, MaterialGraphNodeTyp
     return nodeId;
 }
 
+bool addMaterialNodeForInput(
+    MaterialGraph& graph,
+    MaterialGraphNodeType type,
+    ImVec2 graphPosition,
+    MaterialGraphNodeId toNode,
+    const std::string& toSocket)
+{
+    const std::optional<MaterialGraphSocketType> inputType = materialInputType(graph, toNode, toSocket);
+    if (!inputType) {
+        return false;
+    }
+
+    const std::optional<std::string> outputSocket = firstOutputSocketOfType(type, *inputType);
+    if (!outputSocket) {
+        return false;
+    }
+
+    const MaterialGraphNodeId nodeId = addMaterialNodeAt(graph, type, graphPosition);
+    return graph.link(nodeId, *outputSocket, toNode, toSocket);
+}
+
 bool drawMaterialNode(
     MaterialGraph& graph,
     const MaterialNodeLayout& layout,
@@ -251,6 +424,11 @@ bool drawMaterialNode(
     bool& draggingLink,
     MaterialGraphNodeId& dragFromNode,
     std::string& dragFromSocket,
+    MaterialGraphNodeId& detachedToNode,
+    std::string& detachedToSocket,
+    bool& draggingInputLink,
+    MaterialGraphNodeId& dragToNode,
+    std::string& dragToSocket,
     const ui::GraphCanvasFrame& frame)
 {
     bool dirty = false;
@@ -259,14 +437,13 @@ bool drawMaterialNode(
     const bool selected = graph.selectedNode() == node.id;
 
     const std::string title = node.name + " #" + std::to_string(node.id);
-    ui::GraphNodeStyle style;
-    style.bodyColor = selected ? IM_COL32(58, 66, 84, 255) : IM_COL32(42, 45, 52, 255);
-    style.titleColor = node.id == graph.outputNode() ? IM_COL32(86, 64, 112, 255) : IM_COL32(54, 58, 68, 255);
-    style.borderColor = selected ? IM_COL32(120, 170, 255, 255) : IM_COL32(78, 82, 92, 255);
-    style.borderThickness = selected ? 2.0f : 1.0f;
+    const bool hovered = ImGui::IsWindowHovered()
+        && ui::pointInsideRect(ImGui::GetIO().MousePos, layout.position, {layout.position.x + layout.size.x, layout.position.y + layout.size.y});
+    const ImU32 titleColor = node.id == graph.outputNode() ? IM_COL32(86, 64, 112, 255) : IM_COL32(54, 58, 68, 255);
+    const ui::GraphNodeStyle style = ui::graphNodeInteractionStyle(selected, hovered, titleColor);
     ui::drawGraphNodeShell(frame, layout.position, layout.size, title, style);
 
-    const float titleActionWidth = ui::graphNodeTitleActionWidth(frame, 1);
+    const float titleActionWidth = ui::graphNodeTitleActionWidth(frame, 2);
     ui::drawGraphNodeTitleDragRegion(frame, layout.position, layout.size, TITLE_HEIGHT, titleActionWidth, "material-node-title##" + std::to_string(node.id));
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
         graph.setSelectedNode(node.id);
@@ -275,7 +452,10 @@ bool drawMaterialNode(
         const ImVec2 delta = ImGui::GetIO().MouseDelta;
         node.editorX += delta.x / zoom;
         node.editorY += delta.y / zoom;
-        dirty = true;
+        // AGENT: Canvas position is editor layout only; moving a material node must not refresh GPU materials.
+    }
+    if (ui::drawGraphNodeTitleActionButton(frame, layout.position, layout.size, 1, (node.editorCollapsed ? "+##material-collapse-" : "-##material-collapse-") + std::to_string(node.id), true)) {
+        node.editorCollapsed = !node.editorCollapsed;
     }
     if (node.id == graph.outputNode()) {
         (void)ui::drawGraphNodeTitleActionButton(frame, layout.position, layout.size, 0, "X##material-delete-" + std::to_string(node.id), false);
@@ -291,27 +471,66 @@ bool drawMaterialNode(
         if (!anchor) {
             continue;
         }
-        ui::drawGraphSocket(frame, anchor->position, socketColor(socket.type));
+        const ImVec2 mouse = ImGui::GetIO().MousePos;
+        const bool pinHovered = ImGui::IsWindowHovered() && ui::graphSocketHit(frame, mouse, anchor->position, SOCKET_HIT_RADIUS);
+        const ImU32 pinColor = ui::graphSocketInteractionColor(socketColor(socket.type), IM_COL32(255, 210, 110, 255), pinHovered);
+        ui::drawGraphSocket(frame, anchor->position, pinColor, ui::graphSocketInteractionRadius(pinHovered));
+        if (draggingLink) {
+            const bool compatible = materialSocketsCompatible(graph, dragFromNode, dragFromSocket, node.id, socket.name);
+            const ImVec2 dropMin = {anchor->position.x - ui::scaleValue(frame, INPUT_DROP_ROW_PAD_X), anchor->position.y - ui::scaleValue(frame, INPUT_DROP_ROW_PAD_Y)};
+            const ImVec2 dropMax = {layout.position.x + layout.size.x - ui::scaleValue(frame, INPUT_DROP_ROW_PAD_X), anchor->position.y + ui::scaleValue(frame, SOCKET_ROW_HEIGHT - INPUT_DROP_ROW_PAD_Y)};
+            if (ui::pointInsideRect(mouse, dropMin, dropMax)) {
+                const ImU32 ringColor = compatible ? IM_COL32(255, 210, 110, 255) : IM_COL32(210, 80, 80, 210);
+                frame.drawList->AddRect(dropMin, dropMax, ringColor, ui::scaleValue(frame, 5.0f), 0, ui::scaleValue(frame, 1.5f));
+                ui::drawGraphSocketDropFeedback(frame, anchor->position, ringColor);
+            } else if (ui::graphSocketHit(frame, mouse, anchor->position, SOCKET_HIT_RADIUS)) {
+                const ImU32 ringColor = compatible ? IM_COL32(255, 210, 110, 255) : IM_COL32(210, 80, 80, 210);
+                ui::drawGraphSocketDropFeedback(frame, anchor->position, ringColor);
+            }
+        }
         const std::string label = socket.name + " : " + socketTypeName(socket.type);
-        ui::drawGraphText(frame, {anchor->position.x + ui::scaleValue(frame, 10.0f), anchor->position.y - ui::scaleValue(frame, 7.0f)}, IM_COL32(220, 224, 230, 255), label);
-        dirty = drawEmbeddedInput(
-                    graph,
-                    node,
-                    socket,
-                    {layout.position.x + ui::scaleValue(frame, 18.0f), anchor->position.y + ui::scaleValue(frame, EMBEDDED_INPUT_OFFSET_Y - SOCKET_LABEL_OFFSET_Y)},
-                    layout.size.x - ui::scaleValue(frame, 36.0f),
-                    zoom)
-            || dirty;
+        if (!node.editorCollapsed) {
+            ui::drawGraphText(frame, {anchor->position.x + ui::scaleValue(frame, 10.0f), anchor->position.y - ui::scaleValue(frame, 7.0f)}, IM_COL32(220, 224, 230, 255), label);
+            dirty = drawEmbeddedInput(
+                        graph,
+                        node,
+                        socket,
+                        {layout.position.x + ui::scaleValue(frame, 18.0f), anchor->position.y + ui::scaleValue(frame, EMBEDDED_INPUT_OFFSET_Y - SOCKET_LABEL_OFFSET_Y)},
+                        layout.size.x - ui::scaleValue(frame, 36.0f),
+                        zoom)
+                || dirty;
+        }
 
         ImGui::SetCursorScreenPos({anchor->position.x - ui::scaleValue(frame, 11.0f), anchor->position.y - ui::scaleValue(frame, 11.0f)});
         ImGui::InvisibleButton(("material-input##" + std::to_string(node.id) + socket.name).c_str(), {ui::scaleValue(frame, 22.0f), ui::scaleValue(frame, 22.0f)});
-        if (draggingLink && !ImGui::IsMouseDown(ImGuiMouseButton_Left) && ImGui::IsItemHovered()) {
-            if (graph.link(dragFromNode, dragFromSocket, node.id, socket.name)) {
+        const ImVec2 dropMin = {anchor->position.x - ui::scaleValue(frame, INPUT_DROP_ROW_PAD_X), anchor->position.y - ui::scaleValue(frame, INPUT_DROP_ROW_PAD_Y)};
+        const ImVec2 dropMax = {layout.position.x + layout.size.x - ui::scaleValue(frame, INPUT_DROP_ROW_PAD_X), anchor->position.y + ui::scaleValue(frame, SOCKET_ROW_HEIGHT - INPUT_DROP_ROW_PAD_Y)};
+        const bool inputDropHovered = ImGui::IsItemHovered() || ui::pointInsideRect(mouse, dropMin, dropMax);
+        if (draggingLink && !ImGui::IsMouseDown(ImGuiMouseButton_Left) && inputDropHovered) {
+            if (commitLinkDrop(graph, dragFromNode, dragFromSocket, node.id, socket.name, detachedToNode, detachedToSocket)) {
                 dirty = true;
             }
             draggingLink = false;
             dragFromNode = 0;
             dragFromSocket.clear();
+            detachedToNode = 0;
+            detachedToSocket.clear();
+        } else if (!draggingLink && ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
+            const std::optional<MaterialGraphLink> existing = inputLink(graph, node.id, socket.name);
+            if (existing) {
+                // AGENT: Input detach is preview-only until release; existing graph link remains unless a valid drop rewires it.
+                draggingLink = true;
+                dragFromNode = existing->fromNode;
+                dragFromSocket = existing->fromSocket;
+                detachedToNode = node.id;
+                detachedToSocket = socket.name;
+                graph.setSelectedNode(node.id);
+            } else {
+                draggingInputLink = true;
+                dragToNode = node.id;
+                dragToSocket = socket.name;
+                graph.setSelectedNode(node.id);
+            }
         }
     }
 
@@ -322,10 +541,16 @@ bool drawMaterialNode(
         if (!anchor) {
             continue;
         }
-        ui::drawGraphSocket(frame, anchor->position, socketColor(socket.type));
+        const ImVec2 mouse = ImGui::GetIO().MousePos;
+        const bool activeDrag = draggingLink && dragFromNode == node.id && dragFromSocket == socket.name;
+        const bool pinHovered = activeDrag || (ImGui::IsWindowHovered() && ui::graphSocketHit(frame, mouse, anchor->position, SOCKET_HIT_RADIUS));
+        const ImU32 pinColor = ui::graphSocketInteractionColor(socketColor(socket.type), IM_COL32(255, 210, 110, 255), pinHovered);
+        ui::drawGraphSocket(frame, anchor->position, pinColor, ui::graphSocketInteractionRadius(pinHovered));
         const std::string label = socket.name + " : " + socketTypeName(socket.type);
-        const ImVec2 textSize = ImGui::CalcTextSize(label.c_str());
-        ui::drawGraphText(frame, {anchor->position.x - ui::scaleValue(frame, 10.0f) - textSize.x * zoom, anchor->position.y - ui::scaleValue(frame, 7.0f)}, IM_COL32(220, 224, 230, 255), label);
+        if (!node.editorCollapsed) {
+            const ImVec2 textSize = ImGui::CalcTextSize(label.c_str());
+            ui::drawGraphText(frame, {anchor->position.x - ui::scaleValue(frame, 10.0f) - textSize.x * zoom, anchor->position.y - ui::scaleValue(frame, 7.0f)}, IM_COL32(220, 224, 230, 255), label);
+        }
 
         ImGui::SetCursorScreenPos({anchor->position.x - ui::scaleValue(frame, 11.0f), anchor->position.y - ui::scaleValue(frame, 11.0f)});
         ImGui::InvisibleButton(("material-output##" + std::to_string(node.id) + socket.name).c_str(), {ui::scaleValue(frame, 22.0f), ui::scaleValue(frame, 22.0f)});
@@ -333,18 +558,31 @@ bool drawMaterialNode(
             draggingLink = true;
             dragFromNode = node.id;
             dragFromSocket = socket.name;
+            detachedToNode = 0;
+            detachedToSocket.clear();
             graph.setSelectedNode(node.id);
         }
     }
 
     float y = layout.position.y + ui::scaleValue(frame, TITLE_HEIGHT + 26.0f + std::max(inputs.size(), outputs.size()) * SOCKET_ROW_HEIGHT);
-    if (node.type == MaterialGraphNodeType::ColorConstant) {
+    if (!node.editorCollapsed && node.type == MaterialGraphNodeType::ColorConstant) {
         ImGui::SetCursorScreenPos({layout.position.x + ui::scaleValue(frame, 10.0f), y});
         ImGui::SetNextItemWidth(layout.size.x - ui::scaleValue(frame, 20.0f));
         if (ImGui::ColorEdit3(("##material-color-" + std::to_string(node.id)).c_str(), &node.color.x, ImGuiColorEditFlags_NoInputs)) {
             dirty = true;
         }
-    } else if (node.type == MaterialGraphNodeType::FloatConstant) {
+    } else if (!node.editorCollapsed && node.type == MaterialGraphNodeType::ColorRamp) {
+        ImGui::SetCursorScreenPos({layout.position.x + ui::scaleValue(frame, 10.0f), y});
+        ImGui::SetNextItemWidth(layout.size.x - ui::scaleValue(frame, 20.0f));
+        if (ImGui::ColorEdit3(("##material-ramp-a-" + std::to_string(node.id)).c_str(), &node.color.x, ImGuiColorEditFlags_NoInputs)) {
+            dirty = true;
+        }
+        ImGui::SetCursorScreenPos({layout.position.x + ui::scaleValue(frame, 10.0f), y + ui::scaleValue(frame, 32.0f)});
+        ImGui::SetNextItemWidth(layout.size.x - ui::scaleValue(frame, 20.0f));
+        if (ImGui::ColorEdit3(("##material-ramp-b-" + std::to_string(node.id)).c_str(), &node.secondaryColor.x, ImGuiColorEditFlags_NoInputs)) {
+            dirty = true;
+        }
+    } else if (!node.editorCollapsed && node.type == MaterialGraphNodeType::FloatConstant) {
         ImGui::SetCursorScreenPos({layout.position.x + ui::scaleValue(frame, 10.0f), y});
         ImGui::SetNextItemWidth(layout.size.x - ui::scaleValue(frame, 20.0f));
         if (ImGui::DragFloat(("##material-float-" + std::to_string(node.id)).c_str(), &node.value, 0.01f, -100.0f, 100.0f)) {
@@ -363,8 +601,15 @@ bool drawMaterialGraphCanvas(
     bool& draggingLink,
     MaterialGraphNodeId& dragFromNode,
     std::string& dragFromSocket,
+    MaterialGraphNodeId& detachedToNode,
+    std::string& detachedToSocket,
+    bool& draggingInputLink,
+    MaterialGraphNodeId& dragToNode,
+    std::string& dragToSocket,
     float& addPopupGraphX,
-    float& addPopupGraphY)
+    float& addPopupGraphY,
+    MaterialGraphNodeId& addPopupLinkToNode,
+    std::string& addPopupLinkToSocket)
 {
     bool dirty = false;
     ui::GraphCanvasFrame frame = ui::beginGraphCanvas("MaterialGraphCanvas", panX, panY, zoom, {360.0f, 300.0f}, MIN_ZOOM, MAX_ZOOM);
@@ -374,20 +619,39 @@ bool drawMaterialGraphCanvas(
     std::vector<MaterialNodeLayout> layouts;
     std::vector<MaterialSocketAnchor> anchors;
     buildLayouts(graph, frame, layouts, anchors);
-    dirty = drawLinks(graph, anchors, frame) || dirty;
+    dirty = drawLinks(graph, anchors, frame, detachedToNode, detachedToSocket) || dirty;
 
     if (draggingLink) {
         const std::optional<MaterialSocketAnchor> from = findAnchor(anchors, dragFromNode, dragFromSocket, true);
         if (from) {
-            ui::drawGraphBezier(frame, from->position, ImGui::GetIO().MousePos, IM_COL32(255, 210, 110, 255));
+            ui::drawGraphLinkDrag(frame, from->position, true, ImGui::GetIO().MousePos, IM_COL32(255, 210, 110, 255));
+        }
+    }
+    if (draggingInputLink) {
+        const std::optional<MaterialSocketAnchor> to = findAnchor(anchors, dragToNode, dragToSocket, false);
+        if (to) {
+            ui::drawGraphLinkDrag(frame, to->position, false, ImGui::GetIO().MousePos, IM_COL32(255, 210, 110, 255));
         }
     }
 
     for (const MaterialNodeLayout& layout : layouts) {
-        dirty = drawMaterialNode(graph, layout, anchors, draggingLink, dragFromNode, dragFromSocket, frame) || dirty;
+        dirty = drawMaterialNode(
+                    graph,
+                    layout,
+                    anchors,
+                    draggingLink,
+                    dragFromNode,
+                    dragFromSocket,
+                    detachedToNode,
+                    detachedToSocket,
+                    draggingInputLink,
+                    dragToNode,
+                    dragToSocket,
+                    frame)
+            || dirty;
     }
 
-    if (ImGui::IsWindowHovered() && !ImGui::IsAnyItemActive() && ImGui::IsKeyPressed(ImGuiKey_Delete)) {
+    if (ImGui::IsWindowHovered() && !ImGui::IsAnyItemActive() && !ImGui::IsAnyItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete)) {
         const MaterialGraphNodeId selected = graph.selectedNode();
         if (selected != graph.outputNode() && graph.deleteNode(selected)) {
             dirty = true;
@@ -398,34 +662,54 @@ bool drawMaterialGraphCanvas(
         const ImVec2 popupPosition = ui::screenToGraph(frame, ImGui::GetIO().MousePos);
         addPopupGraphX = popupPosition.x;
         addPopupGraphY = popupPosition.y;
+        addPopupLinkToNode = 0;
+        addPopupLinkToSocket.clear();
         ImGui::OpenPopup("MaterialGraphAddPopup");
+    }
+    if (draggingInputLink && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        if (ImGui::IsWindowHovered()) {
+            const ImVec2 popupPosition = ui::screenToGraph(frame, ImGui::GetIO().MousePos);
+            addPopupGraphX = popupPosition.x;
+            addPopupGraphY = popupPosition.y;
+            addPopupLinkToNode = dragToNode;
+            addPopupLinkToSocket = dragToSocket;
+            ImGui::OpenPopup("MaterialGraphAddPopup");
+        }
+        draggingInputLink = false;
+        dragToNode = 0;
+        dragToSocket.clear();
     }
     if (ImGui::BeginPopup("MaterialGraphAddPopup")) {
         const ImVec2 graphPosition = {addPopupGraphX, addPopupGraphY};
-        if (ImGui::MenuItem("PBR Material")) {
-            (void)addMaterialNodeAt(graph, MaterialGraphNodeType::PbrMaterial, graphPosition);
-            dirty = true;
-        }
-        if (ImGui::MenuItem("Color")) {
-            (void)addMaterialNodeAt(graph, MaterialGraphNodeType::ColorConstant, graphPosition);
-            dirty = true;
-        }
-        if (ImGui::MenuItem("Float")) {
-            (void)addMaterialNodeAt(graph, MaterialGraphNodeType::FloatConstant, graphPosition);
-            dirty = true;
-        }
-        if (ImGui::MenuItem("Mix Color")) {
-            (void)addMaterialNodeAt(graph, MaterialGraphNodeType::MixColor, graphPosition);
-            dirty = true;
-        }
-        if (ImGui::MenuItem("Checker")) {
-            (void)addMaterialNodeAt(graph, MaterialGraphNodeType::CheckerPattern, graphPosition);
-            dirty = true;
-        }
-        if (ImGui::MenuItem("Value Noise")) {
-            (void)addMaterialNodeAt(graph, MaterialGraphNodeType::ValueNoisePattern, graphPosition);
-            dirty = true;
-        }
+        const std::optional<MaterialGraphSocketType> requestedInputType = materialInputType(graph, addPopupLinkToNode, addPopupLinkToSocket);
+        const auto addMenuItem = [&](const char* label, MaterialGraphNodeType type) {
+            const bool enabled = !requestedInputType || canCreateNodeForInput(type, *requestedInputType);
+            if (!enabled) {
+                ImGui::BeginDisabled();
+            }
+            if (ImGui::MenuItem(label) && enabled) {
+                dirty = requestedInputType
+                    ? addMaterialNodeForInput(graph, type, graphPosition, addPopupLinkToNode, addPopupLinkToSocket)
+                    : (addMaterialNodeAt(graph, type, graphPosition) != 0);
+                addPopupLinkToNode = 0;
+                addPopupLinkToSocket.clear();
+            }
+            if (!enabled) {
+                ImGui::EndDisabled();
+            }
+        };
+        addMenuItem("PBR Material", MaterialGraphNodeType::PbrMaterial);
+        addMenuItem("Color", MaterialGraphNodeType::ColorConstant);
+        addMenuItem("Float", MaterialGraphNodeType::FloatConstant);
+        addMenuItem("Mix Color", MaterialGraphNodeType::MixColor);
+        addMenuItem("Multiply Color", MaterialGraphNodeType::MultiplyColor);
+        addMenuItem("Color Ramp", MaterialGraphNodeType::ColorRamp);
+        addMenuItem("Add Color", MaterialGraphNodeType::AddColor);
+        addMenuItem("Subtract Color", MaterialGraphNodeType::SubtractColor);
+        addMenuItem("Power Float", MaterialGraphNodeType::PowerFloat);
+        addMenuItem("Clamp Float", MaterialGraphNodeType::ClampFloat);
+        addMenuItem("Checker", MaterialGraphNodeType::CheckerPattern);
+        addMenuItem("Value Noise", MaterialGraphNodeType::ValueNoise);
         ImGui::EndPopup();
     }
 
@@ -433,6 +717,18 @@ bool drawMaterialGraphCanvas(
         draggingLink = false;
         dragFromNode = 0;
         dragFromSocket.clear();
+        detachedToNode = 0;
+        detachedToSocket.clear();
+    }
+    if ((draggingInputLink || draggingLink) && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        draggingInputLink = false;
+        draggingLink = false;
+        dragFromNode = 0;
+        dragFromSocket.clear();
+        detachedToNode = 0;
+        detachedToSocket.clear();
+        dragToNode = 0;
+        dragToSocket.clear();
     }
 
     if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::IsAnyItemHovered()) {
@@ -451,7 +747,7 @@ void drawNodeProperties(MaterialGraph& graph, MaterialGraphNode& node, EditorDir
     ImGui::TextDisabled("%s", displayName(node.type));
     if (node.type != MaterialGraphNodeType::MaterialOutput && ImGui::Button("Delete Node")) {
         if (graph.deleteNode(node.id)) {
-            dirty.material = true;
+            dirty.scene = true;
         }
     }
 }
@@ -460,7 +756,7 @@ void addNodeButton(MaterialGraph& graph, MaterialGraphNodeType type, EditorDirty
 {
     if (ImGui::Button(displayName(type))) {
         (void)addMaterialNodeAt(graph, type, {80.0f, 80.0f});
-        dirty.material = true;
+        dirty.scene = true;
     }
 }
 
@@ -478,8 +774,8 @@ EditorDirtyState MaterialGraphPanel::draw(SdfGraph& graph)
 
     if (ImGui::BeginChild("material-assets", {220.0f, 0.0f}, true)) {
         if (ImGui::Button("+ Material")) {
-            m_selectedMaterial = graph.materials().createMaterial("Material");
-            dirty.material = true;
+            m_selectedMaterial = createMaterialAsset(graph, "Material", SdfMaterial{});
+            dirty.scene = true;
         }
         ImGui::Separator();
 
@@ -508,7 +804,7 @@ EditorDirtyState MaterialGraphPanel::draw(SdfGraph& graph)
             if (m_selectedMaterial == pendingDelete) {
                 m_selectedMaterial = 0;
             }
-            dirty.material = true;
+            dirty.scene = true;
         }
     }
     ImGui::EndChild();
@@ -530,9 +826,17 @@ EditorDirtyState MaterialGraphPanel::draw(SdfGraph& graph)
             addNodeButton(material->graph, MaterialGraphNodeType::FloatConstant, dirty);
             addNodeButton(material->graph, MaterialGraphNodeType::MixColor, dirty);
             ImGui::SameLine();
-            addNodeButton(material->graph, MaterialGraphNodeType::CheckerPattern, dirty);
+            addNodeButton(material->graph, MaterialGraphNodeType::MultiplyColor, dirty);
             ImGui::SameLine();
-            addNodeButton(material->graph, MaterialGraphNodeType::ValueNoisePattern, dirty);
+            addNodeButton(material->graph, MaterialGraphNodeType::ColorRamp, dirty);
+            addNodeButton(material->graph, MaterialGraphNodeType::AddColor, dirty);
+            ImGui::SameLine();
+            addNodeButton(material->graph, MaterialGraphNodeType::SubtractColor, dirty);
+            addNodeButton(material->graph, MaterialGraphNodeType::PowerFloat, dirty);
+            ImGui::SameLine();
+            addNodeButton(material->graph, MaterialGraphNodeType::ClampFloat, dirty);
+            addNodeButton(material->graph, MaterialGraphNodeType::CheckerPattern, dirty);
+            addNodeButton(material->graph, MaterialGraphNodeType::ValueNoise, dirty);
 
             ImGui::SeparatorText("Graph");
             if (drawMaterialGraphCanvas(
@@ -543,9 +847,17 @@ EditorDirtyState MaterialGraphPanel::draw(SdfGraph& graph)
                     m_draggingLink,
                     m_dragFromNode,
                     m_dragFromSocket,
+                    m_dragDetachedToNode,
+                    m_dragDetachedToSocket,
+                    m_draggingInputLink,
+                    m_dragToNode,
+                    m_dragToSocket,
                     m_addPopupGraphX,
-                    m_addPopupGraphY)) {
-                dirty.material = true;
+                    m_addPopupGraphY,
+                    m_addPopupLinkToNode,
+                    m_addPopupLinkToSocket)) {
+                // AGENT: Material graph constants/topology compile into GLSL helpers; semantic edits must rebuild the scene shader.
+                dirty.scene = true;
             }
 
             ImGui::SeparatorText("Selected Node");

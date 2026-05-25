@@ -23,6 +23,11 @@ inline std::string materialGraphVec3(const glm::vec3& value)
     return "vec3(" + materialGraphFloat(value.x) + ", " + materialGraphFloat(value.y) + ", " + materialGraphFloat(value.z) + ")";
 }
 
+inline std::string materialGraphClampVec3(const std::string& expression)
+{
+    return "clamp(" + expression + ", vec3(0.0), vec3(1.0))";
+}
+
 class MaterialGraphCompiler {
 public:
     std::string emitMaterialFunction(const MaterialDefinition& material, SdfCompileResult& result) const
@@ -102,6 +107,19 @@ private:
         return link == nullptr ? materialGraphFloat(fallback) : floatExpr(graph, link->fromNode, material, result, visiting);
     }
 
+    static std::string checkerFactorExpr(
+        const MaterialGraph& graph,
+        MaterialGraphNodeId id,
+        const MaterialGraphNode& node,
+        const SdfMaterial& material,
+        SdfCompileResult& result,
+        std::unordered_set<MaterialGraphNodeId>& visiting)
+    {
+        const std::string scale = linkedFloatOrDefault(graph, id, "scale", node.value, material, result, visiting);
+        const std::string scaled = "max(" + scale + ", 0.0001)";
+        return "mod(floor(p.x * " + scaled + ") + floor(p.y * " + scaled + ") + floor(p.z * " + scaled + "), 2.0)";
+    }
+
     static std::string colorExpr(
         const MaterialGraph& graph,
         MaterialGraphNodeId id,
@@ -127,11 +145,34 @@ private:
             expression = "mix(" + a + ", " + b + ", clamp(" + factor + ", 0.0, 1.0))";
             break;
         }
+        case MaterialGraphNodeType::MultiplyColor: {
+            const std::string a = linkedColorOrDefault(graph, id, "a", node->color, material, result, visiting);
+            const std::string b = linkedColorOrDefault(graph, id, "b", node->secondaryColor, material, result, visiting);
+            const std::string factor = linkedFloatOrDefault(graph, id, "factor", node->value, material, result, visiting);
+            expression = "mix(" + a + ", (" + a + " * " + b + "), clamp(" + factor + ", 0.0, 1.0))";
+            break;
+        }
+        case MaterialGraphNodeType::ColorRamp: {
+            const std::string factor = linkedFloatOrDefault(graph, id, "factor", node->value, material, result, visiting);
+            expression = "mix(" + materialGraphVec3(node->color) + ", " + materialGraphVec3(node->secondaryColor) + ", clamp(" + factor + ", 0.0, 1.0))";
+            break;
+        }
+        case MaterialGraphNodeType::AddColor: {
+            const std::string a = linkedColorOrDefault(graph, id, "a", node->color, material, result, visiting);
+            const std::string b = linkedColorOrDefault(graph, id, "b", node->secondaryColor, material, result, visiting);
+            expression = materialGraphClampVec3("(" + a + " + " + b + ")");
+            break;
+        }
+        case MaterialGraphNodeType::SubtractColor: {
+            const std::string a = linkedColorOrDefault(graph, id, "a", node->color, material, result, visiting);
+            const std::string b = linkedColorOrDefault(graph, id, "b", node->secondaryColor, material, result, visiting);
+            expression = materialGraphClampVec3("(" + a + " - " + b + ")");
+            break;
+        }
         case MaterialGraphNodeType::CheckerPattern: {
             const std::string a = linkedColorOrDefault(graph, id, "a", node->color, material, result, visiting);
             const std::string b = linkedColorOrDefault(graph, id, "b", node->secondaryColor, material, result, visiting);
-            const std::string scale = linkedFloatOrDefault(graph, id, "scale", node->value, material, result, visiting);
-            expression = "mix(" + a + ", " + b + ", mod(floor(p.x * max(" + scale + ", 0.0001)) + floor(p.y * max(" + scale + ", 0.0001)) + floor(p.z * max(" + scale + ", 0.0001)), 2.0))";
+            expression = "mix(" + a + ", " + b + ", " + checkerFactorExpr(graph, id, *node, material, result, visiting) + ")";
             break;
         }
         case MaterialGraphNodeType::ValueNoisePattern: {
@@ -167,6 +208,20 @@ private:
         std::string expression;
         if (node->type == MaterialGraphNodeType::FloatConstant) {
             expression = materialGraphFloat(node->value);
+        } else if (node->type == MaterialGraphNodeType::CheckerPattern) {
+            expression = checkerFactorExpr(graph, id, *node, material, result, visiting);
+        } else if (node->type == MaterialGraphNodeType::ValueNoise) {
+            const std::string scale = linkedFloatOrDefault(graph, id, "scale", node->value, material, result, visiting);
+            expression = "sdf3d_valueNoise3d(p * max(" + scale + ", 0.0001))";
+        } else if (node->type == MaterialGraphNodeType::PowerFloat) {
+            const std::string base = linkedFloatOrDefault(graph, id, "base", node->value, material, result, visiting);
+            const std::string exponent = linkedFloatOrDefault(graph, id, "exponent", node->secondaryValue, material, result, visiting);
+            expression = "pow(max(" + base + ", 0.0), " + exponent + ")";
+        } else if (node->type == MaterialGraphNodeType::ClampFloat) {
+            const std::string value = linkedFloatOrDefault(graph, id, "value", node->value, material, result, visiting);
+            const std::string minValue = linkedFloatOrDefault(graph, id, "min", node->secondaryValue, material, result, visiting);
+            const std::string maxValue = linkedFloatOrDefault(graph, id, "max", node->tertiaryValue, material, result, visiting);
+            expression = "clamp(" + value + ", " + minValue + ", " + maxValue + ")";
         } else {
             result.errors.push_back("Material graph node does not output float.");
             expression = materialGraphFloat(material.roughness);

@@ -315,9 +315,6 @@ bool AddMenu::drawItems(SdfGraph& graph)
 
     if (ImGui::BeginMenu("Materials")) {
         for (SdfNodeType type : sdfNodeTypesForCategory(SdfNodeCategory::Material)) {
-            if (isSdfMaterialNode(type)) {
-                continue;
-            }
             const SdfNodeDefinition* definition = sdfNodeDefinition(type);
             if (definition != nullptr && ImGui::MenuItem(definition->displayName.c_str())) {
                 addAndLinkSelected(makeSdfNodeFromDefinition(type), "sdf");
@@ -340,13 +337,7 @@ void AddMenu::addPrimitive(SdfGraph& graph, SdfNodePtr node, bool linkToSelectio
         const MaterialId materialId = graphNode->payload.materialId;
         graphNode->payload = *node;
         graphNode->payload.stableId = stableId;
-        if (isSdfMaterialNode(graphNode->payload.type)) {
-            graphNode->payload.materialId = materialId;
-            if (MaterialDefinition* material = graph.materials().material(materialId)) {
-                material->material = graphNode->payload.material;
-                material->graph = makeMaterialGraphFromMaterial(material->material);
-            }
-        }
+        graphNode->payload.materialId = materialId;
         if (m_spawnEditorX && m_spawnEditorY) {
             graphNode->editorX = *m_spawnEditorX;
             graphNode->editorY = *m_spawnEditorY;

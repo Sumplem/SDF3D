@@ -80,10 +80,7 @@ const std::vector<SdfNodeDefinition>& definitions()
         {SdfNodeType::Twist, SdfNodeCategory::Transform, "Twist", {floatParameter("strength", 1.0f, -20.0f, 20.0f, 0.01f), enumParameter("axis", 1, {{"X", 0}, {"Y", 1}, {"Z", 2}})}, {inputSocket("child")}, {outputSocket("sdf")}},
         {SdfNodeType::Bend, SdfNodeCategory::Transform, "Bend", {floatParameter("strength", 0.5f, -20.0f, 20.0f, 0.01f), enumParameter("axis", 0, {{"X", 0}, {"Y", 1}, {"Z", 2}})}, {inputSocket("child")}, {outputSocket("sdf")}},
 
-        {SdfNodeType::SolidMaterial, SdfNodeCategory::Material, "Solid Material", {}, {}, {outputSocket("material", SdfSocketType::Material)}},
-        {SdfNodeType::CheckerMaterial, SdfNodeCategory::Material, "Checker Material", {}, {}, {outputSocket("material", SdfSocketType::Material)}},
-        {SdfNodeType::ValueNoiseMaterial, SdfNodeCategory::Material, "Value Noise Material", {}, {}, {outputSocket("material", SdfSocketType::Material)}},
-        {SdfNodeType::MaterialOverride, SdfNodeCategory::Material, "Material Override", {}, {inputSocket("sdf"), inputSocket("material", SdfSocketType::Material)}, {outputSocket("sdf")}},
+        {SdfNodeType::MaterialOverride, SdfNodeCategory::Material, "Material Override", {}, {inputSocket("sdf")}, {outputSocket("sdf")}},
 
         {SdfNodeType::Group, SdfNodeCategory::Group, "Group", {}, {}, {outputSocket("sdf")}},
         {SdfNodeType::Output, SdfNodeCategory::Output, "Output", {}, {inputSocket("surface")}, {}},
@@ -150,10 +147,6 @@ SdfNodePtr makeSdfNodeFromDefinition(SdfNodeType type)
     for (const SdfParameterDefinition& parameter : definition->parameters) {
         node->parameters[parameter.name] = parameter.defaultValue;
     }
-    if (isSdfMaterialNode(type)) {
-        node->material.type = sdfMaterialTypeForNode(type);
-    }
-
     return node;
 }
 

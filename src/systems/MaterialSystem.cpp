@@ -21,19 +21,12 @@ void collectNodeMaterials(const SdfNodePtr& node, SdfCompileResult& result, cons
     case SdfNodeType::Plane:
         return;
 
-    case SdfNodeType::SolidMaterial:
-    case SdfNodeType::CheckerMaterial:
-    case SdfNodeType::ValueNoiseMaterial:
-        materialSystem.appendMaterial(result, node->material);
-        return;
-
     case SdfNodeType::MaterialOverride:
         if (node->children.empty()) {
             result.errors.push_back("MaterialOverride node has no SDF input.");
         }
         if (node->children.size() > 1) {
-            collectNodeMaterials(node->children[1], result, materialSystem);
-            return;
+            result.errors.push_back("MaterialOverride node ignores extra children.");
         }
         materialSystem.appendMaterial(result, node->material);
         return;

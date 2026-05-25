@@ -20,7 +20,14 @@ enum class MaterialGraphNodeType {
     ColorConstant,
     FloatConstant,
     MixColor,
+    MultiplyColor,
+    ColorRamp,
+    AddColor,
+    SubtractColor,
+    PowerFloat,
+    ClampFloat,
     CheckerPattern,
+    ValueNoise,
     ValueNoisePattern,
     MaterialOutput,
 };
@@ -50,11 +57,14 @@ struct MaterialGraphNode {
     glm::vec3 color = {0.8f, 0.8f, 0.8f};
     glm::vec3 secondaryColor = {0.08f, 0.08f, 0.08f};
     float value = 0.0f;
+    float secondaryValue = 0.0f;
+    float tertiaryValue = 1.0f;
     float roughness = 0.5f;
     float metallic = 0.0f;
     float emission = 0.0f;
     float editorX = 0.0f;
     float editorY = 0.0f;
+    bool editorCollapsed = false;
     bool selected = false;
 };
 
@@ -69,8 +79,22 @@ inline const char* materialGraphNodeTypeName(MaterialGraphNodeType type)
         return "FloatConstant";
     case MaterialGraphNodeType::MixColor:
         return "MixColor";
+    case MaterialGraphNodeType::MultiplyColor:
+        return "MultiplyColor";
+    case MaterialGraphNodeType::ColorRamp:
+        return "ColorRamp";
+    case MaterialGraphNodeType::AddColor:
+        return "AddColor";
+    case MaterialGraphNodeType::SubtractColor:
+        return "SubtractColor";
+    case MaterialGraphNodeType::PowerFloat:
+        return "PowerFloat";
+    case MaterialGraphNodeType::ClampFloat:
+        return "ClampFloat";
     case MaterialGraphNodeType::CheckerPattern:
         return "CheckerPattern";
+    case MaterialGraphNodeType::ValueNoise:
+        return "ValueNoise";
     case MaterialGraphNodeType::ValueNoisePattern:
         return "ValueNoisePattern";
     case MaterialGraphNodeType::MaterialOutput:
@@ -85,10 +109,22 @@ inline std::vector<MaterialGraphSocket> materialGraphInputs(MaterialGraphNodeTyp
     case MaterialGraphNodeType::PbrMaterial:
         return {{"albedo", MaterialGraphSocketType::Color}, {"roughness", MaterialGraphSocketType::Float}, {"metallic", MaterialGraphSocketType::Float}, {"emission", MaterialGraphSocketType::Float}};
     case MaterialGraphNodeType::MixColor:
+    case MaterialGraphNodeType::MultiplyColor:
         return {{"a", MaterialGraphSocketType::Color}, {"b", MaterialGraphSocketType::Color}, {"factor", MaterialGraphSocketType::Float}};
+    case MaterialGraphNodeType::ColorRamp:
+        return {{"factor", MaterialGraphSocketType::Float}};
+    case MaterialGraphNodeType::AddColor:
+    case MaterialGraphNodeType::SubtractColor:
+        return {{"a", MaterialGraphSocketType::Color}, {"b", MaterialGraphSocketType::Color}};
+    case MaterialGraphNodeType::PowerFloat:
+        return {{"base", MaterialGraphSocketType::Float}, {"exponent", MaterialGraphSocketType::Float}};
+    case MaterialGraphNodeType::ClampFloat:
+        return {{"value", MaterialGraphSocketType::Float}, {"min", MaterialGraphSocketType::Float}, {"max", MaterialGraphSocketType::Float}};
     case MaterialGraphNodeType::CheckerPattern:
     case MaterialGraphNodeType::ValueNoisePattern:
         return {{"a", MaterialGraphSocketType::Color}, {"b", MaterialGraphSocketType::Color}, {"scale", MaterialGraphSocketType::Float}};
+    case MaterialGraphNodeType::ValueNoise:
+        return {{"scale", MaterialGraphSocketType::Float}};
     case MaterialGraphNodeType::MaterialOutput:
         return {{"material", MaterialGraphSocketType::Material}};
     default:
@@ -103,22 +139,31 @@ inline std::vector<MaterialGraphSocket> materialGraphOutputs(MaterialGraphNodeTy
         return {{"material", MaterialGraphSocketType::Material}};
     case MaterialGraphNodeType::ColorConstant:
     case MaterialGraphNodeType::MixColor:
-    case MaterialGraphNodeType::CheckerPattern:
+    case MaterialGraphNodeType::MultiplyColor:
+    case MaterialGraphNodeType::ColorRamp:
+    case MaterialGraphNodeType::AddColor:
+    case MaterialGraphNodeType::SubtractColor:
     case MaterialGraphNodeType::ValueNoisePattern:
         return {{"color", MaterialGraphSocketType::Color}};
+    case MaterialGraphNodeType::CheckerPattern:
+        return {{"color", MaterialGraphSocketType::Color}, {"factor", MaterialGraphSocketType::Float}};
     case MaterialGraphNodeType::FloatConstant:
+    case MaterialGraphNodeType::PowerFloat:
+    case MaterialGraphNodeType::ClampFloat:
         return {{"value", MaterialGraphSocketType::Float}};
+    case MaterialGraphNodeType::ValueNoise:
+        return {{"factor", MaterialGraphSocketType::Float}};
     default:
         return {};
     }
 }
 
-inline MaterialGraphSocketType materialGraphSocketType(const std::vector<MaterialGraphSocket>& sockets, const std::string& name, MaterialGraphSocketType fallback)
+inline const MaterialGraphSocket* findMaterialGraphSocket(const std::vector<MaterialGraphSocket>& sockets, const std::string& name)
 {
     const auto it = std::find_if(sockets.begin(), sockets.end(), [&](const MaterialGraphSocket& socket) {
         return socket.name == name;
     });
-    return it == sockets.end() ? fallback : it->type;
+    return it == sockets.end() ? nullptr : &(*it);
 }
 
 class MaterialGraph {
@@ -137,11 +182,26 @@ public:
         node.name = name.empty() ? materialGraphNodeTypeName(type) : std::move(name);
         if (type == MaterialGraphNodeType::FloatConstant) {
             node.value = 1.0f;
-        } else if (type == MaterialGraphNodeType::CheckerPattern || type == MaterialGraphNodeType::ValueNoisePattern) {
+        } else if (type == MaterialGraphNodeType::CheckerPattern || type == MaterialGraphNodeType::ValueNoisePattern || type == MaterialGraphNodeType::ValueNoise) {
             node.value = 4.0f;
         } else if (type == MaterialGraphNodeType::MixColor) {
             node.secondaryColor = {0.2f, 0.2f, 0.2f};
             node.value = 0.5f;
+        } else if (type == MaterialGraphNodeType::MultiplyColor) {
+            node.secondaryColor = {1.0f, 1.0f, 1.0f};
+            node.value = 1.0f;
+        } else if (type == MaterialGraphNodeType::ColorRamp) {
+            node.secondaryColor = {1.0f, 1.0f, 1.0f};
+            node.value = 0.5f;
+        } else if (type == MaterialGraphNodeType::AddColor || type == MaterialGraphNodeType::SubtractColor) {
+            node.secondaryColor = {0.2f, 0.2f, 0.2f};
+        } else if (type == MaterialGraphNodeType::PowerFloat) {
+            node.value = 1.0f;
+            node.secondaryValue = 1.0f;
+        } else if (type == MaterialGraphNodeType::ClampFloat) {
+            node.value = 0.0f;
+            node.secondaryValue = 0.0f;
+            node.tertiaryValue = 1.0f;
         }
         m_nodes.push_back(node);
         setSelectedNode(id);
@@ -176,9 +236,11 @@ public:
         if (from == nullptr || to == nullptr || fromNode == toNode) {
             return false;
         }
-        const MaterialGraphSocketType outputType = materialGraphSocketType(materialGraphOutputs(from->type), fromSocket, MaterialGraphSocketType::Float);
-        const MaterialGraphSocketType inputType = materialGraphSocketType(materialGraphInputs(to->type), toSocket, MaterialGraphSocketType::Material);
-        if (outputType != inputType) {
+        const std::vector<MaterialGraphSocket> outputs = materialGraphOutputs(from->type);
+        const std::vector<MaterialGraphSocket> inputs = materialGraphInputs(to->type);
+        const MaterialGraphSocket* output = findMaterialGraphSocket(outputs, fromSocket);
+        const MaterialGraphSocket* input = findMaterialGraphSocket(inputs, toSocket);
+        if (output == nullptr || input == nullptr || output->type != input->type) {
             return false;
         }
 
@@ -313,13 +375,25 @@ inline MaterialGraph makeMaterialGraphFromMaterial(const SdfMaterial& material)
 {
     MaterialGraph graph;
     MaterialGraphNodeId albedo = 0;
-    if (material.type == SdfMaterialType::Checker || material.type == SdfMaterialType::ValueNoise) {
-        albedo = graph.createNode(material.type == SdfMaterialType::Checker ? MaterialGraphNodeType::CheckerPattern : MaterialGraphNodeType::ValueNoisePattern, "Pattern");
+    if (material.type == SdfMaterialType::Checker) {
+        albedo = graph.createNode(MaterialGraphNodeType::CheckerPattern, "Pattern");
         if (MaterialGraphNode* node = graph.node(albedo)) {
             node->color = material.albedo;
             node->secondaryColor = material.secondaryAlbedo;
             node->value = material.patternScale;
         }
+    } else if (material.type == SdfMaterialType::ValueNoise) {
+        const MaterialGraphNodeId noise = graph.createNode(MaterialGraphNodeType::ValueNoise, "Value Noise");
+        if (MaterialGraphNode* node = graph.node(noise)) {
+            node->value = material.patternScale;
+        }
+        albedo = graph.createNode(MaterialGraphNodeType::MixColor, "Mix Color");
+        if (MaterialGraphNode* node = graph.node(albedo)) {
+            node->color = material.albedo;
+            node->secondaryColor = material.secondaryAlbedo;
+            node->value = 0.5f;
+        }
+        (void)graph.link(noise, "factor", albedo, "factor");
     } else {
         albedo = graph.createNode(MaterialGraphNodeType::ColorConstant, "Albedo");
         if (MaterialGraphNode* node = graph.node(albedo)) {

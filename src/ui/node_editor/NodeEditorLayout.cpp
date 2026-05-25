@@ -389,9 +389,8 @@ size_t inlinePropertyRows(const SdfGraphNode& node)
     }
 
     constexpr size_t nameRows = 1;
-    const bool materialNode = isSdfMaterialNode(node.payload.type);
-    const size_t materialRows = materialNode ? (isSdfPatternMaterialNode(node.payload.type) ? 6 : 4) : 0;
-    return nameRows + materialRows + visibleInlinePropertyParameterCount(node.payload);
+    const size_t materialOverrideRows = node.payload.type == SdfNodeType::MaterialOverride ? 1 : 0;
+    return nameRows + materialOverrideRows + visibleInlinePropertyParameterCount(node.payload);
 }
 
 float estimatedNodeHeight(const SdfGraphNode& node)

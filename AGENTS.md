@@ -2,33 +2,30 @@
 
 ## State
 
-- Edit shader `raymarch_edit.frag` active always during editing; `raymarch_scene.frag` for export only
-- Translate/Rotate/Scale gizmos live; edit overlays force direct preview even when path-trace mode is selected
+- Edit shader `raymarch_edit.frag` active always during editing; `raymarch_scene.frag` for export only; edit overlays force direct preview in path-trace mode
 - Canonical branch order: Scale -> Rotate -> Translate; ensure-wrapper reuses existing nodes in chain
+- MaterialRegistry owns reusable material assets; each `MaterialDefinition` has a per-material shader graph plus legacy preview `SdfMaterial`
+- Scene graph material source nodes are removed from active definitions/UI/compiler paths; legacy files migrate them into MaterialRegistry assets
+- MaterialOverride has one `sdf` input, applies registry assets by stable `materialId`, and selects registry materials directly from Properties/inline node UI
+- MaterialGraph assets compile through `MaterialGraphCompiler` into `SdfMaterialSample` helpers consumed by deferred `sceneMaterial`
+- MaterialGraph input defaults live on consuming nodes and are overridden by connected sockets; link compatibility uses socket value type
+- `MaterialGraphPanel` has canvas editing with pan, zoom, embedded inputs, Add popup, Delete, socket linking, input-detach rewiring, node collapse, drop feedback, layout-only dragging
+- MaterialGraph semantic edits mark scene dirty because material graph constants/topology compile into scene GLSL helpers
+- MaterialGraph nodes include core color/float shaping ops, `Checker` color+factor outputs, active `ValueNoise` factor output, and load-only legacy `ValueNoisePattern` migration
+- Shared `GraphCanvas`/`GraphEditorCore` own canvas frame behavior and reusable graph drawing/hit primitives
 - `GlslEmitter` is 8 concern files; shared math owns domain transform expressions used by geometry and material emitters
 - `SdfNodeDefinition` metadata owns parameter type: Float, Bool, Enum; UI must not infer bool/enum from numeric ranges
-- MaterialRegistry owns reusable material assets; each `MaterialDefinition` has a per-material shader graph plus legacy preview `SdfMaterial`
-- MaterialOverride applies material assets by stable `materialId`; inline material fallback remains legacy-only
-- Node groups exist: App-owned `GraphGroupRegistry`, `SdfNodeType::Group`, root JSON `definitions`, Ctrl+G grouping shortcut
-- Entered group subgraph is active editor/viewport/compiler/UI Add/SceneOutliner/Properties target
-- Group names resolve through registry definitions; group-internal lowered node IDs and runtime params are scoped by definition ID
-- Viewport picking uses GPU node-id buffer (`GL_R32I`); CPU graph raymarch picking is removed
-- `scenePickId(vec3 p)` is compiler-emitted; groups pick as root Group instance IDs; transform wrappers pick as visible wrapper IDs
-- Viewport hover highlight uses cached/throttled GPU readback; shader highlight is gated by visible GPU pick ID plus `sceneNodeContains`
+- Node groups use App-owned `GraphGroupRegistry`; entered group subgraph is active editor/viewport/compiler/UI target
+- Viewport picking uses GPU node-id buffer (`GL_R32I`) and compiler-emitted `scenePickId`; CPU graph raymarch picking is removed
+- Union/SmoothUnion/Intersect/SmoothIntersect use one multi-input `inputs` socket; Viewport Add appends to output-root Union/SmoothUnion when possible
 - Runtime GLSL mode reads Float node params from SSBO binding 1; Float edits refresh SSBO only, Bool/Enum/topology recompile
-- Union/SmoothUnion/Intersect/SmoothIntersect use one vertical pill-shaped `inputs` multi-input SDF socket and can change type in place
-- Viewport Add appends primitives to output-root Union/SmoothUnion multi-input; otherwise it creates a Union as needed
 - Path-trace shader has GI bounces, Russian Roulette, solid environment color, GGX VNDF glossy sampling, NEE/MIS direct light, clamped emissive contribution, and accumulation
-- `MaterialGraphPanel` owns material asset list plus canvas-based per-material graph editing with embedded input defaults below socket labels and overridden by connected sockets
-- `GraphCanvas` owns shared graph UI frame behavior: child canvas, pan, zoom, grid, coordinate transforms, and zoom-scaled values
-- `GraphEditorCore` owns shared graph editor primitives: node shell, title bar, action buttons, title drag region, sockets, Bezier wires, scaled text, and point/rect hit helpers
-- MaterialGraph compiler emits `SdfMaterialSample` GLSL helpers consumed by deferred `sceneMaterial`; renderer remains graph-free
 - GlslEmitter perf batch complete: direct node-param SSBO slots, root `sceneSDFWithId`, and threaded material distances
-- Build/tests: full Debug app build, all test executables, and hidden GUI smoke pass after MaterialGraph foundation
+- Build/tests: full Debug app build passes; all `build\Debug\*_tests.exe` pass after Checker factor output
 
 ## Active
 
-Separate per-material shader graph foundation implemented: material assets own `MaterialGraph` data, compiler emits material helper GLSL, JSON round-trips graphs with legacy migration, and `MaterialGraphPanel` has a node canvas with embedded input fields, right-click add, Delete-key node removal, pan, zoom, and socket linking.
+Checker factor output is ready for review: Checker now acts like a procedural mask node with both Color and Float outputs, so it can drive MixColor/ColorRamp/PBR Float inputs directly.
 
 ## Decisions
 
@@ -118,6 +115,22 @@ Separate per-material shader graph foundation implemented: material assets own `
 - 2026-05 - MaterialGraph canvas follows NodeEditor basics: embedded fields sit below socket labels, right-click adds at cursor, Delete removes selected non-output nodes
 - 2026-05 - Shared graph canvas behavior lives in `GraphCanvas`; NodeEditor and MaterialGraphPanel keep graph-specific node/link policy separate
 - 2026-05 - Shared graph editor primitives live in `GraphEditorCore`; Scene and Material graph editors reuse drawing/hit primitives but keep graph policy separate
+- 2026-05 - MaterialGraph input detaches are preview-only until release because empty release must preserve the existing material graph link
+- 2026-05 - MaterialGraph node position edits are layout-only and must not emit material dirty because GPU material refresh depends on SDF tree validity
+- 2026-05 - `MultiplyColor` material node emits `mix(a, a * b, factor)` so users can blend between original color and multiplied color
+- 2026-05 - MaterialGraph socket names identify endpoints only; link compatibility uses declared socket value types and rejects missing sockets
+- 2026-05 - MaterialGraph input drops use row-wide hit testing because embedded input widgets make tiny socket-only drops hard to hit
+- 2026-05 - Dragging from an empty MaterialGraph input opens a type-filtered Add popup and auto-links the created node output back to that input
+- 2026-05 - MaterialGraph collapsed state is editor data serialized with material graphs and does not affect compiler semantics
+- 2026-05 - Graph node hover/selection visual styling is shared in `GraphEditorCore` so scene and material graph canvases stay consistent
+- 2026-05 - Graph socket hover radius/color helpers are shared in `GraphEditorCore` so scene and material graph pins stay consistent
+- 2026-05 - Link drag drawing and socket hit/drop-feedback primitives are shared in `GraphEditorCore`; graph-specific compatibility and commit policy stay local
+- 2026-05 - MaterialOverride direct registry assignment is GraphSystem-owned and clears material input links so UI selection remains authoritative
+- 2026-05 - Scene graph no longer has material source nodes; Solid/Checker/ValueNoise live as MaterialRegistry asset presets/MaterialGraph patterns and legacy source nodes migrate on load
+- 2026-05 - MaterialGraph `ValueNoise` is a reusable Float factor node; colorizing noise is `MixColor` responsibility, and legacy `ValueNoisePattern` migrates on JSON load
+- 2026-05 - MaterialGraph core shaping nodes are graph-owned helpers: `ColorRamp`, `AddColor`, `SubtractColor`, `PowerFloat`, and `ClampFloat`; material asset creation returns to one plain PBR `+ Material`
+- 2026-05 - MaterialGraph semantic edits raise scene dirty because graph constants, links, and nodes are compiled into GLSL helpers; names and layout stay non-render semantics
+- 2026-05 - MaterialGraph `CheckerPattern` exposes both `color` and `factor` outputs because procedural masks must drive Float inputs directly while still supporting colorized checker output
 
 ## Constraints
 
@@ -137,6 +150,7 @@ Separate per-material shader graph foundation implemented: material assets own `
 - Do not tint highlights by distance alone because multi-object scenes can bleed highlight onto nearby unselected objects
 - Do not add a generic NoiseMaterial node because multiple noise algorithms will coexist and names must stay specific
 - Do not route material graph ownership through renderer because material graph compilation belongs to compiler/UI layers
+- Do not reintroduce scene graph material source nodes because material assets belong in MaterialRegistry/MaterialGraph and MaterialOverride references them by `materialId`
 
 ## Environment
 
@@ -150,4 +164,4 @@ Separate per-material shader graph foundation implemented: material assets own `
 
 ## Next
 
-Next review gate: improve MaterialGraph canvas/link UX or add next shader graph node family.
+Waiting for review of the Checker factor-output material graph slice before starting another backlog item.

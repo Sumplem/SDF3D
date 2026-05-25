@@ -2,6 +2,7 @@
 
 #include "sdf3d/scene/SdfGraph.h"
 #include "sdf3d/scene/SdfNode.h"
+#include "sdf3d/systems/GraphSystem.h"
 
 #include <iostream>
 #include <string>
@@ -100,16 +101,15 @@ void testCollectGraphMaterials(std::vector<TestFailure>& failures)
     const std::string testName = "collect graph materials";
     sdf3d::SdfGraph graph;
     const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
-    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::SolidMaterial, "Material");
     const sdf3d::SdfGraphNodeId materialOverride = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Override");
-    if (sdf3d::SdfGraphNode* node = graph.node(material)) {
-        expect(node->payload.materialId != 0, testName, "Expected material node to get registry material id.", failures);
-        if (sdf3d::MaterialDefinition* definition = graph.materials().material(node->payload.materialId)) {
-            definition->material.emission = 2.0f;
-        }
+    sdf3d::SdfMaterial materialData;
+    materialData.emission = 2.0f;
+    const sdf3d::MaterialId material = graph.materials().createMaterial("Material", materialData);
+    if (sdf3d::MaterialDefinition* definition = graph.materials().material(material)) {
+        definition->material.emission = 2.0f;
     }
+    expect(sdf3d::GraphSystem::assignMaterialToNode(graph, materialOverride, material), testName, "Expected registry material assignment.", failures);
     graph.link(sphere, "sdf", materialOverride, "sdf");
-    graph.link(material, "material", materialOverride, "material");
     graph.link(materialOverride, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompileResult result = sdf3d::MaterialSystem{}.collectMaterials(graph);

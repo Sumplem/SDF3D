@@ -22,36 +22,36 @@ using json = nlohmann::json;
 constexpr const char* GRAPH_SCHEMA = "sdf3d.graph";
 constexpr int GRAPH_SCHEMA_VERSION = 1;
 
-std::unordered_set<MaterialId> referencedMaterialIds(const SdfGraph& graph)
+bool isLegacyMaterialSourceNode(SdfNodeType type)
 {
-    std::unordered_set<MaterialId> materialIds;
-    for (const auto& [id, node] : graph.nodes()) {
-        (void)id;
-        if (node.payload.materialId != 0) {
-            materialIds.insert(node.payload.materialId);
-        }
-    }
-
-    return materialIds;
+    return type == SdfNodeType::SolidMaterial
+        || type == SdfNodeType::CheckerMaterial
+        || type == SdfNodeType::ValueNoiseMaterial;
 }
 
 void synchronizeMaterialInputLinks(
     std::unordered_map<SdfGraphNodeId, SdfGraphNode>& nodes,
     const MaterialRegistry& materials,
-    const std::vector<SdfGraphLink>& links)
+    const std::vector<SdfGraphLink>& links,
+    const std::unordered_map<SdfGraphNodeId, MaterialId>& legacyMaterialIds)
 {
     for (const SdfGraphLink& link : links) {
         if (link.fromSocket != "material" || link.toSocket != "material") {
             continue;
         }
 
-        const auto fromIt = nodes.find(link.fromNode);
         const auto toIt = nodes.find(link.toNode);
-        if (fromIt == nodes.end() || toIt == nodes.end() || toIt->second.payload.type != SdfNodeType::MaterialOverride) {
+        if (toIt == nodes.end() || toIt->second.payload.type != SdfNodeType::MaterialOverride) {
             continue;
         }
 
-        const MaterialId materialId = fromIt->second.payload.materialId;
+        MaterialId materialId = 0;
+        const auto legacyIt = legacyMaterialIds.find(link.fromNode);
+        if (legacyIt != legacyMaterialIds.end()) {
+            materialId = legacyIt->second;
+        } else if (const auto fromIt = nodes.find(link.fromNode); fromIt != nodes.end()) {
+            materialId = fromIt->second.payload.materialId;
+        }
         if (materialId == 0 || materials.material(materialId) == nullptr) {
             continue;
         }
@@ -113,11 +113,7 @@ json graphDataToJson(const SdfGraph& graph)
     }
 
     json materials = json::array();
-    const std::unordered_set<MaterialId> referencedMaterials = referencedMaterialIds(graph);
     for (const MaterialDefinition& material : graph.materials().materials()) {
-        if (referencedMaterials.find(material.id) == referencedMaterials.end()) {
-            continue;
-        }
         materials.push_back(json_graph_serializer::materialDefinitionToJson(material));
     }
 
@@ -169,15 +165,18 @@ bool loadGraphData(SdfGraph& graph, const json& root, std::string& error)
         }
 
         std::unordered_map<SdfGraphNodeId, SdfGraphNode> nodes;
+        std::unordered_map<SdfGraphNodeId, MaterialId> legacyMaterialIds;
         for (const json& nodeValue : root.at("nodes")) {
             SdfGraphNode node = json_graph_serializer::nodeFromJson(nodeValue);
-            if (isSdfMaterialNode(node.payload.type)) {
+            if (isLegacyMaterialSourceNode(node.payload.type)) {
                 node.payload.material.type = sdfMaterialTypeForNode(node.payload.type);
                 if (node.payload.materialId == 0 || materials.material(node.payload.materialId) == nullptr) {
                     node.payload.materialId = materials.createMaterial(node.payload.name.empty() ? "Material" : node.payload.name, node.payload.material);
                 } else if (const MaterialDefinition* material = materials.material(node.payload.materialId)) {
                     node.payload.material = material->material;
                 }
+                legacyMaterialIds[node.id] = node.payload.materialId;
+                continue;
             }
             if (node.payload.type == SdfNodeType::MaterialOverride) {
                 if (node.payload.materialId != 0 && materials.material(node.payload.materialId) != nullptr) {
@@ -199,9 +198,20 @@ bool loadGraphData(SdfGraph& graph, const json& root, std::string& error)
         for (const json& linkValue : root.at("links")) {
             SdfGraphLink link = json_graph_serializer::linkFromJson(linkValue);
             migrateLegacyBooleanInputLink(nodes, link);
+            if (link.fromSocket == "material"
+                || link.toSocket == "material"
+                || legacyMaterialIds.find(link.fromNode) != legacyMaterialIds.end()
+                || legacyMaterialIds.find(link.toNode) != legacyMaterialIds.end()) {
+                continue;
+            }
             links.push_back(std::move(link));
         }
-        synchronizeMaterialInputLinks(nodes, materials, links);
+        std::vector<SdfGraphLink> legacyLinks;
+        for (const json& linkValue : root.at("links")) {
+            SdfGraphLink link = json_graph_serializer::linkFromJson(linkValue);
+            legacyLinks.push_back(std::move(link));
+        }
+        synchronizeMaterialInputLinks(nodes, materials, legacyLinks, legacyMaterialIds);
 
         const bool replaced = GraphSystem::replaceGraphData(
             graph,

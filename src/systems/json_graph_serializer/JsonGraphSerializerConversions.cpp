@@ -173,7 +173,14 @@ std::optional<MaterialGraphNodeType> parseMaterialGraphNodeType(const std::strin
              MaterialGraphNodeType::ColorConstant,
              MaterialGraphNodeType::FloatConstant,
              MaterialGraphNodeType::MixColor,
+             MaterialGraphNodeType::MultiplyColor,
+             MaterialGraphNodeType::ColorRamp,
+             MaterialGraphNodeType::AddColor,
+             MaterialGraphNodeType::SubtractColor,
+             MaterialGraphNodeType::PowerFloat,
+             MaterialGraphNodeType::ClampFloat,
              MaterialGraphNodeType::CheckerPattern,
+             MaterialGraphNodeType::ValueNoise,
              MaterialGraphNodeType::ValueNoisePattern,
              MaterialGraphNodeType::MaterialOutput,
          }) {
@@ -183,6 +190,11 @@ std::optional<MaterialGraphNodeType> parseMaterialGraphNodeType(const std::strin
     }
     return std::nullopt;
 }
+
+struct LegacyValueNoiseMigration {
+    MaterialGraphNodeId mixNode = 0;
+    MaterialGraphNodeId noiseNode = 0;
+};
 
 nlohmann::json materialGraphToJson(const MaterialGraph& graph)
 {
@@ -195,10 +207,12 @@ nlohmann::json materialGraphToJson(const MaterialGraph& graph)
             {"color", {node.color.x, node.color.y, node.color.z}},
             {"secondaryColor", {node.secondaryColor.x, node.secondaryColor.y, node.secondaryColor.z}},
             {"value", node.value},
+            {"secondaryValue", node.secondaryValue},
+            {"tertiaryValue", node.tertiaryValue},
             {"roughness", node.roughness},
             {"metallic", node.metallic},
             {"emission", node.emission},
-            {"editor", {{"x", node.editorX}, {"y", node.editorY}}},
+            {"editor", {{"x", node.editorX}, {"y", node.editorY}, {"collapsed", node.editorCollapsed}}},
         });
     }
 
@@ -221,6 +235,8 @@ nlohmann::json materialGraphToJson(const MaterialGraph& graph)
 MaterialGraph materialGraphFromJson(const nlohmann::json& value)
 {
     std::vector<MaterialGraphNode> nodes;
+    std::vector<LegacyValueNoiseMigration> legacyNoise;
+    MaterialGraphNodeId nextId = value.at("nextId").get<MaterialGraphNodeId>();
     for (const nlohmann::json& nodeValue : value.at("nodes")) {
         const std::optional<MaterialGraphNodeType> type = parseMaterialGraphNodeType(nodeValue.at("type").get<std::string>());
         if (!type) {
@@ -241,28 +257,70 @@ MaterialGraph materialGraphFromJson(const nlohmann::json& value)
             };
         }
         node.value = nodeValue.at("value").get<float>();
+        node.secondaryValue = nodeValue.value("secondaryValue", node.secondaryValue);
+        node.tertiaryValue = nodeValue.value("tertiaryValue", node.tertiaryValue);
         node.roughness = nodeValue.value("roughness", node.roughness);
         node.metallic = nodeValue.value("metallic", node.metallic);
         node.emission = nodeValue.value("emission", node.emission);
         if (nodeValue.contains("editor")) {
             node.editorX = nodeValue.at("editor").value("x", 0.0f);
             node.editorY = nodeValue.at("editor").value("y", 0.0f);
+            node.editorCollapsed = nodeValue.at("editor").value("collapsed", false);
+        }
+        if (node.type == MaterialGraphNodeType::ValueNoisePattern) {
+            const MaterialGraphNodeId noiseNode = nextId++;
+            legacyNoise.push_back({node.id, noiseNode});
+
+            // AGENT: Old color-producing noise nodes become MixColor nodes fed by a new factor-only noise node.
+            node.type = MaterialGraphNodeType::MixColor;
         }
         nodes.push_back(node);
+    }
+    for (const LegacyValueNoiseMigration& migration : legacyNoise) {
+        MaterialGraphNode* mix = nullptr;
+        for (MaterialGraphNode& node : nodes) {
+            if (node.id == migration.mixNode) {
+                mix = &node;
+                break;
+            }
+        }
+        if (mix == nullptr) {
+            continue;
+        }
+        MaterialGraphNode noise;
+        noise.id = migration.noiseNode;
+        noise.type = MaterialGraphNodeType::ValueNoise;
+        noise.name = "Value Noise";
+        noise.value = mix->value;
+        noise.editorX = mix->editorX - 260.0f;
+        noise.editorY = mix->editorY;
+        noise.editorCollapsed = mix->editorCollapsed;
+        nodes.push_back(noise);
     }
 
     std::vector<MaterialGraphLink> links;
     for (const nlohmann::json& linkValue : value.at("links")) {
-        links.push_back({
+        MaterialGraphLink link{
             linkValue.at("from").at("node").get<MaterialGraphNodeId>(),
             linkValue.at("from").at("socket").get<std::string>(),
             linkValue.at("to").at("node").get<MaterialGraphNodeId>(),
             linkValue.at("to").at("socket").get<std::string>(),
-        });
+        };
+        for (const LegacyValueNoiseMigration& migration : legacyNoise) {
+            if (link.toNode == migration.mixNode && link.toSocket == "scale") {
+                link.toNode = migration.noiseNode;
+                link.toSocket = "scale";
+                break;
+            }
+        }
+        links.push_back(std::move(link));
+    }
+    for (const LegacyValueNoiseMigration& migration : legacyNoise) {
+        links.push_back({migration.noiseNode, "factor", migration.mixNode, "factor"});
     }
 
     MaterialGraph graph;
-    if (!graph.replaceData(value.at("nextId").get<MaterialGraphNodeId>(), value.at("outputNode").get<MaterialGraphNodeId>(), std::move(nodes), std::move(links))) {
+    if (!graph.replaceData(nextId, value.at("outputNode").get<MaterialGraphNodeId>(), std::move(nodes), std::move(links))) {
         throw std::runtime_error("Serialized material graph failed validation.");
     }
     return graph;
@@ -394,7 +452,10 @@ SdfGraphNode nodeFromJson(const nlohmann::json& value)
     for (const auto& [key, parameter] : value.at("parameters").items()) {
         payload.parameters[key] = parameter.get<float>();
     }
-    if (value.contains("material") && (isSdfMaterialNode(*type) || *type == SdfNodeType::MaterialOverride)) {
+    const bool legacyMaterialSource = *type == SdfNodeType::SolidMaterial
+        || *type == SdfNodeType::CheckerMaterial
+        || *type == SdfNodeType::ValueNoiseMaterial;
+    if (value.contains("material") && (legacyMaterialSource || *type == SdfNodeType::MaterialOverride)) {
         payload.material = materialFromJson(value.at("material"));
     }
 

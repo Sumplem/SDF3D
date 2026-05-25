@@ -1,6 +1,7 @@
 #include "sdf3d/scene/SdfCompiler.h"
 #include "sdf3d/scene/GraphGroupRegistry.h"
 #include "sdf3d/scene/SdfGraph.h"
+#include "sdf3d/systems/GraphSystem.h"
 
 #include <algorithm>
 #include <iostream>
@@ -140,16 +141,15 @@ void testGraphCompilerMaterialOverride(std::vector<TestFailure>& failures)
     const std::string testName = "graph compiler material override";
     sdf3d::SdfGraph graph;
     const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
-    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::SolidMaterial, "Material");
     const sdf3d::SdfGraphNodeId materialOverride = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Override");
-    if (sdf3d::SdfGraphNode* node = graph.node(material)) {
-        if (sdf3d::MaterialDefinition* definition = graph.materials().material(node->payload.materialId)) {
-            definition->material.albedo = {0.25f, 0.5f, 0.75f};
-            definition->graph = sdf3d::makeMaterialGraphFromMaterial(definition->material);
-        }
+    sdf3d::SdfMaterial materialData;
+    materialData.albedo = {0.25f, 0.5f, 0.75f};
+    const sdf3d::MaterialId material = graph.materials().createMaterial("Material", materialData);
+    if (sdf3d::MaterialDefinition* definition = graph.materials().material(material)) {
+        definition->graph = sdf3d::makeMaterialGraphFromMaterial(definition->material);
     }
+    expect(sdf3d::GraphSystem::assignMaterialToNode(graph, materialOverride, material), testName, "Expected registry material assignment.", failures);
     graph.link(sphere, "sdf", materialOverride, "sdf");
-    graph.link(material, "material", materialOverride, "material");
     graph.link(materialOverride, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
@@ -165,17 +165,17 @@ void testGraphCompilerValueNoiseMaterial(std::vector<TestFailure>& failures)
     const std::string testName = "graph compiler value noise material";
     sdf3d::SdfGraph graph;
     const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
-    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::ValueNoiseMaterial, "Value Noise");
     const sdf3d::SdfGraphNodeId materialOverride = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Override");
-    if (sdf3d::SdfGraphNode* node = graph.node(material)) {
-        if (sdf3d::MaterialDefinition* definition = graph.materials().material(node->payload.materialId)) {
-            definition->material.secondaryAlbedo = {0.1f, 0.2f, 0.3f};
-            definition->material.patternScale = 11.0f;
-            definition->graph = sdf3d::makeMaterialGraphFromMaterial(definition->material);
-        }
+    sdf3d::SdfMaterial materialData;
+    materialData.type = sdf3d::SdfMaterialType::ValueNoise;
+    materialData.secondaryAlbedo = {0.1f, 0.2f, 0.3f};
+    materialData.patternScale = 11.0f;
+    const sdf3d::MaterialId material = graph.materials().createMaterial("Value Noise", materialData);
+    if (sdf3d::MaterialDefinition* definition = graph.materials().material(material)) {
+        definition->graph = sdf3d::makeMaterialGraphFromMaterial(definition->material);
     }
+    expect(sdf3d::GraphSystem::assignMaterialToNode(graph, materialOverride, material), testName, "Expected registry material assignment.", failures);
     graph.link(sphere, "sdf", materialOverride, "sdf");
-    graph.link(material, "material", materialOverride, "material");
     graph.link(materialOverride, "sdf", graph.outputNode(), "surface");
 
     const sdf3d::SdfCompiler compiler;
@@ -195,7 +195,7 @@ void testGraphNodeDefinitionMaterialOverride(std::vector<TestFailure>& failures)
 
     expect(node != nullptr, testName, "Expected material override node.", failures);
     if (node != nullptr) {
-        expect(node->inputs.size() == 2 && node->inputs[0].name == "sdf" && node->inputs[1].name == "material", testName, "Expected SDF and material inputs.", failures);
+        expect(node->inputs.size() == 1 && node->inputs[0].name == "sdf", testName, "Expected SDF input only.", failures);
         expect(node->outputs.size() == 1 && node->outputs[0].name == "sdf", testName, "Expected SDF output.", failures);
     }
 }

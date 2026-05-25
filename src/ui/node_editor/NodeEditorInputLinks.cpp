@@ -22,7 +22,7 @@ bool updateActiveInputLinkDrag(
     if (std::optional<ImVec2> to = findSocketAnchor(anchors, dragInputNode, dragInputSocket, false)) {
         to->y += dragInputAnchorOffsetY;
         const ImVec2 mouse = ImGui::GetIO().MousePos;
-        ui::drawGraphBezier(frame, mouse, *to, IM_COL32(255, 210, 110, 255));
+        ui::drawGraphLinkDrag(frame, *to, false, mouse, IM_COL32(255, 210, 110, 255));
     }
 
     if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
@@ -32,9 +32,8 @@ bool updateActiveInputLinkDrag(
     bool sceneDirty = false;
     bool linkedTarget = false;
     const ImVec2 mouse = ImGui::GetIO().MousePos;
-    const float pinHitRadius = scaleValue(frame, 12.0f);
     for (const GraphSocketAnchor& anchor : anchors) {
-        if (!anchor.output || distanceSquared(anchor.position, mouse) > pinHitRadius * pinHitRadius) {
+        if (!anchor.output || !ui::graphSocketHit(frame, mouse, anchor.position, 12.0f)) {
             continue;
         }
 

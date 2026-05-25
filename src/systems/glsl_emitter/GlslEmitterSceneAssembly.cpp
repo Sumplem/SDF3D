@@ -305,9 +305,6 @@ void emitSdfHelperPostorder(
 
     visiting.insert(node.get());
     for (const SdfNodePtr& child : node->children) {
-        if (child && isSdfMaterialNode(child->type)) {
-            continue;
-        }
         emitSdfHelperPostorder(child, result, block, context, emittedIds, visiting);
     }
     visiting.erase(node.get());

@@ -82,6 +82,30 @@ const char* materialTypeName(SdfMaterialType type)
     return "Solid";
 }
 
+bool drawMaterialAssignmentCombo(SdfGraph& graph, SdfGraphNodeId nodeId, MaterialId currentMaterialId)
+{
+    const MaterialDefinition* current = graph.materials().material(currentMaterialId);
+    const std::string preview = current == nullptr ? "None" : current->name;
+    if (!ImGui::BeginCombo("Material", preview.c_str())) {
+        return false;
+    }
+
+    bool changed = false;
+    for (const MaterialDefinition& material : graph.materials().materials()) {
+        const bool selected = material.id == currentMaterialId;
+        const std::string label = material.name + " #" + std::to_string(material.id);
+        if (ImGui::Selectable(label.c_str(), selected)) {
+            changed = GraphSystem::assignMaterialToNode(graph, nodeId, material.id);
+        }
+        if (selected) {
+            ImGui::SetItemDefaultFocus();
+        }
+    }
+
+    ImGui::EndCombo();
+    return changed;
+}
+
 EditorDirtyState drawMaterialPalette(SdfGraph& graph)
 {
     EditorDirtyState dirty;
@@ -172,62 +196,12 @@ EditorDirtyState PropertiesPanel::draw(SdfGraph& graph, GraphGroupRegistry& grou
         dirty.scene = true;
     }
 
-    if (isSdfMaterialNode(selected->type)) {
-        SdfMaterial* material = &selected->material;
-        MaterialDefinition* selectedDefinition = nullptr;
-        if (selectedGraphNode != nullptr && selected->materialId != 0) {
-            if (MaterialDefinition* definition = graph.materials().material(selected->materialId)) {
-                selectedDefinition = definition;
-                material = &definition->material;
-            }
-        }
-
+    if (selected->type == SdfNodeType::MaterialOverride) {
         ImGui::SeparatorText("Material");
-
-        material->type = sdfMaterialTypeForNode(selected->type);
-        if (ImGui::ColorEdit3("Albedo", &material->albedo.x)) {
-            selected->material = *material;
-            if (selectedDefinition != nullptr) {
-                selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
-            }
-            dirty.material = true;
-        }
-        if (isSdfPatternMaterialNode(selected->type)) {
-            if (ImGui::ColorEdit3("Secondary", &material->secondaryAlbedo.x)) {
-                selected->material = *material;
-                if (selectedDefinition != nullptr) {
-                    selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
-                }
-                dirty.material = true;
-            }
-            if (ImGui::DragFloat("Pattern Scale", &material->patternScale, 0.1f, 0.001f, 100.0f)) {
-                selected->material = *material;
-                if (selectedDefinition != nullptr) {
-                    selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
-                }
-                dirty.material = true;
-            }
-        }
-        if (ImGui::DragFloat("Roughness", &material->roughness, 0.01f, 0.0f, 1.0f)) {
-            selected->material = *material;
-            if (selectedDefinition != nullptr) {
-                selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
-            }
-            dirty.material = true;
-        }
-        if (ImGui::DragFloat("Metallic", &material->metallic, 0.01f, 0.0f, 1.0f)) {
-            selected->material = *material;
-            if (selectedDefinition != nullptr) {
-                selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
-            }
-            dirty.material = true;
-        }
-        if (ImGui::DragFloat("Emission", &material->emission, 0.01f, 0.0f, 100.0f)) {
-            selected->material = *material;
-            if (selectedDefinition != nullptr) {
-                selectedDefinition->graph = makeMaterialGraphFromMaterial(*material);
-            }
-            dirty.material = true;
+        if (graph.materials().materials().empty()) {
+            ImGui::TextUnformatted("No registry materials.");
+        } else if (drawMaterialAssignmentCombo(graph, selectedGraphNode->id, selected->materialId)) {
+            dirty.scene = true;
         }
     }
 

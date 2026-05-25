@@ -323,13 +323,15 @@ void testRotateQuaternionParamsAreHiddenMetadata(std::vector<TestFailure>& failu
 
 void testMaterialOverrideGetsRegistryMaterial(std::vector<TestFailure>& failures)
 {
-    const std::string testName = "material node gets registry material";
+    const std::string testName = "material override gets registry material";
     sdf3d::SdfGraph graph;
-    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::SolidMaterial, "Paint");
-    const sdf3d::SdfGraphNode* node = graph.node(material);
+    const sdf3d::SdfGraphNodeId overrideNode = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Apply Paint");
+    const sdf3d::MaterialId material = graph.materials().createMaterial("Paint");
 
-    expect(node != nullptr, testName, "Expected material node.", failures);
-    expect(node != nullptr && node->payload.materialId != 0, testName, "Expected material id assigned.", failures);
+    expect(sdf3d::GraphSystem::assignMaterialToNode(graph, overrideNode, material), testName, "Expected material assignment.", failures);
+    const sdf3d::SdfGraphNode* node = graph.node(overrideNode);
+    expect(node != nullptr, testName, "Expected material override node.", failures);
+    expect(node != nullptr && node->payload.materialId == material, testName, "Expected material id assigned.", failures);
     if (node != nullptr) {
         const sdf3d::MaterialDefinition* definition = graph.materials().material(node->payload.materialId);
         expect(definition != nullptr, testName, "Expected registry material.", failures);

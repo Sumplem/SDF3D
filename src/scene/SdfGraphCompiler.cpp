@@ -95,7 +95,7 @@ SdfGraphLowerResult lowerSdfGraphToTreeInternal(
         node->materialId = graphNode->payload.materialId;
         node->groupDefinitionId = graphNode->payload.groupDefinitionId;
         node->material = graphNode->payload.material;
-        if ((isSdfMaterialNode(node->type) || node->type == SdfNodeType::MaterialOverride) && node->materialId != 0) {
+        if (node->type == SdfNodeType::MaterialOverride && node->materialId != 0) {
             if (const MaterialDefinition* material = graph.materials().material(node->materialId)) {
                 node->material = material->material;
             }

@@ -15,6 +15,26 @@ constexpr float ACTION_GAP = 4.0f;
 
 } // namespace
 
+GraphNodeStyle graphNodeInteractionStyle(bool selected, bool hovered, ImU32 titleColor)
+{
+    GraphNodeStyle style;
+    style.bodyColor = selected ? IM_COL32(58, 66, 84, 255) : (hovered ? IM_COL32(48, 52, 62, 255) : IM_COL32(42, 45, 52, 255));
+    style.titleColor = titleColor;
+    style.borderColor = selected ? IM_COL32(120, 170, 255, 255) : (hovered ? IM_COL32(255, 210, 110, 235) : IM_COL32(78, 82, 92, 255));
+    style.borderThickness = selected ? 2.0f : (hovered ? 1.8f : 1.0f);
+    return style;
+}
+
+ImU32 graphSocketInteractionColor(ImU32 normalColor, ImU32 hoverColor, bool hovered)
+{
+    return hovered ? hoverColor : normalColor;
+}
+
+float graphSocketInteractionRadius(bool hovered)
+{
+    return hovered ? 8.5f : 6.5f;
+}
+
 void drawGraphNodeShell(const GraphCanvasFrame& frame, ImVec2 position, ImVec2 size, const std::string& title, const GraphNodeStyle& style)
 {
     const ImVec2 nodeEnd = {position.x + size.x, position.y + size.y};
@@ -50,6 +70,26 @@ void drawGraphBezier(const GraphCanvasFrame& frame, ImVec2 from, ImVec2 to, ImU3
 {
     const float handle = scaleValue(frame, handleLength);
     frame.drawList->AddBezierCubic(from, {from.x + handle, from.y}, {to.x - handle, to.y}, to, color, scaleValue(frame, thickness));
+}
+
+void drawGraphLinkDrag(const GraphCanvasFrame& frame, ImVec2 fixedSocket, bool fixedSocketIsOutput, ImVec2 mouse, ImU32 color)
+{
+    if (fixedSocketIsOutput) {
+        drawGraphBezier(frame, fixedSocket, mouse, color);
+        return;
+    }
+    drawGraphBezier(frame, mouse, fixedSocket, color);
+}
+
+bool graphSocketHit(const GraphCanvasFrame& frame, ImVec2 point, ImVec2 socketPosition, float radius)
+{
+    const float hitRadius = scaleValue(frame, radius);
+    return distanceSquared(point, socketPosition) <= hitRadius * hitRadius;
+}
+
+void drawGraphSocketDropFeedback(const GraphCanvasFrame& frame, ImVec2 position, ImU32 color)
+{
+    frame.drawList->AddCircle(position, scaleValue(frame, 10.0f), color, 20, scaleValue(frame, 2.5f));
 }
 
 void drawGraphSocket(const GraphCanvasFrame& frame, ImVec2 position, ImU32 color, float radius)

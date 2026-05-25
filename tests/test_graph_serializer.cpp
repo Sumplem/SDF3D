@@ -2,6 +2,7 @@
 
 #include "sdf3d/scene/GraphGroupRegistry.h"
 #include "sdf3d/scene/SdfCompiler.h"
+#include "sdf3d/systems/GraphSystem.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -45,6 +46,36 @@ bool hasLink(
     return false;
 }
 
+bool hasMaterialGraphLink(
+    const sdf3d::MaterialGraph& graph,
+    sdf3d::MaterialGraphNodeId fromNode,
+    const std::string& fromSocket,
+    sdf3d::MaterialGraphNodeId toNode,
+    const std::string& toSocket)
+{
+    for (const sdf3d::MaterialGraphLink& link : graph.links()) {
+        if (link.fromNode == fromNode
+            && link.fromSocket == fromSocket
+            && link.toNode == toNode
+            && link.toSocket == toSocket) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+const sdf3d::MaterialGraphNode* firstMaterialGraphNodeOfType(const sdf3d::MaterialGraph& graph, sdf3d::MaterialGraphNodeType type)
+{
+    for (const sdf3d::MaterialGraphNode& node : graph.nodes()) {
+        if (node.type == type) {
+            return &node;
+        }
+    }
+
+    return nullptr;
+}
+
 std::filesystem::path testPath(const std::string& fileName)
 {
     return std::filesystem::temp_directory_path() / fileName;
@@ -59,30 +90,32 @@ void testJsonGraphRoundTrip(std::vector<TestFailure>& failures)
 
     const sdf3d::SdfGraphNodeId output = graph.outputNode();
     const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere A");
-    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::CheckerMaterial, "Paint");
     const sdf3d::SdfGraphNodeId materialOverride = graph.createNode(sdf3d::SdfNodeType::MaterialOverride, "Apply Paint");
+    sdf3d::SdfMaterial materialData;
+    materialData.albedo = {0.25f, 0.5f, 0.75f};
+    materialData.type = sdf3d::SdfMaterialType::Checker;
+    materialData.secondaryAlbedo = {0.75f, 0.25f, 0.125f};
+    materialData.roughness = 0.35f;
+    materialData.metallic = 0.2f;
+    materialData.emission = 1.25f;
+    materialData.patternScale = 9.0f;
+    const sdf3d::MaterialId material = graph.materials().createMaterial("Paint", materialData);
     if (sdf3d::SdfGraphNode* sphereNode = graph.node(sphere)) {
         sphereNode->payload.parameters["radius"] = 1.75f;
         sphereNode->editorX = 42.0f;
         sphereNode->editorY = 84.0f;
         sphereNode->editorPropertiesCollapsed = true;
     }
-    if (sdf3d::SdfGraphNode* materialNode = graph.node(material)) {
-        if (sdf3d::MaterialDefinition* definition = graph.materials().material(materialNode->payload.materialId)) {
-            definition->material.albedo = {0.25f, 0.5f, 0.75f};
-            definition->material.type = sdf3d::SdfMaterialType::Checker;
-            definition->material.secondaryAlbedo = {0.75f, 0.25f, 0.125f};
-            definition->material.roughness = 0.35f;
-            definition->material.metallic = 0.2f;
-            definition->material.emission = 1.25f;
-            definition->material.patternScale = 9.0f;
-            definition->graph = sdf3d::makeMaterialGraphFromMaterial(definition->material);
+    if (sdf3d::MaterialDefinition* definition = graph.materials().material(material)) {
+        definition->graph = sdf3d::makeMaterialGraphFromMaterial(definition->material);
+        if (sdf3d::MaterialGraphNode* outputNode = definition->graph.node(definition->graph.outputNode())) {
+            outputNode->editorCollapsed = true;
         }
     }
+    expect(sdf3d::GraphSystem::assignMaterialToNode(graph, materialOverride, material), testName, "Expected registry material assignment.", failures);
     expect(graph.link(sphere, "sdf", materialOverride, "sdf"), testName, "Expected sphere to override link.", failures);
-    expect(graph.link(material, "material", materialOverride, "material"), testName, "Expected material to override link.", failures);
     expect(graph.link(materialOverride, "sdf", output, "surface"), testName, "Expected override to output link.", failures);
-    expect(graph.setSelectedNodes({sphere, material, materialOverride}, materialOverride), testName, "Expected graph selection.", failures);
+    expect(graph.setSelectedNodes({sphere, materialOverride}, materialOverride), testName, "Expected graph selection.", failures);
 
     expect(serializer.save(graph, path), testName, "Expected save success: " + serializer.lastError(), failures);
     nlohmann::json saved;
@@ -106,11 +139,9 @@ void testJsonGraphRoundTrip(std::vector<TestFailure>& failures)
     expect(serializer.load(loaded, path), testName, "Expected load success: " + serializer.lastError(), failures);
 
     const sdf3d::SdfGraphNode* loadedSphere = loaded.node(sphere);
-    const sdf3d::SdfGraphNode* loadedMaterial = loaded.node(material);
     const sdf3d::SdfGraphNode* loadedMaterialOverride = loaded.node(materialOverride);
     expect(loaded.outputNode() == output, testName, "Expected output node ID preserved.", failures);
     expect(loadedSphere != nullptr, testName, "Expected sphere loaded.", failures);
-    expect(loadedMaterial != nullptr, testName, "Expected material loaded.", failures);
     expect(loadedMaterialOverride != nullptr, testName, "Expected material override loaded.", failures);
     expect(loaded.node(output) != nullptr && loaded.node(output)->payload.stableId == output, testName, "Expected output stableId preserved.", failures);
     if (loadedSphere != nullptr) {
@@ -121,29 +152,26 @@ void testJsonGraphRoundTrip(std::vector<TestFailure>& failures)
         expect(loadedSphere->editorPropertiesCollapsed, testName, "Expected editor collapsed state preserved.", failures);
         expect(loadedSphere->outputs.size() == 1 && loadedSphere->outputs[0].name == "sdf", testName, "Expected sockets reconstructed.", failures);
     }
-    if (loadedMaterial != nullptr) {
-        expect(loadedMaterial->payload.stableId == material, testName, "Expected material stableId preserved.", failures);
-        expect(loadedMaterial->payload.materialId != 0, testName, "Expected material id preserved.", failures);
-        const sdf3d::MaterialDefinition* definition = loaded.materials().material(loadedMaterial->payload.materialId);
-        expect(definition != nullptr, testName, "Expected registry material loaded.", failures);
-        if (definition != nullptr) {
-            expect(definition->material.albedo.z == 0.75f, testName, "Expected albedo preserved.", failures);
-            expect(definition->material.type == sdf3d::SdfMaterialType::Checker, testName, "Expected material type preserved.", failures);
-            expect(definition->material.secondaryAlbedo.x == 0.75f, testName, "Expected secondary albedo preserved.", failures);
-            expect(definition->material.emission == 1.25f, testName, "Expected emission preserved.", failures);
-            expect(definition->material.patternScale == 9.0f, testName, "Expected pattern scale preserved.", failures);
-            expect(definition->graph.outputNode() != 0, testName, "Expected material graph loaded.", failures);
-        }
+    const sdf3d::MaterialDefinition* definition = loaded.materials().material(material);
+    expect(definition != nullptr, testName, "Expected registry material loaded.", failures);
+    if (definition != nullptr) {
+        expect(definition->material.albedo.z == 0.75f, testName, "Expected albedo preserved.", failures);
+        expect(definition->material.type == sdf3d::SdfMaterialType::Checker, testName, "Expected material type preserved.", failures);
+        expect(definition->material.secondaryAlbedo.x == 0.75f, testName, "Expected secondary albedo preserved.", failures);
+        expect(definition->material.emission == 1.25f, testName, "Expected emission preserved.", failures);
+        expect(definition->material.patternScale == 9.0f, testName, "Expected pattern scale preserved.", failures);
+        expect(definition->graph.outputNode() != 0, testName, "Expected material graph loaded.", failures);
+        const sdf3d::MaterialGraphNode* outputNode = definition->graph.node(definition->graph.outputNode());
+        expect(outputNode != nullptr && outputNode->editorCollapsed, testName, "Expected material graph collapsed state preserved.", failures);
     }
-    if (loadedMaterialOverride != nullptr && loadedMaterial != nullptr) {
+    if (loadedMaterialOverride != nullptr) {
         expect(loadedMaterialOverride->payload.stableId == materialOverride, testName, "Expected override stableId preserved.", failures);
-        expect(loadedMaterialOverride->payload.materialId == loadedMaterial->payload.materialId, testName, "Expected override material id preserved.", failures);
+        expect(loadedMaterialOverride->payload.materialId == material, testName, "Expected override material id preserved.", failures);
     }
     expect(hasLink(loaded, sphere, "sdf", materialOverride, "sdf"), testName, "Expected override SDF input link preserved.", failures);
-    expect(hasLink(loaded, material, "material", materialOverride, "material"), testName, "Expected material input link preserved.", failures);
     expect(hasLink(loaded, materialOverride, "sdf", output, "surface"), testName, "Expected output link preserved.", failures);
     expect(loaded.selectedNode() == 0 && loaded.selectedNodes().empty(), testName, "Expected selection not restored from scene file.", failures);
-    expect(loaded.createNode(sdf3d::SdfNodeType::Box, "Next") == 5, testName, "Expected next stable ID preserved.", failures);
+    expect(loaded.createNode(sdf3d::SdfNodeType::Box, "Next") == 4, testName, "Expected next stable ID preserved.", failures);
 
     const sdf3d::SdfCompileResult compileResult = sdf3d::SdfCompiler{}.compile(loaded);
     expect(compileResult.errors.empty(), testName, "Expected loaded graph to compile without errors.", failures);
@@ -162,31 +190,192 @@ void testJsonGraphValueNoiseMaterialRoundTrip(std::vector<TestFailure>& failures
     sdf3d::JsonGraphSerializer serializer;
     sdf3d::SdfGraph graph;
 
-    const sdf3d::SdfGraphNodeId material = graph.createNode(sdf3d::SdfNodeType::ValueNoiseMaterial, "Cloud Paint");
-    if (sdf3d::SdfGraphNode* materialNode = graph.node(material)) {
-        if (sdf3d::MaterialDefinition* definition = graph.materials().material(materialNode->payload.materialId)) {
-            definition->material.albedo = {0.2f, 0.3f, 0.4f};
-            definition->material.secondaryAlbedo = {0.8f, 0.7f, 0.6f};
-            definition->material.patternScale = 15.0f;
-            definition->graph = sdf3d::makeMaterialGraphFromMaterial(definition->material);
-        }
+    sdf3d::SdfMaterial materialData;
+    materialData.type = sdf3d::SdfMaterialType::ValueNoise;
+    materialData.albedo = {0.2f, 0.3f, 0.4f};
+    materialData.secondaryAlbedo = {0.8f, 0.7f, 0.6f};
+    materialData.patternScale = 15.0f;
+    const sdf3d::MaterialId material = graph.materials().createMaterial("Cloud Paint", materialData);
+    if (sdf3d::MaterialDefinition* definition = graph.materials().material(material)) {
+        definition->graph = sdf3d::makeMaterialGraphFromMaterial(definition->material);
     }
 
     expect(serializer.save(graph, path), testName, "Expected save success: " + serializer.lastError(), failures);
     sdf3d::SdfGraph loaded;
     expect(serializer.load(loaded, path), testName, "Expected load success: " + serializer.lastError(), failures);
 
-    const sdf3d::SdfGraphNode* loadedMaterial = loaded.node(material);
-    expect(loadedMaterial != nullptr && loadedMaterial->payload.type == sdf3d::SdfNodeType::ValueNoiseMaterial, testName, "Expected value-noise node type loaded.", failures);
-    if (loadedMaterial != nullptr) {
-        const sdf3d::MaterialDefinition* definition = loaded.materials().material(loadedMaterial->payload.materialId);
-        expect(definition != nullptr, testName, "Expected value-noise registry material loaded.", failures);
-        if (definition != nullptr) {
-            expect(definition->material.type == sdf3d::SdfMaterialType::ValueNoise, testName, "Expected value-noise material type preserved.", failures);
-            expect(definition->material.secondaryAlbedo.x == 0.8f, testName, "Expected secondary albedo preserved.", failures);
-            expect(definition->material.patternScale == 15.0f, testName, "Expected pattern scale preserved.", failures);
-            expect(definition->graph.outputNode() != 0, testName, "Expected value-noise material graph preserved.", failures);
+    const sdf3d::MaterialDefinition* definition = loaded.materials().material(material);
+    expect(definition != nullptr, testName, "Expected value-noise registry material loaded.", failures);
+    if (definition != nullptr) {
+        expect(definition->material.type == sdf3d::SdfMaterialType::ValueNoise, testName, "Expected value-noise material type preserved.", failures);
+        expect(definition->material.secondaryAlbedo.x == 0.8f, testName, "Expected secondary albedo preserved.", failures);
+        expect(definition->material.patternScale == 15.0f, testName, "Expected pattern scale preserved.", failures);
+        expect(definition->graph.outputNode() != 0, testName, "Expected value-noise material graph preserved.", failures);
+    }
+
+    std::filesystem::remove(path);
+}
+
+void testJsonGraphMaterialGraphNodeFieldsRoundTrip(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "json material graph node fields round trip";
+    const std::filesystem::path path = testPath("sdf3d_material_graph_node_fields_round_trip.json");
+    sdf3d::JsonGraphSerializer serializer;
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::MaterialId material = graph.materials().createMaterial("Procedural", sdf3d::SdfMaterial{});
+    if (sdf3d::MaterialDefinition* definition = graph.materials().material(material)) {
+        sdf3d::MaterialGraph materialGraph;
+        const sdf3d::MaterialGraphNodeId ramp = materialGraph.createNode(sdf3d::MaterialGraphNodeType::ColorRamp, "Ramp");
+        const sdf3d::MaterialGraphNodeId clamp = materialGraph.createNode(sdf3d::MaterialGraphNodeType::ClampFloat, "Clamp");
+        const sdf3d::MaterialGraphNodeId pbr = materialGraph.createNode(sdf3d::MaterialGraphNodeType::PbrMaterial, "PBR");
+        if (sdf3d::MaterialGraphNode* node = materialGraph.node(ramp)) {
+            node->color = {0.1f, 0.2f, 0.3f};
+            node->secondaryColor = {0.8f, 0.7f, 0.6f};
+            node->value = 0.25f;
         }
+        if (sdf3d::MaterialGraphNode* node = materialGraph.node(clamp)) {
+            node->value = 2.0f;
+            node->secondaryValue = 0.2f;
+            node->tertiaryValue = 0.9f;
+        }
+        expect(materialGraph.link(ramp, "color", pbr, "albedo"), testName, "Expected ramp albedo link.", failures);
+        expect(materialGraph.link(clamp, "value", pbr, "roughness"), testName, "Expected clamp roughness link.", failures);
+        expect(materialGraph.link(pbr, "material", materialGraph.outputNode(), "material"), testName, "Expected output link.", failures);
+        definition->graph = std::move(materialGraph);
+    }
+
+    expect(serializer.save(graph, path), testName, "Expected save success: " + serializer.lastError(), failures);
+    sdf3d::SdfGraph loaded;
+    expect(serializer.load(loaded, path), testName, "Expected load success: " + serializer.lastError(), failures);
+
+    const sdf3d::MaterialDefinition* definition = loaded.materials().material(material);
+    expect(definition != nullptr, testName, "Expected material loaded.", failures);
+    if (definition != nullptr) {
+        const sdf3d::MaterialGraphNode* ramp = firstMaterialGraphNodeOfType(definition->graph, sdf3d::MaterialGraphNodeType::ColorRamp);
+        const sdf3d::MaterialGraphNode* clamp = firstMaterialGraphNodeOfType(definition->graph, sdf3d::MaterialGraphNodeType::ClampFloat);
+        expect(ramp != nullptr && ramp->secondaryColor.z == 0.6f && ramp->value == 0.25f, testName, "Expected ColorRamp fields preserved.", failures);
+        expect(clamp != nullptr && clamp->secondaryValue == 0.2f && clamp->tertiaryValue == 0.9f, testName, "Expected extra Float defaults preserved.", failures);
+    }
+
+    std::filesystem::remove(path);
+}
+
+void testJsonGraphLoadsMaterialGraphWithoutExtraFloatDefaults(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "json material graph loads without extra float defaults";
+    const std::filesystem::path path = testPath("sdf3d_material_graph_missing_extra_defaults.json");
+    {
+        std::ofstream output(path);
+        output
+            << "{\n"
+            << "  \"schema\": \"sdf3d.graph\",\n"
+            << "  \"version\": 1,\n"
+            << "  \"nextId\": 2,\n"
+            << "  \"outputNode\": 1,\n"
+            << "  \"nodes\": [\n"
+            << "    {\"id\": 1, \"type\": \"Output\", \"stableId\": 1, \"name\": \"Output\", \"editor\": {\"x\": 0, \"y\": 0, \"propertiesCollapsed\": false}, \"parameters\": {}}\n"
+            << "  ],\n"
+            << "  \"links\": [],\n"
+            << "  \"materials\": {\n"
+            << "    \"nextId\": 2,\n"
+            << "    \"items\": [{\n"
+            << "      \"id\": 1,\n"
+            << "      \"name\": \"Old Defaults\",\n"
+            << "      \"material\": {\"type\": 0, \"albedo\": [0.8, 0.8, 0.8], \"secondaryAlbedo\": [0.08, 0.08, 0.08], \"roughness\": 0.5, \"metallic\": 0.0, \"emission\": 0.0, \"patternScale\": 4.0},\n"
+            << "      \"graph\": {\n"
+            << "        \"nextId\": 3,\n"
+            << "        \"outputNode\": 1,\n"
+            << "        \"nodes\": [\n"
+            << "          {\"id\": 1, \"type\": \"MaterialOutput\", \"name\": \"Out\", \"color\": [0.8, 0.8, 0.8], \"secondaryColor\": [0.08, 0.08, 0.08], \"value\": 0.0, \"roughness\": 0.5, \"metallic\": 0.0, \"emission\": 0.0, \"editor\": {\"x\": 640, \"y\": 140, \"collapsed\": false}},\n"
+            << "          {\"id\": 2, \"type\": \"ClampFloat\", \"name\": \"Clamp\", \"color\": [0.8, 0.8, 0.8], \"secondaryColor\": [0.08, 0.08, 0.08], \"value\": 0.25, \"roughness\": 0.5, \"metallic\": 0.0, \"emission\": 0.0, \"editor\": {\"x\": 80, \"y\": 80, \"collapsed\": false}}\n"
+            << "        ],\n"
+            << "        \"links\": []\n"
+            << "      }\n"
+            << "    }]\n"
+            << "  }\n"
+            << "}\n";
+    }
+
+    sdf3d::SdfGraph graph;
+    sdf3d::JsonGraphSerializer serializer;
+    expect(serializer.load(graph, path), testName, "Expected load success: " + serializer.lastError(), failures);
+
+    const sdf3d::MaterialDefinition* definition = graph.materials().material(1);
+    const sdf3d::MaterialGraphNode* clamp = definition == nullptr ? nullptr : firstMaterialGraphNodeOfType(definition->graph, sdf3d::MaterialGraphNodeType::ClampFloat);
+    expect(clamp != nullptr && clamp->value == 0.25f && clamp->secondaryValue == 0.0f && clamp->tertiaryValue == 1.0f,
+        testName,
+        "Expected missing extra defaults to load with struct defaults.",
+        failures);
+
+    std::filesystem::remove(path);
+}
+
+void testJsonGraphMigratesLegacyValueNoisePattern(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "json material graph migrates legacy value noise pattern";
+    const std::filesystem::path path = testPath("sdf3d_legacy_value_noise_pattern.json");
+    {
+        std::ofstream output(path);
+        output
+            << "{\n"
+            << "  \"schema\": \"sdf3d.graph\",\n"
+            << "  \"version\": 1,\n"
+            << "  \"nextId\": 2,\n"
+            << "  \"outputNode\": 1,\n"
+            << "  \"nodes\": [\n"
+            << "    {\"id\": 1, \"type\": \"Output\", \"stableId\": 1, \"name\": \"Output\", \"editor\": {\"x\": 0, \"y\": 0, \"propertiesCollapsed\": false}, \"parameters\": {}}\n"
+            << "  ],\n"
+            << "  \"links\": [],\n"
+            << "  \"materials\": {\n"
+            << "    \"nextId\": 2,\n"
+            << "    \"items\": [{\n"
+            << "      \"id\": 1,\n"
+            << "      \"name\": \"Legacy Noise\",\n"
+            << "      \"material\": {\"type\": 2, \"albedo\": [0.1, 0.2, 0.3], \"secondaryAlbedo\": [0.8, 0.7, 0.6], \"roughness\": 0.5, \"metallic\": 0.0, \"emission\": 0.0, \"patternScale\": 9.0},\n"
+            << "      \"graph\": {\n"
+            << "        \"nextId\": 5,\n"
+            << "        \"outputNode\": 1,\n"
+            << "        \"nodes\": [\n"
+            << "          {\"id\": 1, \"type\": \"MaterialOutput\", \"name\": \"Out\", \"color\": [0.8, 0.8, 0.8], \"secondaryColor\": [0.08, 0.08, 0.08], \"value\": 0.0, \"roughness\": 0.5, \"metallic\": 0.0, \"emission\": 0.0, \"editor\": {\"x\": 640, \"y\": 140, \"collapsed\": false}},\n"
+            << "          {\"id\": 2, \"type\": \"ValueNoisePattern\", \"name\": \"Old Noise\", \"color\": [0.1, 0.2, 0.3], \"secondaryColor\": [0.8, 0.7, 0.6], \"value\": 9.0, \"roughness\": 0.5, \"metallic\": 0.0, \"emission\": 0.0, \"editor\": {\"x\": 120, \"y\": 80, \"collapsed\": true}},\n"
+            << "          {\"id\": 3, \"type\": \"FloatConstant\", \"name\": \"Scale\", \"color\": [0.8, 0.8, 0.8], \"secondaryColor\": [0.08, 0.08, 0.08], \"value\": 12.0, \"roughness\": 0.5, \"metallic\": 0.0, \"emission\": 0.0, \"editor\": {\"x\": 0, \"y\": 80, \"collapsed\": false}},\n"
+            << "          {\"id\": 4, \"type\": \"PbrMaterial\", \"name\": \"PBR\", \"color\": [0.8, 0.8, 0.8], \"secondaryColor\": [0.08, 0.08, 0.08], \"value\": 0.0, \"roughness\": 0.5, \"metallic\": 0.0, \"emission\": 0.0, \"editor\": {\"x\": 380, \"y\": 80, \"collapsed\": false}}\n"
+            << "        ],\n"
+            << "        \"links\": [\n"
+            << "          {\"from\": {\"node\": 3, \"socket\": \"value\"}, \"to\": {\"node\": 2, \"socket\": \"scale\"}},\n"
+            << "          {\"from\": {\"node\": 2, \"socket\": \"color\"}, \"to\": {\"node\": 4, \"socket\": \"albedo\"}},\n"
+            << "          {\"from\": {\"node\": 4, \"socket\": \"material\"}, \"to\": {\"node\": 1, \"socket\": \"material\"}}\n"
+            << "        ]\n"
+            << "      }\n"
+            << "    }]\n"
+            << "  }\n"
+            << "}\n";
+    }
+
+    sdf3d::SdfGraph graph;
+    sdf3d::JsonGraphSerializer serializer;
+    expect(serializer.load(graph, path), testName, "Expected legacy value-noise graph load success: " + serializer.lastError(), failures);
+
+    const sdf3d::MaterialDefinition* definition = graph.materials().material(1);
+    expect(definition != nullptr, testName, "Expected migrated material definition.", failures);
+    if (definition != nullptr) {
+        const sdf3d::MaterialGraph& materialGraph = definition->graph;
+        const sdf3d::MaterialGraphNode* mix = materialGraph.node(2);
+        const sdf3d::MaterialGraphNode* noise = firstMaterialGraphNodeOfType(materialGraph, sdf3d::MaterialGraphNodeType::ValueNoise);
+        expect(mix != nullptr && mix->type == sdf3d::MaterialGraphNodeType::MixColor, testName, "Expected old noise node id to become MixColor.", failures);
+        expect(noise != nullptr, testName, "Expected new ValueNoise factor node.", failures);
+        if (mix != nullptr) {
+            expect(mix->color.x == 0.1f && mix->secondaryColor.z == 0.6f, testName, "Expected old noise colors preserved on MixColor.", failures);
+            expect(mix->editorX == 120.0f && mix->editorY == 80.0f && mix->editorCollapsed, testName, "Expected old editor state preserved on MixColor.", failures);
+        }
+        if (noise != nullptr) {
+            expect(hasMaterialGraphLink(materialGraph, 3, "value", noise->id, "scale"), testName, "Expected old scale link moved to ValueNoise scale.", failures);
+            expect(hasMaterialGraphLink(materialGraph, noise->id, "factor", 2, "factor"), testName, "Expected ValueNoise factor linked to MixColor factor.", failures);
+        }
+        expect(hasMaterialGraphLink(materialGraph, 2, "color", 4, "albedo"), testName, "Expected old outgoing color link preserved.", failures);
+        expect(hasMaterialGraphLink(materialGraph, 4, "material", materialGraph.outputNode(), "material"), testName, "Expected material output link preserved.", failures);
+        expect(firstMaterialGraphNodeOfType(materialGraph, sdf3d::MaterialGraphNodeType::ValueNoisePattern) == nullptr, testName, "Expected no active legacy ValueNoisePattern node.", failures);
     }
 
     std::filesystem::remove(path);
@@ -258,18 +447,19 @@ void testJsonGraphMigratesSourceMaterialNode(std::vector<TestFailure>& failures)
     sdf3d::JsonGraphSerializer serializer;
     expect(serializer.load(graph, path), testName, "Expected source material load success: " + serializer.lastError(), failures);
 
-    const sdf3d::SdfGraphNode* materialNode = graph.node(2);
-    expect(materialNode != nullptr, testName, "Expected migrated source material node.", failures);
-    expect(materialNode != nullptr && materialNode->payload.materialId != 0, testName, "Expected migrated source material id.", failures);
-    if (materialNode != nullptr) {
-        const sdf3d::MaterialDefinition* definition = graph.materials().material(materialNode->payload.materialId);
-        expect(definition != nullptr, testName, "Expected migrated source registry material.", failures);
-        if (definition != nullptr) {
-            expect(definition->name == "Loose Paint", testName, "Expected source material name.", failures);
-            expect(definition->material.type == sdf3d::SdfMaterialType::Checker, testName, "Expected checker material type.", failures);
-            expect(definition->material.secondaryAlbedo.y == 0.8f, testName, "Expected checker secondary color.", failures);
-            expect(definition->material.patternScale == 12.0f, testName, "Expected checker pattern scale.", failures);
+    expect(graph.node(2) == nullptr, testName, "Expected legacy source material node skipped.", failures);
+    const sdf3d::MaterialDefinition* definition = nullptr;
+    for (const sdf3d::MaterialDefinition& material : graph.materials().materials()) {
+        if (material.name == "Loose Paint") {
+            definition = &material;
+            break;
         }
+    }
+    expect(definition != nullptr, testName, "Expected migrated source registry material.", failures);
+    if (definition != nullptr) {
+        expect(definition->material.type == sdf3d::SdfMaterialType::Checker, testName, "Expected checker material type.", failures);
+        expect(definition->material.secondaryAlbedo.y == 0.8f, testName, "Expected checker secondary color.", failures);
+        expect(definition->material.patternScale == 12.0f, testName, "Expected checker pattern scale.", failures);
     }
 
     std::filesystem::remove(path);
@@ -312,6 +502,8 @@ void testJsonGraphLoadRepairsLinkedOverrideMaterialId(std::vector<TestFailure>& 
     expect(serializer.load(graph, path), testName, "Expected load success: " + serializer.lastError(), failures);
     const sdf3d::SdfGraphNode* overrideNode = graph.node(3);
     expect(overrideNode != nullptr && overrideNode->payload.materialId == 2, testName, "Expected linked material id to win.", failures);
+    expect(graph.node(4) == nullptr, testName, "Expected legacy linked material source skipped.", failures);
+    expect(!hasLink(graph, 4, "material", 3, "material"), testName, "Expected legacy material link removed.", failures);
 
     expect(serializer.save(graph, savedPath), testName, "Expected repaired save success: " + serializer.lastError(), failures);
     nlohmann::json saved;
@@ -321,12 +513,24 @@ void testJsonGraphLoadRepairsLinkedOverrideMaterialId(std::vector<TestFailure>& 
     }
     bool savedLinked = false;
     bool savedStale = false;
+    bool savedLegacyNode = false;
+    bool savedMaterialLink = false;
     for (const nlohmann::json& material : saved.at("materials").at("items")) {
         savedLinked = savedLinked || material.at("name").get<std::string>() == "Linked Checker";
         savedStale = savedStale || material.at("name").get<std::string>() == "Stale Override";
     }
+    for (const nlohmann::json& node : saved.at("nodes")) {
+        savedLegacyNode = savedLegacyNode || node.at("type").get<std::string>() == "CheckerMaterial";
+    }
+    for (const nlohmann::json& link : saved.at("links")) {
+        savedMaterialLink = savedMaterialLink
+            || link.at("from").at("socket").get<std::string>() == "material"
+            || link.at("to").at("socket").get<std::string>() == "material";
+    }
     expect(savedLinked, testName, "Expected linked material retained.", failures);
-    expect(!savedStale, testName, "Expected stale override material pruned.", failures);
+    expect(savedStale, testName, "Expected unused registry material retained.", failures);
+    expect(!savedLegacyNode, testName, "Expected legacy material node omitted on save.", failures);
+    expect(!savedMaterialLink, testName, "Expected legacy material link omitted on save.", failures);
 
     std::filesystem::remove(path);
     std::filesystem::remove(savedPath);
@@ -585,6 +789,9 @@ int main()
 
     testJsonGraphRoundTrip(failures);
     testJsonGraphValueNoiseMaterialRoundTrip(failures);
+    testJsonGraphMaterialGraphNodeFieldsRoundTrip(failures);
+    testJsonGraphLoadsMaterialGraphWithoutExtraFloatDefaults(failures);
+    testJsonGraphMigratesLegacyValueNoisePattern(failures);
     testJsonGraphMigratesInlineMaterial(failures);
     testJsonGraphMigratesSourceMaterialNode(failures);
     testJsonGraphLoadRepairsLinkedOverrideMaterialId(failures);

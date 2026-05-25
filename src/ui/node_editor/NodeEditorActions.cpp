@@ -19,17 +19,15 @@ float layoutZoom(const GraphNodeLayout& layout)
 
 bool wrapInMaterialOverride(SdfGraph& graph, const GraphNodeLayout& layout)
 {
-    const SdfGraphNodeId materialValueNode = graph.createNode(SdfNodeType::SolidMaterial);
     const SdfGraphNodeId overrideNode = graph.createNode(SdfNodeType::MaterialOverride);
-    SdfGraphNode* material = graph.node(materialValueNode);
     SdfGraphNode* override = graph.node(overrideNode);
-    if (material == nullptr || override == nullptr) {
+    if (override == nullptr) {
         return false;
     }
 
-    material->editorX = layout.node->editorX + NODE_WIDTH + 40.0f;
-    material->editorY = layout.node->editorY;
-    override->editorX = material->editorX + NODE_WIDTH + 40.0f;
+    const MaterialId materialId = graph.materials().createMaterial("Material");
+    (void)GraphSystem::assignMaterialToNode(graph, overrideNode, materialId);
+    override->editorX = layout.node->editorX + NODE_WIDTH + 40.0f;
     override->editorY = layout.node->editorY;
 
     const std::vector<SdfGraphLink> oldLinks = graph.links();
@@ -43,7 +41,6 @@ bool wrapInMaterialOverride(SdfGraph& graph, const GraphNodeLayout& layout)
     // AGENT: Wrap keeps existing downstream links, then inserts material tag
     // between primitive geometry and all consumers.
     graph.link(layout.id, "sdf", overrideNode, "sdf");
-    graph.link(materialValueNode, "material", overrideNode, "material");
     graph.setSelectedNode(overrideNode);
     return true;
 }
