@@ -7,6 +7,8 @@ std::string glslNodeTypeName(SdfNodeType type)
     switch (type) {
     case SdfNodeType::Sphere:
         return "Sphere";
+    case SdfNodeType::SphereInstances:
+        return "SphereInstances";
     case SdfNodeType::Box:
         return "Box";
     case SdfNodeType::Cylinder:

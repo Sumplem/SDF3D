@@ -17,6 +17,7 @@ struct PathTraceFrameKey {
     uint64_t sceneRevision = 0;
     uint64_t materialRevision = 0;
     uint64_t nodeParamRevision = 0;
+    uint64_t instanceRevision = 0;
 };
 
 /// Owns progressive path-tracing accumulation state and HDR storage.

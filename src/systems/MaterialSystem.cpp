@@ -15,6 +15,7 @@ void collectNodeMaterials(const SdfNodePtr& node, SdfCompileResult& result, cons
 
     switch (node->type) {
     case SdfNodeType::Sphere:
+    case SdfNodeType::SphereInstances:
     case SdfNodeType::Box:
     case SdfNodeType::Cylinder:
     case SdfNodeType::Torus:

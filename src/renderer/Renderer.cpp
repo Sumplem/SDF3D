@@ -60,7 +60,14 @@ void Renderer::render(const RenderCamera& camera)
         m_quality,
         m_environmentColor,
         m_materials,
-        m_nodeParams);
+        m_nodeParams,
+        m_instancePositions,
+        m_materialBufferDirty,
+        m_nodeParamBufferDirty,
+        m_instancePositionBufferDirty);
+    m_materialBufferDirty = false;
+    m_nodeParamBufferDirty = false;
+    m_instancePositionBufferDirty = false;
     bool pathTraceFrameReady = false;
     if (progressive) {
         const PathTraceFrameKey key{
@@ -73,6 +80,7 @@ void Renderer::render(const RenderCamera& camera)
             m_sceneRevision,
             m_materialRevision,
             m_nodeParamRevision,
+            m_instanceRevision,
         };
         if (m_pathTraceAccumulation.prepareFrame(key)) {
             pathTraceFrameReady = true;
@@ -137,6 +145,7 @@ void Renderer::setEnvironmentColor(const glm::vec3& color)
 void Renderer::setMaterials(std::vector<SdfCompiledMaterial> materials)
 {
     m_materials = std::move(materials);
+    m_materialBufferDirty = true;
     ++m_materialRevision;
     m_pathTraceAccumulation.reset();
 }
@@ -144,7 +153,16 @@ void Renderer::setMaterials(std::vector<SdfCompiledMaterial> materials)
 void Renderer::setNodeParams(std::vector<SdfCompiledNodeParam> nodeParams)
 {
     m_nodeParams = std::move(nodeParams);
+    m_nodeParamBufferDirty = true;
     ++m_nodeParamRevision;
+    m_pathTraceAccumulation.reset();
+}
+
+void Renderer::setInstancePositions(std::vector<SdfCompiledInstancePosition> instancePositions)
+{
+    m_instancePositions = std::move(instancePositions);
+    m_instancePositionBufferDirty = true;
+    ++m_instanceRevision;
     m_pathTraceAccumulation.reset();
 }
 

@@ -14,6 +14,8 @@ const char* nodeTypeName(SdfNodeType type)
     switch (type) {
     case SdfNodeType::Sphere:
         return "Sphere";
+    case SdfNodeType::SphereInstances:
+        return "SphereInstances";
     case SdfNodeType::Box:
         return "Box";
     case SdfNodeType::Cylinder:
@@ -75,6 +77,7 @@ std::optional<SdfNodeType> parseNodeType(const std::string& name)
 {
     for (SdfNodeType type : {
              SdfNodeType::Sphere,
+             SdfNodeType::SphereInstances,
              SdfNodeType::Box,
              SdfNodeType::Cylinder,
              SdfNodeType::Torus,
@@ -432,6 +435,13 @@ nlohmann::json nodeToJson(const SdfGraphNode& node)
     if (node.payload.type == SdfNodeType::Group && node.payload.groupDefinitionId != 0) {
         value["definitionId"] = node.payload.groupDefinitionId;
     }
+    if (!node.payload.instancePositions.empty()) {
+        nlohmann::json positions = nlohmann::json::array();
+        for (const glm::vec3& position : node.payload.instancePositions) {
+            positions.push_back({position.x, position.y, position.z});
+        }
+        value["instancePositions"] = positions;
+    }
     return value;
 }
 
@@ -451,6 +461,18 @@ SdfGraphNode nodeFromJson(const nlohmann::json& value)
     payload.groupDefinitionId = value.contains("definitionId") ? value.at("definitionId").get<GroupDefId>() : 0;
     for (const auto& [key, parameter] : value.at("parameters").items()) {
         payload.parameters[key] = parameter.get<float>();
+    }
+    if (value.contains("instancePositions")) {
+        for (const nlohmann::json& positionValue : value.at("instancePositions")) {
+            if (!positionValue.is_array() || positionValue.size() != 3) {
+                throw std::runtime_error("Instance position must have exactly three values.");
+            }
+            payload.instancePositions.push_back({
+                positionValue.at(0).get<float>(),
+                positionValue.at(1).get<float>(),
+                positionValue.at(2).get<float>(),
+            });
+        }
     }
     const bool legacyMaterialSource = *type == SdfNodeType::SolidMaterial
         || *type == SdfNodeType::CheckerMaterial

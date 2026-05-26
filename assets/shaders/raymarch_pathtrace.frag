@@ -38,7 +38,7 @@ const vec3 DIRECT_LIGHT_RADIANCE = vec3(1.15, 1.10, 1.0);
 const float DIRECT_LIGHT_PDF = 1.0;
 const float MIN_PDF = 0.0001;
 const float MAX_EMISSIVE_RADIANCE = 16.0;
-const int EMISSIVE_AREA_LIGHT_SAMPLES = 1;
+const int EMISSIVE_SURFACE_HIT_SAMPLES = 1;
 
 struct SdfMaterialSample {
     vec3 albedo;
@@ -370,10 +370,10 @@ vec3 directionalLightEstimate(vec3 hitPosition, vec3 normal, vec3 viewDirection,
     return DIRECT_LIGHT_RADIANCE * brdf * nDotL * misWeight / DIRECT_LIGHT_PDF;
 }
 
-vec3 emissiveAreaLightEstimate(vec3 hitPosition, vec3 normal, vec3 viewDirection, SdfMaterialSample material, inout uint rng)
+vec3 stochasticEmissiveSurfaceEstimate(vec3 hitPosition, vec3 normal, vec3 viewDirection, SdfMaterialSample material, inout uint rng)
 {
     vec3 estimate = vec3(0.0);
-    for (int i = 0; i < EMISSIVE_AREA_LIGHT_SAMPLES; ++i) {
+    for (int i = 0; i < EMISSIVE_SURFACE_HIT_SAMPLES; ++i) {
         vec3 lightDirection = cosineHemisphere(normal, rng);
         float lightPdf = cosineHemispherePdf(normal, lightDirection);
         if (lightPdf <= MIN_PDF) {
@@ -403,13 +403,13 @@ vec3 emissiveAreaLightEstimate(vec3 hitPosition, vec3 normal, vec3 viewDirection
         float misWeight = powerHeuristic(lightPdf, bsdfPdf);
         estimate += lightRadiance * brdf * nDotL * misWeight / lightPdf;
     }
-    return estimate / float(EMISSIVE_AREA_LIGHT_SAMPLES);
+    return estimate / float(EMISSIVE_SURFACE_HIT_SAMPLES);
 }
 
 vec3 nextEventEstimate(vec3 hitPosition, vec3 normal, vec3 viewDirection, SdfMaterialSample material, inout uint rng)
 {
     vec3 estimate = directionalLightEstimate(hitPosition, normal, viewDirection, material);
-    estimate += emissiveAreaLightEstimate(hitPosition, normal, viewDirection, material, rng);
+    estimate += stochasticEmissiveSurfaceEstimate(hitPosition, normal, viewDirection, material, rng);
     return estimate;
 }
 

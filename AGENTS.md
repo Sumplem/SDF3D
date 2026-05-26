@@ -5,14 +5,12 @@
 - Edit shader `raymarch_edit.frag` active always during editing; `raymarch_scene.frag` for export only; edit overlays force direct preview in path-trace mode
 - Canonical branch order: Scale -> Rotate -> Translate; ensure-wrapper reuses existing nodes in chain
 - MaterialRegistry owns reusable material assets; each `MaterialDefinition` has a per-material shader graph plus legacy preview `SdfMaterial`
-- Scene graph material source nodes are removed from active definitions/UI/compiler paths; legacy files migrate them into MaterialRegistry assets
 - MaterialOverride has one `sdf` input, applies registry assets by stable `materialId`, and selects registry materials directly from Properties/inline node UI
 - MaterialGraph assets compile through `MaterialGraphCompiler` into `SdfMaterialSample` helpers consumed by deferred `sceneMaterial`
 - MaterialGraph input defaults live on consuming nodes and are overridden by connected sockets; link compatibility uses socket value type
-- `MaterialGraphPanel` uses a scene-node-graph style canvas with pan, zoom, embedded inputs, Add popup, Delete, socket linking, input-detach rewiring, node collapse, drop feedback, layout-only dragging, and material list docked on the right
 - MaterialGraph semantic edits mark scene dirty; nodes include core color/float shaping ops, `Checker` color+factor outputs, active `ValueNoise`, and load-only legacy `ValueNoisePattern` migration
 - Shared `GraphCanvas`/`GraphEditorCore` own canvas frame behavior and reusable graph drawing/hit primitives
-- `GlslEmitter` is 8 concern files; shared math owns domain transforms; primitive emitter supports Sphere/Box/Cylinder/Torus/Plane/Capsule/Cone/RoundBox
+- `GlslEmitter` is 8 concern files; shared math owns domain transforms; primitive emitter supports Sphere/Box/Cylinder/Torus/Plane/Capsule/Cone/RoundBox/SphereInstances
 - `SdfNodeDefinition` metadata owns parameter type: Float, Bool, Enum; UI must not infer bool/enum from numeric ranges
 - Node groups use App-owned `GraphGroupRegistry`; entered group subgraph is active editor/viewport/compiler/UI target
 - Viewport picking uses GPU node-id buffer (`GL_R32I`) and compiler-emitted `scenePickId`; CPU graph raymarch picking is removed
@@ -20,12 +18,16 @@
 - SDF graph links allow acyclic DAG fan-out/reuse; `GraphSystem` rejects cycles during link creation and serialized graph load
 - Union/SmoothUnion/Intersect/SmoothIntersect use one multi-input `inputs` socket; Viewport Add appends to output-root Union/SmoothUnion when possible
 - Runtime GLSL mode reads Float node params from SSBO binding 1; Float edits refresh SSBO only, Bool/Enum/topology recompile
+- `SphereInstances` stores per-node instance positions, compiles one sphere primitive over N positions, and uses node params for radius/range
+- Runtime material/node-param/instance SSBOs bind every frame but re-upload only when renderer data setters mark buffers dirty
+- `SphereInstances` Properties UI supports Add Instance, Add Batch, spacing, per-position editing/delete, and Clear Instances; large position lists are ImGui-clipped and all instance edits are param dirty only
+- Viewport Add `SphereInstances` appends to the selected SphereInstances node at clicked world position and marks params dirty; new topology is created only when no SphereInstances node is selected
 - Path-trace shader has GI bounces, Russian Roulette, solid environment color, GGX VNDF glossy sampling, NEE/MIS direct light, shader-owned emissive surface sampling, clamped emissive contribution, and accumulation
-- Build/tests: full Debug app build passes; all `build\Debug\*_tests.exe` pass after Capsule/Cone/RoundBox primitive enablement
+- Build/tests: full Debug app build passes; targeted GraphSystem/UniformUploader tests pass; GUI smoke launches; full test loop currently blocked by Windows Application Control on `sdf3d_compiler_system_tests.exe`
 
 ## Active
 
-Capsule/Cone/RoundBox primitive enablement is ready for review: the existing stubbed node types are now exposed as Primitive nodes and compile through baked/runtime GLSL.
+Sphere instancing viewport add fast path is implemented: when a SphereInstances node is selected, viewport Add SphereInstances appends a position without graph topology changes or shader recompile.
 
 ## Decisions
 
@@ -136,6 +138,12 @@ Capsule/Cone/RoundBox primitive enablement is ready for review: the existing stu
 - 2026-05 - SDF node auto-layout rows are DFS-assigned from Output backward; each child subtree owns its row range, and whole-graph disconnected islands stack below the output-connected tree
 - 2026-05 - SDF graphs support acyclic DAG fan-out so one source can feed direct and transformed branches; `GraphSystem` rejects cycles on link creation and graph data replacement
 - 2026-05 - Capsule, Cone, and RoundBox are active primitive SDF nodes with metadata-driven UI and baked/runtime GLSL emission
+- 2026-05 - `SphereInstances` uses one node-param slot for radius plus instance-buffer first/count so adding positions refreshes SSBOs without shader recompile
+- 2026-05 - Runtime instance positions use renderer-owned SSBO binding 2; baked GLSL emits literal positions and stays SSBO-free
+- 2026-05 - Runtime SSBO uploads are dirty-driven: renderer data setters mark buffers dirty, render frames bind buffers but skip `glBufferData` when data is unchanged
+- 2026-05 - SphereInstances batch additions are Properties-panel data edits only; they append positions and refresh runtime buffers without changing graph topology
+- 2026-05 - SphereInstances position rows are virtualized in Properties because drawing one ImGui row per instance makes add/edit latency scale with total instance count
+- 2026-05 - Viewport Add SphereInstances reuses the selected SphereInstances node as an append target because adding one position is instance data, not graph topology
 
 ## Constraints
 
@@ -157,6 +165,7 @@ Capsule/Cone/RoundBox primitive enablement is ready for review: the existing stu
 - Do not route material graph ownership through renderer because material graph compilation belongs to compiler/UI layers
 - Do not reintroduce scene graph material source nodes because material assets belong in MaterialRegistry/MaterialGraph and MaterialOverride references them by `materialId`
 - Never allow cyclic SDF graph links because compiler/layout/validity traversals assume directed acyclic graph flow
+- Keep instancing position data compiler/scene-owned and upload only compiled buffers to renderer because renderer must stay graph-free
 
 ## Environment
 
@@ -170,4 +179,4 @@ Capsule/Cone/RoundBox primitive enablement is ready for review: the existing stu
 
 ## Next
 
-Waiting for review of the Capsule/Cone/RoundBox primitive enablement.
+Review viewport Add SphereInstances fast path in-app; if still slow, profile shader-side per-instance raymarch cost.

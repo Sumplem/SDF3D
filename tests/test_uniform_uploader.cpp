@@ -93,6 +93,24 @@ void testPackedNodeParamLayout(std::vector<TestFailure>& failures)
     }
 }
 
+void testPackedInstancePositionLayout(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "packed instance position layout";
+    std::vector<sdf3d::SdfCompiledInstancePosition> positions(2);
+    positions[0].position = {1.0f, 2.0f, 3.0f};
+    positions[1].position = {4.0f, 5.0f, 6.0f};
+
+    const std::vector<sdf3d::UniformUploader::GpuInstancePosition> packed = sdf3d::UniformUploader::packInstancePositions(positions);
+
+    expect(sizeof(sdf3d::UniformUploader::GpuInstancePosition) == sizeof(float) * 4, testName, "Expected one vec4 instance position layout.", failures);
+    expect(packed.size() == 2, testName, "Expected all instance positions packed.", failures);
+    if (packed.size() == 2) {
+        expect(packed[0].position.x == 1.0f, testName, "Expected first x packed.", failures);
+        expect(packed[0].position.w == 0.0f, testName, "Expected padding zero.", failures);
+        expect(packed[1].position.z == 6.0f, testName, "Expected second z packed.", failures);
+    }
+}
+
 void testRenderGizmoDefaults(std::vector<TestFailure>& failures)
 {
     const std::string testName = "render gizmo defaults";
@@ -147,6 +165,7 @@ int main()
     testPackedMaterialLayout(failures);
     testPackedValueNoiseMaterialType(failures);
     testPackedNodeParamLayout(failures);
+    testPackedInstancePositionLayout(failures);
     testRenderGizmoDefaults(failures);
     testRenderQualityValues(failures);
     testRenderModeValues(failures);

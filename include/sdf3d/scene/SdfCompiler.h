@@ -10,6 +10,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <glm/glm.hpp>
+
 namespace sdf3d {
 
 class GraphGroupRegistry;
@@ -26,6 +28,24 @@ struct SdfCompiledNodeParam {
     std::array<float, 4> data0 = {0.0f, 0.0f, 0.0f, 0.0f};
 };
 
+/// Runtime instanced primitive position uploaded beside generated GLSL.
+struct SdfCompiledInstancePosition {
+    glm::vec3 position = {0.0f, 0.0f, 0.0f};
+};
+
+/// Runtime range into the instanced primitive position buffer for one node.
+struct SdfCompiledInstanceRange {
+    uint64_t nodeId = 0;
+    uint32_t first = 0;
+    uint32_t count = 0;
+};
+
+/// Runtime instanced primitive data gathered from graph payloads.
+struct SdfCompiledInstanceData {
+    std::vector<SdfCompiledInstancePosition> positions;
+    std::vector<SdfCompiledInstanceRange> ranges;
+};
+
 /// Result of compiling an SDF node tree into GLSL.
 struct SdfCompileResult {
     std::string glsl;
@@ -34,6 +54,8 @@ struct SdfCompileResult {
     // material ID assignment without coupling SdfNode to renderer uniform layout.
     std::vector<SdfCompiledMaterial> materials;
     std::vector<SdfCompiledNodeParam> nodeParams;
+    std::vector<SdfCompiledInstancePosition> instancePositions;
+    std::vector<SdfCompiledInstanceRange> instanceRanges;
     std::unordered_map<MaterialId, std::string> materialFunctionByRegistryId;
     bool usesBox = false;
     bool usesCylinder = false;

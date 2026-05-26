@@ -20,6 +20,11 @@ namespace {
 constexpr float enabledThreshold = 0.5f;
 constexpr float disabledValue = 0.0f;
 constexpr float enabledValue = 1.0f;
+constexpr int minInstanceBatchCount = 1;
+constexpr int maxInstanceBatchCount = 10000;
+constexpr float instancePositionDragSpeed = 0.01f;
+constexpr float instancePositionMin = -100.0f;
+constexpr float instancePositionMax = 100.0f;
 
 bool drawBoolParameter(const std::string& key, float& value)
 {
@@ -160,6 +165,73 @@ EditorDirtyState drawMaterialPalette(SdfGraph& graph)
     return dirty;
 }
 
+bool drawInstancePositions(SdfNode& node)
+{
+    bool changed = false;
+    if (node.type != SdfNodeType::SphereInstances) {
+        return changed;
+    }
+
+    static int batchCount = 10;
+    static glm::vec3 batchSpacing = {1.0f, 0.0f, 0.0f};
+
+    ImGui::SeparatorText("Instances");
+    ImGui::Text("Count: %d", static_cast<int>(node.instancePositions.size()));
+
+    ImGui::SetNextItemWidth(120.0f);
+    if (ImGui::InputInt("Add Count", &batchCount)) {
+        batchCount = std::clamp(batchCount, minInstanceBatchCount, maxInstanceBatchCount);
+    }
+    ImGui::SetNextItemWidth(180.0f);
+    (void)ImGui::DragFloat3("Spacing", &batchSpacing.x, instancePositionDragSpeed, instancePositionMin, instancePositionMax);
+
+    if (ImGui::Button("Add Batch")) {
+        const glm::vec3 origin = node.instancePositions.empty()
+            ? glm::vec3{0.0f, 0.0f, 0.0f}
+            : node.instancePositions.back() + batchSpacing;
+        node.instancePositions.reserve(node.instancePositions.size() + static_cast<size_t>(batchCount));
+        for (int i = 0; i < batchCount; ++i) {
+            node.instancePositions.push_back(origin + batchSpacing * static_cast<float>(i));
+        }
+        changed = true;
+    }
+    ImGui::SameLine();
+    if (!node.instancePositions.empty() && ImGui::Button("Clear Instances")) {
+        node.instancePositions.clear();
+        changed = true;
+    }
+
+    int deleteIndex = -1;
+    ImGuiListClipper clipper;
+    clipper.Begin(static_cast<int>(node.instancePositions.size()));
+    while (clipper.Step()) {
+        for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+            ImGui::PushID(i);
+            ImGui::SetNextItemWidth(180.0f);
+            changed = ImGui::DragFloat3("Position", &node.instancePositions[i].x, instancePositionDragSpeed, instancePositionMin, instancePositionMax) || changed;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Delete")) {
+                deleteIndex = i;
+            }
+            ImGui::PopID();
+        }
+    }
+
+    if (deleteIndex >= 0) {
+        node.instancePositions.erase(node.instancePositions.begin() + deleteIndex);
+        changed = true;
+    }
+    if (ImGui::Button("Add Instance")) {
+        const glm::vec3 position = node.instancePositions.empty()
+            ? glm::vec3{0.0f, 0.0f, 0.0f}
+            : node.instancePositions.back() + batchSpacing;
+        node.instancePositions.push_back(position);
+        changed = true;
+    }
+
+    return changed;
+}
+
 } // namespace
 
 EditorDirtyState PropertiesPanel::draw(SdfGraph& graph, GraphGroupRegistry& groups)
@@ -275,6 +347,10 @@ EditorDirtyState PropertiesPanel::draw(SdfGraph& graph, GraphGroupRegistry& grou
             }
             dirty.params = true;
         }
+    }
+
+    if (drawInstancePositions(*selected)) {
+        dirty.params = true;
     }
 
     ImGui::End();

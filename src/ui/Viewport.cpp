@@ -198,9 +198,9 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SdfGraph& graph, const Graph
         m_pendingAddWorldPosition = viewportSpawnPosition(ImGui::GetIO().MousePos, renderCamera, imageMin, imageMax);
         ImGui::OpenPopup(node_editor::NODE_ADD_POPUP_ID);
     }
-    if (m_viewportAddMenu.drawViewportPopup(graph, m_pendingAddWorldPosition)) {
-        dirty.scene = true;
-    }
+    const EditorDirtyState viewportAddDirty = m_viewportAddMenu.drawViewportPopup(graph, m_pendingAddWorldPosition);
+    dirty.scene = dirty.scene || viewportAddDirty.scene;
+    dirty.params = dirty.params || viewportAddDirty.params;
 
     dirty.scene = dirty.scene || gizmoDirty.scene;
     ImGui::End();

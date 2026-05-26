@@ -63,12 +63,33 @@ bool isMultiInputBooleanFamily(SdfNodeType type)
         || type == SdfNodeType::SmoothIntersect;
 }
 
-bool runtimeNodeParamFor(const SdfGraphNode& node, SdfCompiledNodeParam& param, GroupDefId stableIdScope)
+using InstanceRangeByNodeId = std::unordered_map<uint64_t, SdfCompiledInstanceRange>;
+
+SdfCompiledInstanceRange instanceRangeFor(uint64_t nodeId, const InstanceRangeByNodeId& ranges)
+{
+    const auto it = ranges.find(nodeId);
+    if (it == ranges.end()) {
+        return {};
+    }
+    return it->second;
+}
+
+bool runtimeNodeParamFor(const SdfGraphNode& node, SdfCompiledNodeParam& param, GroupDefId stableIdScope, const InstanceRangeByNodeId& instanceRanges)
 {
     param.nodeId = scopedSdfNodeStableId(stableIdScope, node.payload.stableId != 0 ? node.payload.stableId : node.id);
     param.data0 = {0.0f, 0.0f, 0.0f, 0.0f};
 
     switch (node.payload.type) {
+    case SdfNodeType::SphereInstances: {
+        const SdfCompiledInstanceRange range = instanceRangeFor(param.nodeId, instanceRanges);
+        param.data0 = {
+            parameterOr(node.payload, "radius", 1.0f),
+            static_cast<float>(range.first),
+            static_cast<float>(range.count),
+            0.0f,
+        };
+        return true;
+    }
     case SdfNodeType::Rotate:
     {
         const glm::vec4 q = rotationQuaternionForNode(node.payload);
@@ -111,12 +132,13 @@ void appendRuntimeNodeParams(
     const SdfGraph& graph,
     std::vector<SdfCompiledNodeParam>& params,
     std::unordered_set<SdfGraphNodeId>& packedIds,
+    const InstanceRangeByNodeId& instanceRanges,
     GroupDefId stableIdScope)
 {
     for (const auto& [id, node] : graph.nodes()) {
         SdfCompiledNodeParam param;
         (void)id;
-        if (!runtimeNodeParamFor(node, param, stableIdScope)) {
+        if (!runtimeNodeParamFor(node, param, stableIdScope, instanceRanges)) {
             continue;
         }
 
@@ -131,6 +153,7 @@ void appendReachableGroupNodeParams(
     const GraphGroupRegistry& groups,
     std::vector<SdfCompiledNodeParam>& params,
     std::unordered_set<SdfGraphNodeId>& packedIds,
+    const InstanceRangeByNodeId& instanceRanges,
     std::unordered_set<GroupDefId>& visitedDefinitions)
 {
     for (const auto& [id, node] : graph.nodes()) {
@@ -146,9 +169,76 @@ void appendReachableGroupNodeParams(
         if (definition == nullptr) {
             continue;
         }
-        appendRuntimeNodeParams(definition->subgraph, params, packedIds, node.payload.groupDefinitionId);
-        appendReachableGroupNodeParams(definition->subgraph, groups, params, packedIds, visitedDefinitions);
+        appendRuntimeNodeParams(definition->subgraph, params, packedIds, instanceRanges, node.payload.groupDefinitionId);
+        appendReachableGroupNodeParams(definition->subgraph, groups, params, packedIds, instanceRanges, visitedDefinitions);
     }
+}
+
+void appendInstanceData(
+    const SdfGraph& graph,
+    SdfCompiledInstanceData& instances,
+    std::unordered_set<uint64_t>& packedIds,
+    GroupDefId stableIdScope)
+{
+    std::vector<const SdfGraphNode*> nodes;
+    nodes.reserve(graph.nodes().size());
+    for (const auto& [id, node] : graph.nodes()) {
+        (void)id;
+        if (node.payload.type == SdfNodeType::SphereInstances) {
+            nodes.push_back(&node);
+        }
+    }
+    std::sort(nodes.begin(), nodes.end(), [stableIdScope](const SdfGraphNode* left, const SdfGraphNode* right) {
+        const uint64_t leftId = scopedSdfNodeStableId(stableIdScope, left->payload.stableId != 0 ? left->payload.stableId : left->id);
+        const uint64_t rightId = scopedSdfNodeStableId(stableIdScope, right->payload.stableId != 0 ? right->payload.stableId : right->id);
+        return leftId < rightId;
+    });
+
+    for (const SdfGraphNode* node : nodes) {
+        const uint64_t nodeId = scopedSdfNodeStableId(stableIdScope, node->payload.stableId != 0 ? node->payload.stableId : node->id);
+        if (!packedIds.insert(nodeId).second) {
+            continue;
+        }
+        const uint32_t first = static_cast<uint32_t>(instances.positions.size());
+        for (const glm::vec3& position : node->payload.instancePositions) {
+            instances.positions.push_back({position});
+        }
+        instances.ranges.push_back({nodeId, first, static_cast<uint32_t>(node->payload.instancePositions.size())});
+    }
+}
+
+void appendReachableGroupInstanceData(
+    const SdfGraph& graph,
+    const GraphGroupRegistry& groups,
+    SdfCompiledInstanceData& instances,
+    std::unordered_set<uint64_t>& packedIds,
+    std::unordered_set<GroupDefId>& visitedDefinitions)
+{
+    for (const auto& [id, node] : graph.nodes()) {
+        (void)id;
+        if (node.payload.type != SdfNodeType::Group || node.payload.groupDefinitionId == 0) {
+            continue;
+        }
+        if (!visitedDefinitions.insert(node.payload.groupDefinitionId).second) {
+            continue;
+        }
+
+        const GraphGroupDefinition* definition = groups.definition(node.payload.groupDefinitionId);
+        if (definition == nullptr) {
+            continue;
+        }
+        appendInstanceData(definition->subgraph, instances, packedIds, node.payload.groupDefinitionId);
+        appendReachableGroupInstanceData(definition->subgraph, groups, instances, packedIds, visitedDefinitions);
+    }
+}
+
+InstanceRangeByNodeId instanceRangeMap(const SdfCompiledInstanceData& instances)
+{
+    InstanceRangeByNodeId ranges;
+    for (const SdfCompiledInstanceRange& range : instances.ranges) {
+        ranges.emplace(range.nodeId, range);
+    }
+    return ranges;
 }
 
 void assignNodeParamSlots(std::vector<SdfCompiledNodeParam>& params)
@@ -590,6 +680,17 @@ bool GraphSystem::assignMaterialToNode(SdfGraph& graph, SdfGraphNodeId nodeId, M
     return true;
 }
 
+bool GraphSystem::appendInstancePosition(SdfGraph& graph, SdfGraphNodeId nodeId, glm::vec3 position)
+{
+    SdfGraphNode* node = graph.node(nodeId);
+    if (node == nullptr || node->payload.type != SdfNodeType::SphereInstances) {
+        return false;
+    }
+
+    node->payload.instancePositions.push_back(position);
+    return true;
+}
+
 bool GraphSystem::link(SdfGraph& graph, SdfGraphNodeId fromNode, SdfGraphNodeId toNode, std::string toSocket)
 {
     return link(graph, fromNode, "sdf", toNode, std::move(toSocket));
@@ -694,25 +795,56 @@ bool GraphSystem::hasLinks(const SdfGraph& graph, SdfGraphNodeId id)
 
 std::vector<SdfCompiledNodeParam> GraphSystem::collectNodeParams(const SdfGraph& graph)
 {
-    std::vector<SdfCompiledNodeParam> params;
-    params.reserve(graph.nodes().size());
-    std::unordered_set<SdfGraphNodeId> packedIds;
-    appendRuntimeNodeParams(graph, params, packedIds, 0);
-    assignNodeParamSlots(params);
-
-    return params;
+    return collectRuntimeBufferData(graph).nodeParams;
 }
 
 std::vector<SdfCompiledNodeParam> GraphSystem::collectNodeParams(const SdfGraph& graph, const GraphGroupRegistry& groups)
 {
-    std::vector<SdfCompiledNodeParam> params;
-    params.reserve(graph.nodes().size());
+    return collectRuntimeBufferData(graph, groups).nodeParams;
+}
+
+SdfCompiledInstanceData GraphSystem::collectInstanceData(const SdfGraph& graph)
+{
+    SdfCompiledInstanceData instances;
+    std::unordered_set<uint64_t> packedIds;
+    appendInstanceData(graph, instances, packedIds, 0);
+    return instances;
+}
+
+SdfCompiledInstanceData GraphSystem::collectInstanceData(const SdfGraph& graph, const GraphGroupRegistry& groups)
+{
+    SdfCompiledInstanceData instances;
+    std::unordered_set<uint64_t> packedIds;
+    std::unordered_set<GroupDefId> visitedDefinitions;
+    appendInstanceData(graph, instances, packedIds, 0);
+    appendReachableGroupInstanceData(graph, groups, instances, packedIds, visitedDefinitions);
+    return instances;
+}
+
+SdfRuntimeBufferData GraphSystem::collectRuntimeBufferData(const SdfGraph& graph)
+{
+    SdfRuntimeBufferData buffers;
+    buffers.instances = collectInstanceData(graph);
+    const InstanceRangeByNodeId instanceRanges = instanceRangeMap(buffers.instances);
+    buffers.nodeParams.reserve(graph.nodes().size());
+    std::unordered_set<SdfGraphNodeId> packedIds;
+    appendRuntimeNodeParams(graph, buffers.nodeParams, packedIds, instanceRanges, 0);
+    assignNodeParamSlots(buffers.nodeParams);
+    return buffers;
+}
+
+SdfRuntimeBufferData GraphSystem::collectRuntimeBufferData(const SdfGraph& graph, const GraphGroupRegistry& groups)
+{
+    SdfRuntimeBufferData buffers;
+    buffers.instances = collectInstanceData(graph, groups);
+    const InstanceRangeByNodeId instanceRanges = instanceRangeMap(buffers.instances);
+    buffers.nodeParams.reserve(graph.nodes().size());
     std::unordered_set<SdfGraphNodeId> packedIds;
     std::unordered_set<GroupDefId> visitedDefinitions;
-    appendRuntimeNodeParams(graph, params, packedIds, 0);
-    appendReachableGroupNodeParams(graph, groups, params, packedIds, visitedDefinitions);
-    assignNodeParamSlots(params);
-    return params;
+    appendRuntimeNodeParams(graph, buffers.nodeParams, packedIds, instanceRanges, 0);
+    appendReachableGroupNodeParams(graph, groups, buffers.nodeParams, packedIds, instanceRanges, visitedDefinitions);
+    assignNodeParamSlots(buffers.nodeParams);
+    return buffers;
 }
 
 } // namespace sdf3d

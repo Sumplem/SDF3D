@@ -52,6 +52,7 @@ const std::vector<SdfNodeDefinition>& definitions()
 {
     static const std::vector<SdfNodeDefinition> items = {
         {SdfNodeType::Sphere, SdfNodeCategory::Primitive, "Sphere", {floatParameter("radius", 1.0f, 0.001f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
+        {SdfNodeType::SphereInstances, SdfNodeCategory::Primitive, "Sphere Instances", {floatParameter("radius", 1.0f, 0.001f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
         {SdfNodeType::Box, SdfNodeCategory::Primitive, "Box", {floatParameter("x", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("y", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("z", 1.0f, 0.001f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
         {SdfNodeType::Cylinder, SdfNodeCategory::Primitive, "Cylinder", {floatParameter("radius", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("halfHeight", 1.0f, 0.001f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
         {SdfNodeType::Torus, SdfNodeCategory::Primitive, "Torus", {floatParameter("majorRadius", 1.0f, 0.001f, 100.0f, 0.01f), floatParameter("minorRadius", 0.25f, 0.001f, 100.0f, 0.01f)}, {}, {outputSocket("sdf")}},
@@ -149,6 +150,9 @@ SdfNodePtr makeSdfNodeFromDefinition(SdfNodeType type)
     SdfNodePtr node = makeSdfNode(type, definition->displayName);
     for (const SdfParameterDefinition& parameter : definition->parameters) {
         node->parameters[parameter.name] = parameter.defaultValue;
+    }
+    if (type == SdfNodeType::SphereInstances) {
+        node->instancePositions.push_back({0.0f, 0.0f, 0.0f});
     }
     return node;
 }

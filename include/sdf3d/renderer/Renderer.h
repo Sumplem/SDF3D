@@ -57,6 +57,9 @@ public:
     /// Stores node parameters emitted by the SDF compiler or refreshed from graph edits.
     void setNodeParams(std::vector<SdfCompiledNodeParam> nodeParams);
 
+    /// Stores instanced primitive positions emitted by the SDF compiler or refreshed from graph edits.
+    void setInstancePositions(std::vector<SdfCompiledInstancePosition> instancePositions);
+
     /// Returns the latest shader compile/link/reload error, or empty on success.
     const std::string& lastError() const;
 
@@ -85,10 +88,15 @@ private:
     uint64_t m_sceneRevision = 0;
     uint64_t m_materialRevision = 0;
     uint64_t m_nodeParamRevision = 0;
+    uint64_t m_instanceRevision = 0;
+    bool m_materialBufferDirty = true;
+    bool m_nodeParamBufferDirty = true;
+    bool m_instancePositionBufferDirty = true;
     // AGENT: Renderer stores compiler-owned material order so every render can
     // re-upload uniforms after program relink without scene graph traversal.
     std::vector<SdfCompiledMaterial> m_materials;
     std::vector<SdfCompiledNodeParam> m_nodeParams;
+    std::vector<SdfCompiledInstancePosition> m_instancePositions;
 };
 
 } // namespace sdf3d

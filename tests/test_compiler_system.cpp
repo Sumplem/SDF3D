@@ -68,6 +68,41 @@ void testCompileSphere(std::vector<TestFailure>& failures)
     expect(result.materials.size() == 1, testName, "Expected default material output.", failures);
 }
 
+void testCompileSphereInstancesRuntimeUsesInstanceSsbo(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "compile sphere instances runtime uses instance ssbo";
+    sdf3d::SdfNodePtr node = sdf3d::makeSphereInstancesNode({{1.0f, 0.0f, 0.0f}, {2.0f, 0.0f, 0.0f}});
+    node->stableId = 10;
+    node->parameters["radius"] = 0.5f;
+
+    const sdf3d::SdfCompileResult result = sdf3d::CompilerSystem{}.compile(node);
+
+    expect(result.errors.empty(), testName, "Expected no compile errors.", failures);
+    expect(contains(result.glsl, "layout(std430, binding = 2) readonly buffer InstancePositionBuffer"), testName, "Expected instance SSBO declaration.", failures);
+    expect(contains(result.glsl, "sdf3d_sphere_instances(p, uNodeParams[0].data0.x, int(uNodeParams[0].data0.y), int(uNodeParams[0].data0.z))"), testName, "Expected runtime instance helper call.", failures);
+    expect(result.instancePositions.size() == 2, testName, "Expected two compiled instance positions.", failures);
+    expect(result.nodeParams.size() == 1, testName, "Expected one instance node param.", failures);
+    if (!result.nodeParams.empty()) {
+        expect(result.nodeParams[0].data0[0] == 0.5f, testName, "Expected radius in data0.x.", failures);
+        expect(result.nodeParams[0].data0[2] == 2.0f, testName, "Expected instance count in data0.z.", failures);
+    }
+}
+
+void testCompileSphereInstancesBakedUsesLiteralPositions(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "compile sphere instances baked uses literal positions";
+    sdf3d::SdfNodePtr node = sdf3d::makeSphereInstancesNode({{1.0f, 2.0f, 3.0f}, {4.0f, 5.0f, 6.0f}});
+    node->stableId = 10;
+
+    const sdf3d::SdfCompileResult result = sdf3d::CompilerSystem{}.compile(node, sdf3d::GlslEmitMode::Baked);
+
+    expect(result.errors.empty(), testName, "Expected no compile errors.", failures);
+    expect(!contains(result.glsl, "InstancePositionBuffer"), testName, "Expected baked GLSL to avoid instance SSBO.", failures);
+    expect(contains(result.glsl, "vec3(1.000000, 2.000000, 3.000000)"), testName, "Expected first literal position.", failures);
+    expect(contains(result.glsl, "vec3(4.000000, 5.000000, 6.000000)"), testName, "Expected second literal position.", failures);
+    expect(result.instancePositions.empty(), testName, "Expected baked compile to skip runtime positions.", failures);
+}
+
 void testCompileMaterialOverride(std::vector<TestFailure>& failures)
 {
     const std::string testName = "compile material override";
@@ -301,6 +336,8 @@ int main()
     std::vector<TestFailure> failures;
 
     testCompileSphere(failures);
+    testCompileSphereInstancesRuntimeUsesInstanceSsbo(failures);
+    testCompileSphereInstancesBakedUsesLiteralPositions(failures);
     testCompileMaterialOverride(failures);
     testCompileEmpty(failures);
     testGraphLoweringPreservesStableIdsForHelpers(failures);

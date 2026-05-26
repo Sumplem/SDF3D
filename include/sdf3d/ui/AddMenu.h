@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sdf3d/scene/SceneGraph.h"
+#include "sdf3d/ui/EditorDirtyState.h"
 
 #include <glm/glm.hpp>
 
@@ -32,11 +33,11 @@ public:
     bool drawPopupBetween(SdfGraph& graph, float editorX, float editorY, SdfGraphNodeId fromNode, std::string fromSocket, SdfGraphNodeId toNode, std::string toSocket);
 
     /// Draws viewport Add popup and wraps new primitives in Translate at world position.
-    bool drawViewportPopup(SceneGraph& sceneGraph, glm::vec3 worldPosition);
-    bool drawViewportPopup(SdfGraph& graph, glm::vec3 worldPosition);
+    EditorDirtyState drawViewportPopup(SceneGraph& sceneGraph, glm::vec3 worldPosition);
+    EditorDirtyState drawViewportPopup(SdfGraph& graph, glm::vec3 worldPosition);
 
 private:
-    bool drawItems(SdfGraph& graph);
+    EditorDirtyState drawItems(SdfGraph& graph);
     void addPrimitive(SdfGraph& graph, SdfNodePtr node, bool linkToSelection = true);
     void linkCreatedNode(SdfGraph& graph, SdfGraphNodeId createdNode);
 

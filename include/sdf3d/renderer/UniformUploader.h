@@ -64,6 +64,10 @@ public:
         glm::vec4 data0 = {0.0f, 0.0f, 0.0f, 0.0f};
     };
 
+    struct GpuInstancePosition {
+        glm::vec4 position = {0.0f, 0.0f, 0.0f, 0.0f};
+    };
+
     UniformUploader() = default;
     ~UniformUploader();
 
@@ -76,7 +80,7 @@ public:
     /// Releases renderer-owned material buffer object.
     void shutdown();
 
-    /// Uploads all raymarch uniforms for one frame.
+    /// Uploads raymarch uniforms and refreshes dirty SSBO buffers.
     void upload(
         unsigned int program,
         int width,
@@ -86,7 +90,11 @@ public:
         RenderQuality quality,
         const glm::vec3& environmentColor,
         const std::vector<SdfCompiledMaterial>& materials,
-        const std::vector<SdfCompiledNodeParam>& nodeParams);
+        const std::vector<SdfCompiledNodeParam>& nodeParams,
+        const std::vector<SdfCompiledInstancePosition>& instancePositions,
+        bool materialsDirty,
+        bool nodeParamsDirty,
+        bool instancePositionsDirty);
 
     /// Returns material count visible to shader storage buffer.
     static size_t materialCountForShader(size_t materialCount);
@@ -97,12 +105,16 @@ public:
     /// Packs compiler node parameters into shader storage buffer layout.
     static std::vector<GpuNodeParam> packNodeParams(const std::vector<SdfCompiledNodeParam>& nodeParams);
 
+    /// Packs compiler instance positions into shader storage buffer layout.
+    static std::vector<GpuInstancePosition> packInstancePositions(const std::vector<SdfCompiledInstancePosition>& instancePositions);
+
     /// Maps editor quality to stochastic path-trace bounce count.
     static int pathTraceMaxBouncesForQuality(RenderQuality quality);
 
 private:
     uint32_t m_materialBuffer = 0;
     uint32_t m_nodeParamBuffer = 0;
+    uint32_t m_instancePositionBuffer = 0;
 };
 
 } // namespace sdf3d

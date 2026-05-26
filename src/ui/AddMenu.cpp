@@ -125,9 +125,9 @@ bool AddMenu::draw(SdfGraph& graph)
         return false;
     }
 
-    const bool sceneDirty = drawItems(graph);
+    const EditorDirtyState dirty = drawItems(graph);
     ImGui::EndMenu();
-    return sceneDirty;
+    return dirty.scene;
 }
 
 bool AddMenu::drawPopup(SceneGraph& sceneGraph, float editorX, float editorY)
@@ -146,7 +146,7 @@ bool AddMenu::drawPopup(SdfGraph& graph, float editorX, float editorY)
         m_linkToNode = 0;
         m_linkToSocket.clear();
         m_spawnWorldPosition.reset();
-        sceneDirty = drawItems(graph);
+        sceneDirty = drawItems(graph).scene;
         m_spawnEditorX.reset();
         m_spawnEditorY.reset();
         ImGui::EndPopup();
@@ -171,7 +171,7 @@ bool AddMenu::drawPopupFromOutput(SdfGraph& graph, float editorX, float editorY,
         m_linkToNode = 0;
         m_linkToSocket.clear();
         m_spawnWorldPosition.reset();
-        sceneDirty = drawItems(graph);
+        sceneDirty = drawItems(graph).scene;
         m_spawnEditorX.reset();
         m_spawnEditorY.reset();
         ImGui::EndPopup();
@@ -196,7 +196,7 @@ bool AddMenu::drawPopupToInput(SdfGraph& graph, float editorX, float editorY, Sd
         m_linkToNode = toNode;
         m_linkToSocket = std::move(toSocket);
         m_spawnWorldPosition.reset();
-        sceneDirty = drawItems(graph);
+        sceneDirty = drawItems(graph).scene;
         m_spawnEditorX.reset();
         m_spawnEditorY.reset();
         ImGui::EndPopup();
@@ -221,7 +221,7 @@ bool AddMenu::drawPopupBetween(SdfGraph& graph, float editorX, float editorY, Sd
         m_linkToNode = toNode;
         m_linkToSocket = std::move(toSocket);
         m_spawnWorldPosition.reset();
-        sceneDirty = drawItems(graph);
+        sceneDirty = drawItems(graph).scene;
         m_spawnEditorX.reset();
         m_spawnEditorY.reset();
         ImGui::EndPopup();
@@ -230,14 +230,14 @@ bool AddMenu::drawPopupBetween(SdfGraph& graph, float editorX, float editorY, Sd
     return sceneDirty;
 }
 
-bool AddMenu::drawViewportPopup(SceneGraph& sceneGraph, glm::vec3 worldPosition)
+EditorDirtyState AddMenu::drawViewportPopup(SceneGraph& sceneGraph, glm::vec3 worldPosition)
 {
     return drawViewportPopup(sceneGraph.graph(), worldPosition);
 }
 
-bool AddMenu::drawViewportPopup(SdfGraph& graph, glm::vec3 worldPosition)
+EditorDirtyState AddMenu::drawViewportPopup(SdfGraph& graph, glm::vec3 worldPosition)
 {
-    bool sceneDirty = false;
+    EditorDirtyState dirty;
     if (ImGui::BeginPopup(node_editor::NODE_ADD_POPUP_ID)) {
         m_spawnEditorX.reset();
         m_spawnEditorY.reset();
@@ -246,23 +246,23 @@ bool AddMenu::drawViewportPopup(SdfGraph& graph, glm::vec3 worldPosition)
         m_linkFromSocket.clear();
         m_linkToNode = 0;
         m_linkToSocket.clear();
-        sceneDirty = drawItems(graph);
+        dirty = drawItems(graph);
         m_spawnWorldPosition.reset();
         ImGui::EndPopup();
     }
 
-    return sceneDirty;
+    return dirty;
 }
 
-bool AddMenu::drawItems(SdfGraph& graph)
+EditorDirtyState AddMenu::drawItems(SdfGraph& graph)
 {
-    bool sceneDirty = false;
+    EditorDirtyState dirty;
     auto addAndLinkSelected = [&](SdfNodePtr node, const char* inputSocket) {
         const bool popupLinkMode = m_linkFromNode != 0 || m_linkToNode != 0;
         const SdfGraphNodeId previousSelection = graph.selectedNode();
         const bool previousFedOutput = nodeFeedsOutputSurface(graph, previousSelection);
         addPrimitive(graph, std::move(node), false);
-        sceneDirty = true;
+        dirty.scene = true;
 
         const SdfGraphNodeId createdNode = graph.selectedNode();
         if (!popupLinkMode && previousSelection != 0 && createdNode != 0 && previousSelection != createdNode) {
@@ -274,7 +274,7 @@ bool AddMenu::drawItems(SdfGraph& graph)
                 } else if (previousFedOutput) {
                     graph.link(createdNode, "sdf", graph.outputNode(), "surface");
                 }
-                sceneDirty = true;
+                dirty.scene = true;
             }
         }
     };
@@ -282,8 +282,14 @@ bool AddMenu::drawItems(SdfGraph& graph)
     for (SdfNodeType type : sdfNodeTypesForCategory(SdfNodeCategory::Primitive)) {
         const SdfNodeDefinition* definition = sdfNodeDefinition(type);
         if (definition != nullptr && ImGui::MenuItem(definition->displayName.c_str())) {
-            addPrimitive(graph, makeSdfNodeFromDefinition(type));
-            sceneDirty = true;
+            if (m_spawnWorldPosition
+                && type == SdfNodeType::SphereInstances
+                && GraphSystem::appendInstancePosition(graph, graph.selectedNode(), *m_spawnWorldPosition)) {
+                dirty.params = true;
+            } else {
+                addPrimitive(graph, makeSdfNodeFromDefinition(type));
+                dirty.scene = true;
+            }
         }
     }
 
@@ -323,7 +329,7 @@ bool AddMenu::drawItems(SdfGraph& graph)
         ImGui::EndMenu();
     }
 
-    return sceneDirty;
+    return dirty;
 }
 
 void AddMenu::addPrimitive(SdfGraph& graph, SdfNodePtr node, bool linkToSelection)

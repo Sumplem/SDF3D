@@ -75,7 +75,18 @@ float parameterOr(const SdfNode& node, const std::string& key, float fallback)
     return it == node.parameters.end() ? fallback : it->second;
 }
 
-bool runtimeNodeParamForTreeNode(const SdfNodePtr& node, SdfCompiledNodeParam& param)
+using InstanceRangeByNodeId = std::unordered_map<uint64_t, SdfCompiledInstanceRange>;
+
+SdfCompiledInstanceRange instanceRangeFor(uint64_t nodeId, const InstanceRangeByNodeId& ranges)
+{
+    const auto it = ranges.find(nodeId);
+    if (it == ranges.end()) {
+        return {};
+    }
+    return it->second;
+}
+
+bool runtimeNodeParamForTreeNode(const SdfNodePtr& node, SdfCompiledNodeParam& param, const InstanceRangeByNodeId& instanceRanges)
 {
     if (!node || node->stableId == 0) {
         return false;
@@ -85,6 +96,16 @@ bool runtimeNodeParamForTreeNode(const SdfNodePtr& node, SdfCompiledNodeParam& p
     param.data0 = {0.0f, 0.0f, 0.0f, 0.0f};
 
     switch (node->type) {
+    case SdfNodeType::SphereInstances: {
+        const SdfCompiledInstanceRange range = instanceRangeFor(param.nodeId, instanceRanges);
+        param.data0 = {
+            parameterOr(*node, "radius", 1.0f),
+            static_cast<float>(range.first),
+            static_cast<float>(range.count),
+            0.0f,
+        };
+        return true;
+    }
     case SdfNodeType::Rotate: {
         const glm::vec4 q = rotationQuaternionForNode(*node);
         param.data0 = {q.x, q.y, q.z, q.w};
@@ -122,19 +143,19 @@ bool runtimeNodeParamForTreeNode(const SdfNodePtr& node, SdfCompiledNodeParam& p
     return packedCount > 0;
 }
 
-void collectTreeNodeParams(const SdfNodePtr& node, std::vector<SdfCompiledNodeParam>& params, std::unordered_set<uint64_t>& packedIds)
+void collectTreeNodeParams(const SdfNodePtr& node, std::vector<SdfCompiledNodeParam>& params, std::unordered_set<uint64_t>& packedIds, const InstanceRangeByNodeId& instanceRanges)
 {
     if (!node) {
         return;
     }
 
     SdfCompiledNodeParam param;
-    if (runtimeNodeParamForTreeNode(node, param) && packedIds.insert(param.nodeId).second) {
+    if (runtimeNodeParamForTreeNode(node, param, instanceRanges) && packedIds.insert(param.nodeId).second) {
         params.push_back(param);
     }
 
     for (const SdfNodePtr& child : node->children) {
-        collectTreeNodeParams(child, params, packedIds);
+        collectTreeNodeParams(child, params, packedIds, instanceRanges);
     }
 }
 
@@ -148,11 +169,50 @@ void assignNodeParamSlots(std::vector<SdfCompiledNodeParam>& params)
     }
 }
 
-std::vector<SdfCompiledNodeParam> collectTreeNodeParams(const SdfNodePtr& root)
+void collectTreeInstanceData(const SdfNodePtr& node, SdfCompiledInstanceData& instances, std::unordered_set<uint64_t>& packedIds)
+{
+    if (!node) {
+        return;
+    }
+
+    if (node->type == SdfNodeType::SphereInstances && node->stableId != 0 && packedIds.insert(node->stableId).second) {
+        const uint32_t first = static_cast<uint32_t>(instances.positions.size());
+        for (const glm::vec3& position : node->instancePositions) {
+            instances.positions.push_back({position});
+        }
+        instances.ranges.push_back({node->stableId, first, static_cast<uint32_t>(node->instancePositions.size())});
+    }
+
+    for (const SdfNodePtr& child : node->children) {
+        collectTreeInstanceData(child, instances, packedIds);
+    }
+}
+
+SdfCompiledInstanceData collectTreeInstanceData(const SdfNodePtr& root)
+{
+    SdfCompiledInstanceData instances;
+    std::unordered_set<uint64_t> packedIds;
+    collectTreeInstanceData(root, instances, packedIds);
+    std::sort(instances.ranges.begin(), instances.ranges.end(), [](const SdfCompiledInstanceRange& left, const SdfCompiledInstanceRange& right) {
+        return left.nodeId < right.nodeId;
+    });
+    return instances;
+}
+
+InstanceRangeByNodeId instanceRangeMap(const SdfCompiledInstanceData& instances)
+{
+    InstanceRangeByNodeId ranges;
+    for (const SdfCompiledInstanceRange& range : instances.ranges) {
+        ranges.emplace(range.nodeId, range);
+    }
+    return ranges;
+}
+
+std::vector<SdfCompiledNodeParam> collectTreeNodeParams(const SdfNodePtr& root, const SdfCompiledInstanceData& instances)
 {
     std::vector<SdfCompiledNodeParam> params;
     std::unordered_set<uint64_t> packedIds;
-    collectTreeNodeParams(root, params, packedIds);
+    collectTreeNodeParams(root, params, packedIds, instanceRangeMap(instances));
     assignNodeParamSlots(params);
     return params;
 }
@@ -193,10 +253,14 @@ SdfCompileResult CompilerSystem::compile(const SdfGraph& graph, GlslEmitMode mod
 {
     const SdfGraphLowerResult lowered = lowerSdfGraphToTree(graph);
     std::vector<SdfCompiledNodeParam> nodeParams;
+    SdfCompiledInstanceData instances;
     if (mode == GlslEmitMode::Runtime) {
+        instances = GraphSystem::collectInstanceData(graph);
         nodeParams = GraphSystem::collectNodeParams(graph);
     }
     SdfCompileResult result = compileTree(lowered.root, mode, std::move(nodeParams), materialDefinitionsForGraph(graph));
+    result.instancePositions = std::move(instances.positions);
+    result.instanceRanges = std::move(instances.ranges);
     result.errors.insert(result.errors.begin(), lowered.errors.begin(), lowered.errors.end());
     return result;
 }
@@ -205,19 +269,32 @@ SdfCompileResult CompilerSystem::compile(const SdfGraph& graph, const GraphGroup
 {
     const SdfGraphLowerResult lowered = lowerSdfGraphToTree(graph, groups);
     std::vector<SdfCompiledNodeParam> nodeParams;
+    SdfCompiledInstanceData instances;
     if (mode == GlslEmitMode::Runtime) {
+        instances = GraphSystem::collectInstanceData(graph, groups);
         nodeParams = GraphSystem::collectNodeParams(graph, groups);
     }
     std::vector<MaterialDefinition> materials = materialDefinitionsForGraph(graph);
     appendGroupMaterialDefinitions(groups, materials);
     SdfCompileResult result = compileTree(lowered.root, mode, std::move(nodeParams), deduplicateMaterialDefinitions(std::move(materials)));
+    result.instancePositions = std::move(instances.positions);
+    result.instanceRanges = std::move(instances.ranges);
     result.errors.insert(result.errors.begin(), lowered.errors.begin(), lowered.errors.end());
     return result;
 }
 
 SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root, GlslEmitMode mode) const
 {
-    return compileTree(root, mode, mode == GlslEmitMode::Runtime ? collectTreeNodeParams(root) : std::vector<SdfCompiledNodeParam>{});
+    SdfCompiledInstanceData instances;
+    std::vector<SdfCompiledNodeParam> nodeParams;
+    if (mode == GlslEmitMode::Runtime) {
+        instances = collectTreeInstanceData(root);
+        nodeParams = collectTreeNodeParams(root, instances);
+    }
+    SdfCompileResult result = compileTree(root, mode, std::move(nodeParams));
+    result.instancePositions = std::move(instances.positions);
+    result.instanceRanges = std::move(instances.ranges);
+    return result;
 }
 
 SdfCompileResult CompilerSystem::compileTree(
@@ -283,6 +360,20 @@ SdfCompileResult CompilerSystem::compileTree(
         glsl << "    SdfNodeParam uNodeParams[];\n";
         glsl << "};\n\n";
         glsl << "uniform int uNodeParamCount;\n\n";
+        glsl << "layout(std430, binding = 2) readonly buffer InstancePositionBuffer\n";
+        glsl << "{\n";
+        glsl << "    vec4 uInstancePositions[];\n";
+        glsl << "};\n\n";
+        glsl << "uniform int uInstancePositionCount;\n\n";
+        glsl << "float sdf3d_sphere_instances(vec3 p, float radius, int first, int count)\n";
+        glsl << "{\n";
+        glsl << "    float distance = 1e6;\n";
+        glsl << "    int last = min(first + count, uInstancePositionCount);\n";
+        glsl << "    for (int i = first; i < last; ++i) {\n";
+        glsl << "        distance = min(distance, length(p - uInstancePositions[i].xyz) - radius);\n";
+        glsl << "    }\n";
+        glsl << "    return distance;\n";
+        glsl << "}\n\n";
     }
 
     if (result.usesBox) {

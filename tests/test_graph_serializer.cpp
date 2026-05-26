@@ -183,6 +183,47 @@ void testJsonGraphRoundTrip(std::vector<TestFailure>& failures)
     std::filesystem::remove(path);
 }
 
+void testJsonGraphSphereInstancesRoundTrip(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "json graph sphere instances round trip";
+    const std::filesystem::path path = testPath("sdf3d_sphere_instances_round_trip.json");
+    sdf3d::JsonGraphSerializer serializer;
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId instances = graph.createNode(sdf3d::SdfNodeType::SphereInstances, "Instances");
+    if (sdf3d::SdfGraphNode* node = graph.node(instances)) {
+        node->payload.parameters["radius"] = 0.5f;
+        node->payload.instancePositions = {{1.0f, 2.0f, 3.0f}, {4.0f, 5.0f, 6.0f}};
+    }
+    expect(graph.link(instances, "sdf", graph.outputNode(), "surface"), testName, "Expected instances linked.", failures);
+
+    expect(serializer.save(graph, path), testName, "Expected save success: " + serializer.lastError(), failures);
+    nlohmann::json saved;
+    {
+        std::ifstream input(path);
+        input >> saved;
+    }
+    const nlohmann::json* savedNode = nullptr;
+    for (const nlohmann::json& node : saved.at("nodes")) {
+        if (node.at("type").get<std::string>() == "SphereInstances") {
+            savedNode = &node;
+        }
+    }
+    expect(savedNode != nullptr && savedNode->contains("instancePositions"), testName, "Expected instance positions saved.", failures);
+
+    sdf3d::SdfGraph loaded;
+    expect(serializer.load(loaded, path), testName, "Expected load success: " + serializer.lastError(), failures);
+    const sdf3d::SdfGraphNode* loadedInstances = loaded.node(instances);
+    expect(loadedInstances != nullptr, testName, "Expected instances node loaded.", failures);
+    if (loadedInstances != nullptr) {
+        expect(loadedInstances->payload.type == sdf3d::SdfNodeType::SphereInstances, testName, "Expected node type preserved.", failures);
+        expect(loadedInstances->payload.instancePositions.size() == 2, testName, "Expected positions preserved.", failures);
+        expect(loadedInstances->payload.instancePositions[1].z == 6.0f, testName, "Expected second position z preserved.", failures);
+    }
+
+    std::filesystem::remove(path);
+}
+
 void testJsonGraphValueNoiseMaterialRoundTrip(std::vector<TestFailure>& failures)
 {
     const std::string testName = "json value noise material round trip";
@@ -788,6 +829,7 @@ int main()
     std::vector<TestFailure> failures;
 
     testJsonGraphRoundTrip(failures);
+    testJsonGraphSphereInstancesRoundTrip(failures);
     testJsonGraphValueNoiseMaterialRoundTrip(failures);
     testJsonGraphMaterialGraphNodeFieldsRoundTrip(failures);
     testJsonGraphLoadsMaterialGraphWithoutExtraFloatDefaults(failures);

@@ -270,6 +270,7 @@ bool App::recompileScene(bool keepPreviousProgramOnFailure)
     m_diagnostics.add(DiagnosticSeverity::Info, "Renderer", "Shader validation passed.");
     m_renderer.setMaterials(sceneGlsl.materials);
     m_renderer.setNodeParams(sceneGlsl.nodeParams);
+    m_renderer.setInstancePositions(sceneGlsl.instancePositions);
     return true;
 }
 
@@ -287,7 +288,10 @@ bool App::refreshMaterials()
 
 void App::refreshNodeParams()
 {
-    m_renderer.setNodeParams(GraphSystem::collectNodeParams(m_ui.activeGraph(m_sceneGraph, m_groupRegistry), m_groupRegistry));
+    SdfGraph& graph = m_ui.activeGraph(m_sceneGraph, m_groupRegistry);
+    const SdfRuntimeBufferData buffers = GraphSystem::collectRuntimeBufferData(graph, m_groupRegistry);
+    m_renderer.setNodeParams(buffers.nodeParams);
+    m_renderer.setInstancePositions(buffers.instances.positions);
 }
 
 void App::exportCompiledGlsl(const ExportCompiledGlslEvent& event)

@@ -10,6 +10,7 @@ namespace {
 
 constexpr GLuint MATERIAL_BUFFER_BINDING = 0;
 constexpr GLuint NODE_PARAM_BUFFER_BINDING = 1;
+constexpr GLuint INSTANCE_POSITION_BUFFER_BINDING = 2;
 
 } // namespace
 
@@ -26,6 +27,9 @@ void UniformUploader::init()
     if (m_nodeParamBuffer == 0) {
         glGenBuffers(1, &m_nodeParamBuffer);
     }
+    if (m_instancePositionBuffer == 0) {
+        glGenBuffers(1, &m_instancePositionBuffer);
+    }
 }
 
 void UniformUploader::shutdown()
@@ -40,6 +44,11 @@ void UniformUploader::shutdown()
         glDeleteBuffers(1, &buffer);
         m_nodeParamBuffer = 0;
     }
+    if (m_instancePositionBuffer != 0) {
+        const GLuint buffer = m_instancePositionBuffer;
+        glDeleteBuffers(1, &buffer);
+        m_instancePositionBuffer = 0;
+    }
 }
 
 void UniformUploader::upload(
@@ -49,9 +58,13 @@ void UniformUploader::upload(
     const RenderCamera& camera,
     const RenderGizmo& gizmo,
     RenderQuality quality,
-    const glm::vec3& environmentColor,
-    const std::vector<SdfCompiledMaterial>& materials,
-    const std::vector<SdfCompiledNodeParam>& nodeParams)
+        const glm::vec3& environmentColor,
+        const std::vector<SdfCompiledMaterial>& materials,
+        const std::vector<SdfCompiledNodeParam>& nodeParams,
+        const std::vector<SdfCompiledInstancePosition>& instancePositions,
+        bool materialsDirty,
+        bool nodeParamsDirty,
+        bool instancePositionsDirty)
 {
     glUniform2f(glGetUniformLocation(program, "uResolution"), static_cast<float>(width), static_cast<float>(height));
     glUniform3fv(glGetUniformLocation(program, "uCameraPosition"), 1, &camera.position.x);
@@ -78,29 +91,46 @@ void UniformUploader::upload(
     const size_t materialCount = materialCountForShader(materials.size());
     glUniform1i(glGetUniformLocation(program, "uMaterialCount"), static_cast<GLint>(materialCount));
     glUniform1i(glGetUniformLocation(program, "uNodeParamCount"), static_cast<GLint>(nodeParams.size()));
+    glUniform1i(glGetUniformLocation(program, "uInstancePositionCount"), static_cast<GLint>(instancePositions.size()));
 
-    if (m_materialBuffer == 0 || m_nodeParamBuffer == 0) {
+    if (m_materialBuffer == 0 || m_nodeParamBuffer == 0 || m_instancePositionBuffer == 0) {
         init();
     }
 
-    const std::vector<GpuMaterial> packedMaterials = packMaterials(materials);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_materialBuffer);
-    glBufferData(
-        GL_SHADER_STORAGE_BUFFER,
-        static_cast<GLsizeiptr>(packedMaterials.size() * sizeof(GpuMaterial)),
-        packedMaterials.empty() ? nullptr : packedMaterials.data(),
-        GL_DYNAMIC_DRAW);
+    if (materialsDirty) {
+        const std::vector<GpuMaterial> packedMaterials = packMaterials(materials);
+        glBufferData(
+            GL_SHADER_STORAGE_BUFFER,
+            static_cast<GLsizeiptr>(packedMaterials.size() * sizeof(GpuMaterial)),
+            packedMaterials.empty() ? nullptr : packedMaterials.data(),
+            GL_DYNAMIC_DRAW);
+    }
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, MATERIAL_BUFFER_BINDING, m_materialBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-    const std::vector<GpuNodeParam> packedNodeParams = packNodeParams(nodeParams);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_nodeParamBuffer);
-    glBufferData(
-        GL_SHADER_STORAGE_BUFFER,
-        static_cast<GLsizeiptr>(packedNodeParams.size() * sizeof(GpuNodeParam)),
-        packedNodeParams.empty() ? nullptr : packedNodeParams.data(),
-        GL_DYNAMIC_DRAW);
+    if (nodeParamsDirty) {
+        const std::vector<GpuNodeParam> packedNodeParams = packNodeParams(nodeParams);
+        glBufferData(
+            GL_SHADER_STORAGE_BUFFER,
+            static_cast<GLsizeiptr>(packedNodeParams.size() * sizeof(GpuNodeParam)),
+            packedNodeParams.empty() ? nullptr : packedNodeParams.data(),
+            GL_DYNAMIC_DRAW);
+    }
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, NODE_PARAM_BUFFER_BINDING, m_nodeParamBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_instancePositionBuffer);
+    if (instancePositionsDirty) {
+        const std::vector<GpuInstancePosition> packedInstancePositions = packInstancePositions(instancePositions);
+        glBufferData(
+            GL_SHADER_STORAGE_BUFFER,
+            static_cast<GLsizeiptr>(packedInstancePositions.size() * sizeof(GpuInstancePosition)),
+            packedInstancePositions.empty() ? nullptr : packedInstancePositions.data(),
+            GL_DYNAMIC_DRAW);
+    }
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, INSTANCE_POSITION_BUFFER_BINDING, m_instancePositionBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
@@ -136,6 +166,16 @@ std::vector<UniformUploader::GpuNodeParam> UniformUploader::packNodeParams(const
         packed[nodeParam.slot] = {
             {nodeParam.data0[0], nodeParam.data0[1], nodeParam.data0[2], nodeParam.data0[3]},
         };
+    }
+    return packed;
+}
+
+std::vector<UniformUploader::GpuInstancePosition> UniformUploader::packInstancePositions(const std::vector<SdfCompiledInstancePosition>& instancePositions)
+{
+    std::vector<GpuInstancePosition> packed;
+    packed.reserve(instancePositions.size());
+    for (const SdfCompiledInstancePosition& instancePosition : instancePositions) {
+        packed.push_back({{instancePosition.position.x, instancePosition.position.y, instancePosition.position.z, 0.0f}});
     }
     return packed;
 }

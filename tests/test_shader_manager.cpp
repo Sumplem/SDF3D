@@ -138,8 +138,8 @@ void testPathTraceShaderHasNeeMis(std::vector<TestFailure>& failures)
     expect(contains(source, "bsdfPdfEstimate"), testName, "Expected BSDF PDF estimate for MIS.", failures);
     expect(contains(source, "emissiveRadiance"), testName, "Expected emissive radiance helper.", failures);
     expect(contains(source, "MAX_EMISSIVE_RADIANCE"), testName, "Expected named emissive clamp.", failures);
-    expect(contains(source, "emissiveAreaLightEstimate"), testName, "Expected emissive area light sampling.", failures);
-    expect(contains(source, "EMISSIVE_AREA_LIGHT_SAMPLES"), testName, "Expected named emissive area light sample count.", failures);
+    expect(contains(source, "stochasticEmissiveSurfaceEstimate"), testName, "Expected emissive surface hit sampling.", failures);
+    expect(contains(source, "EMISSIVE_SURFACE_HIT_SAMPLES"), testName, "Expected named emissive surface hit sample count.", failures);
 }
 
 void testPathTraceShaderCompiles(std::vector<TestFailure>& failures)

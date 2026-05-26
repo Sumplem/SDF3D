@@ -16,6 +16,12 @@ namespace sdf3d {
 class EventBus;
 class GraphGroupRegistry;
 
+/// Runtime buffers refreshed without shader recompilation.
+struct SdfRuntimeBufferData {
+    std::vector<SdfCompiledNodeParam> nodeParams;
+    SdfCompiledInstanceData instances;
+};
+
 /// Owns SDF graph mutation and validation rules.
 class GraphSystem {
 public:
@@ -73,6 +79,9 @@ public:
     /// Assigns a registry material to a MaterialOverride node.
     static bool assignMaterialToNode(SdfGraph& graph, SdfGraphNodeId nodeId, MaterialId materialId);
 
+    /// Appends one world-space instance position to a SphereInstances node.
+    static bool appendInstancePosition(SdfGraph& graph, SdfGraphNodeId nodeId, glm::vec3 position);
+
     /// Connects one node output to a named input socket on another node.
     static bool link(SdfGraph& graph, SdfGraphNodeId fromNode, SdfGraphNodeId toNode, std::string toSocket);
 
@@ -117,6 +126,18 @@ public:
 
     /// Packs graph node parameters from the graph plus reachable group definitions.
     static std::vector<SdfCompiledNodeParam> collectNodeParams(const SdfGraph& graph, const GraphGroupRegistry& groups);
+
+    /// Packs instanced primitive positions for renderer-side fast instance updates.
+    static SdfCompiledInstanceData collectInstanceData(const SdfGraph& graph);
+
+    /// Packs instanced primitive positions from the graph plus reachable group definitions.
+    static SdfCompiledInstanceData collectInstanceData(const SdfGraph& graph, const GraphGroupRegistry& groups);
+
+    /// Packs node parameters and instance ranges in one graph traversal pass.
+    static SdfRuntimeBufferData collectRuntimeBufferData(const SdfGraph& graph);
+
+    /// Packs node parameters and instance ranges from graph plus reachable group definitions in one pass.
+    static SdfRuntimeBufferData collectRuntimeBufferData(const SdfGraph& graph, const GraphGroupRegistry& groups);
 
     /// Returns the SDF helper node ID that should be highlighted for current selection.
     static SdfGraphNodeId highlightNodeForSelection(const SdfGraph& graph);

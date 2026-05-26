@@ -100,7 +100,8 @@ bool PathTraceAccumulation::frameKeyMatches(const PathTraceFrameKey& a, const Pa
         && vec3Equal(a.environmentColor, b.environmentColor)
         && a.sceneRevision == b.sceneRevision
         && a.materialRevision == b.materialRevision
-        && a.nodeParamRevision == b.nodeParamRevision;
+        && a.nodeParamRevision == b.nodeParamRevision
+        && a.instanceRevision == b.instanceRevision;
 }
 
 bool PathTraceAccumulation::resize(int width, int height)

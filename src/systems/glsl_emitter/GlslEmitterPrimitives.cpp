@@ -4,6 +4,8 @@
 #include "GlslEmitterInternal.h"
 #include "sdf3d/systems/GlslNodeNames.h"
 
+#include <sstream>
+
 namespace sdf3d::glsl_emitter {
 namespace {
 
@@ -13,6 +15,7 @@ std::string primitiveParamVec4(const SdfNode& node)
 
     switch (node.type) {
     case SdfNodeType::Sphere:
+    case SdfNodeType::SphereInstances:
         return glslVec4(parameterOr(node, "radius", 1.0f), 0.0f, 0.0f, 0.0f);
     case SdfNodeType::Box:
         return glslVec4(parameterOr(node, "x", 1.0f), parameterOr(node, "y", 1.0f), parameterOr(node, "z", 1.0f), 0.0f);
@@ -42,6 +45,7 @@ std::string primitiveParamComponent(const SdfNode& node, const SdfHelperEmitCont
     if (context.mode == GlslEmitMode::Baked || nodeId == 0) {
         switch (node.type) {
         case SdfNodeType::Sphere:
+        case SdfNodeType::SphereInstances:
             return glsl_emitter::glslFloat(glsl_emitter::parameterOr(node, "radius", 1.0f));
         case SdfNodeType::Cylinder:
             return glsl_emitter::glslFloat(component == 'x'
@@ -105,6 +109,31 @@ std::string planeOffsetParam(const SdfNode& node, const SdfHelperEmitContext& co
     return glsl_emitter::glslNodeParamComponent(context.mode, nodeId, primitiveParamVec4(node), 'w', context.nodeParamSlotByNodeId);
 }
 
+std::string instanceParamVec4(const SdfNode& node)
+{
+    return glslVec4(
+        parameterOr(node, "radius", 1.0f),
+        0.0f,
+        static_cast<float>(node.instancePositions.size()),
+        0.0f);
+}
+
+std::string emitBakedSphereInstances(const SdfNode& node, const std::string& pointExpr)
+{
+    if (node.instancePositions.empty()) {
+        return "1e6";
+    }
+
+    const std::string radius = glslFloat(parameterOr(node, "radius", 1.0f));
+    std::string expression;
+    for (std::size_t i = 0; i < node.instancePositions.size(); ++i) {
+        const glm::vec3& position = node.instancePositions[i];
+        const std::string distance = "(length((" + pointExpr + ") - " + glslVec3(position.x, position.y, position.z) + ") - " + radius + ")";
+        expression = i == 0 ? distance : "min(" + expression + ", " + distance + ")";
+    }
+    return expression;
+}
+
 } // namespace
 
 std::string emitPrimitiveGeometryExpression(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result, SdfHelperEmitContext& context)
@@ -113,6 +142,17 @@ std::string emitPrimitiveGeometryExpression(const SdfNodePtr& node, const std::s
     case SdfNodeType::Sphere: {
         const std::string radius = primitiveParamComponent(*node, context, runtimeParamIdFor(node), 'x');
         return "(length(" + pointExpr + ") - " + radius + ")";
+    }
+    case SdfNodeType::SphereInstances: {
+        if (context.mode == GlslEmitMode::Baked) {
+            return emitBakedSphereInstances(*node, pointExpr);
+        }
+
+        const std::string instanceParam = glslNodeParam0(context.mode, runtimeParamIdFor(node), instanceParamVec4(*node), context.nodeParamSlotByNodeId);
+        std::ostringstream expression;
+        expression << "sdf3d_sphere_instances(" << pointExpr << ", "
+                   << instanceParam << ".x, int(" << instanceParam << ".y), int(" << instanceParam << ".z))";
+        return expression.str();
     }
     case SdfNodeType::Box: {
         result.usesBox = true;

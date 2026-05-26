@@ -396,6 +396,67 @@ void testCollectNodeParamsPacksPrimitiveAndSmoothValues(std::vector<TestFailure>
     }
 }
 
+void testCollectInstanceDataPacksPositionsAndNodeRange(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "collect instance data packs positions and node range";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId instances = graph.createNode(sdf3d::SdfNodeType::SphereInstances, "Instances");
+    if (sdf3d::SdfGraphNode* node = graph.node(instances)) {
+        node->payload.parameters["radius"] = 0.25f;
+        node->payload.instancePositions = {
+            {1.0f, 2.0f, 3.0f},
+            {4.0f, 5.0f, 6.0f},
+            {7.0f, 8.0f, 9.0f},
+            {10.0f, 11.0f, 12.0f},
+            {13.0f, 14.0f, 15.0f},
+        };
+    }
+
+    const sdf3d::SdfRuntimeBufferData buffers = sdf3d::GraphSystem::collectRuntimeBufferData(graph);
+    const auto instanceParam = std::find_if(buffers.nodeParams.begin(), buffers.nodeParams.end(), [instances](const sdf3d::SdfCompiledNodeParam& param) {
+        return param.nodeId == instances;
+    });
+
+    expect(buffers.instances.positions.size() == 5, testName, "Expected five instance positions.", failures);
+    expect(buffers.instances.ranges.size() == 1, testName, "Expected one instance range.", failures);
+    if (buffers.instances.positions.size() == 5) {
+        expect(buffers.instances.positions[0].position.x == 1.0f, testName, "Expected first instance x.", failures);
+        expect(buffers.instances.positions[4].position.z == 15.0f, testName, "Expected fifth instance z.", failures);
+    }
+    if (!buffers.instances.ranges.empty()) {
+        expect(buffers.instances.ranges[0].nodeId == instances, testName, "Expected range node id.", failures);
+        expect(buffers.instances.ranges[0].first == 0, testName, "Expected first range offset.", failures);
+        expect(buffers.instances.ranges[0].count == 5, testName, "Expected range count.", failures);
+    }
+    expect(instanceParam != buffers.nodeParams.end(), testName, "Expected instance node params.", failures);
+    if (instanceParam != buffers.nodeParams.end()) {
+        expect(instanceParam->data0[0] == 0.25f, testName, "Expected radius in data0.x.", failures);
+        expect(instanceParam->data0[1] == 0.0f, testName, "Expected first offset in data0.y.", failures);
+        expect(instanceParam->data0[2] == 5.0f, testName, "Expected count in data0.z.", failures);
+    }
+}
+
+void testAppendInstancePositionMutatesOnlySphereInstances(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "append instance position mutates only sphere instances";
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId instances = graph.createNode(sdf3d::SdfNodeType::SphereInstances, "Instances");
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNode* before = graph.node(instances);
+    const size_t previousCount = before == nullptr ? 0 : before->payload.instancePositions.size();
+
+    expect(sdf3d::GraphSystem::appendInstancePosition(graph, instances, {1.0f, 2.0f, 3.0f}), testName, "Expected append to instance node.", failures);
+    expect(!sdf3d::GraphSystem::appendInstancePosition(graph, sphere, {4.0f, 5.0f, 6.0f}), testName, "Expected append to reject plain sphere.", failures);
+
+    const sdf3d::SdfGraphNode* node = graph.node(instances);
+    expect(node != nullptr && node->payload.instancePositions.size() == previousCount + 1, testName, "Expected one appended position.", failures);
+    if (node != nullptr && !node->payload.instancePositions.empty()) {
+        expect(node->payload.instancePositions.back().z == 3.0f, testName, "Expected appended position value.", failures);
+    }
+}
+
 void testHighlightNodeForSelectionUsesTransformWrapper(std::vector<TestFailure>& failures)
 {
     const std::string testName = "highlight node for selection uses transform wrapper";
@@ -653,6 +714,8 @@ int main()
     testCollectNodeParamsPacksTransformValues(failures);
     testCollectNodeParamsNormalizesRotateQuaternion(failures);
     testCollectNodeParamsPacksPrimitiveAndSmoothValues(failures);
+    testCollectInstanceDataPacksPositionsAndNodeRange(failures);
+    testAppendInstancePositionMutatesOnlySphereInstances(failures);
     testHighlightNodeForSelectionUsesTransformWrapper(failures);
     testHighlightNodeForSelectionFollowsTransformChain(failures);
     testHighlightNodeForSelectionStopsAtBranchedTransform(failures);

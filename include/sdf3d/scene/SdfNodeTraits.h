@@ -8,6 +8,7 @@ namespace sdf3d {
 inline bool isSdfPrimitiveNode(SdfNodeType type)
 {
     return type == SdfNodeType::Sphere
+        || type == SdfNodeType::SphereInstances
         || type == SdfNodeType::Box
         || type == SdfNodeType::Cylinder
         || type == SdfNodeType::Torus

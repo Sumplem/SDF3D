@@ -27,6 +27,7 @@ inline uint64_t scopedSdfNodeStableId(GroupDefId groupDefinitionId, uint64_t nod
 /// Canonical SDF node taxonomy for Phase 1 and planned Phase 2 extensions.
 enum class SdfNodeType {
     Sphere,
+    SphereInstances,
     Box,
     Cylinder,
     Torus,
@@ -67,6 +68,7 @@ struct SdfNode {
     uint64_t stableId = 0;
     std::string name;
     std::unordered_map<std::string, float> parameters;
+    std::vector<glm::vec3> instancePositions;
     std::vector<std::shared_ptr<SdfNode>> children;
     MaterialId materialId = 0;
     GroupDefId groupDefinitionId = 0;
@@ -91,6 +93,7 @@ inline SdfNodePtr cloneSdfNodeTree(const SdfNodePtr& node)
     SdfNodePtr clone = makeSdfNode(node->type, node->name);
     clone->stableId = node->stableId;
     clone->parameters = node->parameters;
+    clone->instancePositions = node->instancePositions;
     clone->materialId = node->materialId;
     clone->groupDefinitionId = node->groupDefinitionId;
     clone->material = node->material;
@@ -112,6 +115,15 @@ inline SdfNodePtr makeSphereNode(std::string name = "Sphere")
     // AGENT: A radius parameter keeps the compiler generic enough for live
     // property editing without introducing a primitive-specific subclass.
     node->parameters["radius"] = 1.0f;
+    return node;
+}
+
+/// Creates a sphere-instancing primitive with positions stored for runtime SSBO upload.
+inline SdfNodePtr makeSphereInstancesNode(std::vector<glm::vec3> positions = {{0.0f, 0.0f, 0.0f}}, std::string name = "Sphere Instances")
+{
+    SdfNodePtr node = makeSdfNode(SdfNodeType::SphereInstances, std::move(name));
+    node->parameters["radius"] = 1.0f;
+    node->instancePositions = std::move(positions);
     return node;
 }
 
