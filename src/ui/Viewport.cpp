@@ -142,7 +142,9 @@ EditorDirtyState Viewport::draw(Renderer& renderer, SdfGraph& graph, const Graph
     gizmo.hoverNodeId = m_hoverNodeId;
 
     if (gizmoDirty.params) {
-        renderer.setNodeParams(GraphSystem::collectNodeParams(graph, groups));
+        const SdfRuntimeBufferData buffers = GraphSystem::collectRuntimeBufferData(graph, groups);
+        renderer.setNodeParams(buffers.nodeParams);
+        renderer.setInstancePositions(buffers.instances.positions);
         dirty.params = true;
     }
 

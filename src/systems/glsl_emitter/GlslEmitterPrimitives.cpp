@@ -134,10 +134,108 @@ std::string emitBakedSphereInstances(const SdfNode& node, const std::string& poi
     return expression;
 }
 
+std::string instanceRangeVec4(const SdfNode& node)
+{
+    return glslVec4(0.0f, static_cast<float>(node.instancePositions.size()), 0.0f, 0.0f);
+}
+
+std::string instanceHelperName(SdfNodeType type)
+{
+    switch (type) {
+    case SdfNodeType::Sphere:
+        return "sdf3d_instance_sphere";
+    case SdfNodeType::Box:
+        return "sdf3d_instance_box";
+    case SdfNodeType::Cylinder:
+        return "sdf3d_instance_cylinder";
+    case SdfNodeType::Torus:
+        return "sdf3d_instance_torus";
+    case SdfNodeType::Plane:
+        return "sdf3d_instance_plane";
+    case SdfNodeType::Capsule:
+        return "sdf3d_instance_capsule";
+    case SdfNodeType::Cone:
+        return "sdf3d_instance_cone";
+    case SdfNodeType::RoundBox:
+        return "sdf3d_instance_round_box";
+    default:
+        return "";
+    }
+}
+
+std::string bakedPrimitiveAt(const SdfNode& node, const std::string& pointExpr)
+{
+    switch (node.type) {
+    case SdfNodeType::Sphere:
+        return "(length(" + pointExpr + ") - " + glslFloat(parameterOr(node, "radius", 1.0f)) + ")";
+    case SdfNodeType::Box:
+        return "sdf3d_box(" + pointExpr + ", " + glslVec3(parameterOr(node, "x", 1.0f), parameterOr(node, "y", 1.0f), parameterOr(node, "z", 1.0f)) + ")";
+    case SdfNodeType::Cylinder:
+        return "sdf3d_cylinder(" + pointExpr + ", " + glslFloat(parameterOr(node, "radius", 1.0f)) + ", " + glslFloat(parameterOr(node, "halfHeight", 1.0f)) + ")";
+    case SdfNodeType::Torus:
+        return "(length(vec2(length(" + pointExpr + ".xz) - " + glslFloat(parameterOr(node, "majorRadius", 1.0f)) + ", "
+            + pointExpr + ".y)) - " + glslFloat(parameterOr(node, "minorRadius", 0.25f)) + ")";
+    case SdfNodeType::Plane:
+        return "(dot(" + pointExpr + ", normalize(" + glslVec3(parameterOr(node, "normalX", 0.0f), parameterOr(node, "normalY", 1.0f), parameterOr(node, "normalZ", 0.0f)) + ")) + "
+            + glslFloat(parameterOr(node, "offset", 0.0f)) + ")";
+    case SdfNodeType::Capsule: {
+        const std::string halfHeight = glslFloat(parameterOr(node, "halfHeight", 1.0f));
+        return "(length(vec3(" + pointExpr + ".x, " + pointExpr + ".y - clamp(" + pointExpr + ".y, -" + halfHeight + ", " + halfHeight + "), " + pointExpr + ".z)) - "
+            + glslFloat(parameterOr(node, "radius", 0.35f)) + ")";
+    }
+    case SdfNodeType::Cone:
+        return "sdf3d_capped_cone(" + pointExpr + ", " + glslFloat(parameterOr(node, "radius", 1.0f)) + ", " + glslFloat(parameterOr(node, "halfHeight", 1.0f)) + ")";
+    case SdfNodeType::RoundBox:
+        return "(sdf3d_box(" + pointExpr + ", " + glslVec3(parameterOr(node, "x", 1.0f), parameterOr(node, "y", 1.0f), parameterOr(node, "z", 1.0f)) + ") - "
+            + glslFloat(parameterOr(node, "radius", 0.15f)) + ")";
+    default:
+        return "1e6";
+    }
+}
+
+std::string emitBakedPrimitiveInstances(const SdfNode& node, const std::string& pointExpr, SdfCompileResult& result)
+{
+    if (node.instancePositions.empty()) {
+        return "1e6";
+    }
+    if (node.type == SdfNodeType::Box || node.type == SdfNodeType::RoundBox) {
+        result.usesBox = true;
+    }
+    if (node.type == SdfNodeType::Cylinder) {
+        result.usesCylinder = true;
+    }
+    if (node.type == SdfNodeType::Cone) {
+        result.usesCappedCone = true;
+    }
+
+    std::string expression;
+    for (std::size_t i = 0; i < node.instancePositions.size(); ++i) {
+        const glm::vec3& position = node.instancePositions[i];
+        const std::string localPoint = "((" + pointExpr + ") - " + glslVec3(position.x, position.y, position.z) + ")";
+        const std::string distance = bakedPrimitiveAt(node, localPoint);
+        expression = i == 0 ? distance : "min(" + expression + ", " + distance + ")";
+    }
+    return expression;
+}
+
 } // namespace
 
 std::string emitPrimitiveGeometryExpression(const SdfNodePtr& node, const std::string& pointExpr, SdfCompileResult& result, SdfHelperEmitContext& context)
 {
+    if (node->type != SdfNodeType::SphereInstances && !node->instancePositions.empty()) {
+        if (context.mode == GlslEmitMode::Baked) {
+            return emitBakedPrimitiveInstances(*node, pointExpr, result);
+        }
+
+        const uint64_t nodeId = runtimeParamIdFor(node);
+        const std::string params = glslNodeParam0(context.mode, nodeId, primitiveParamVec4(*node), context.nodeParamSlotByNodeId);
+        const std::string range = glslNodeParam1(context.mode, nodeId, instanceRangeVec4(*node), context.nodeParamSlotByNodeId);
+        const std::string helper = instanceHelperName(node->type);
+        if (!helper.empty()) {
+            return helper + "(" + pointExpr + ", " + params + ", " + range + ")";
+        }
+    }
+
     switch (node->type) {
     case SdfNodeType::Sphere: {
         const std::string radius = primitiveParamComponent(*node, context, runtimeParamIdFor(node), 'x');

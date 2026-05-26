@@ -76,8 +76,10 @@ SdfCompiledInstanceRange instanceRangeFor(uint64_t nodeId, const InstanceRangeBy
 
 bool runtimeNodeParamFor(const SdfGraphNode& node, SdfCompiledNodeParam& param, GroupDefId stableIdScope, const InstanceRangeByNodeId& instanceRanges)
 {
-    param.nodeId = scopedSdfNodeStableId(stableIdScope, node.payload.stableId != 0 ? node.payload.stableId : node.id);
+    const uint64_t rawNodeId = node.payload.stableId != 0 ? node.payload.stableId : node.id;
+    param.nodeId = scopedSdfNodeStableId(stableIdScope, rawNodeId);
     param.data0 = {0.0f, 0.0f, 0.0f, 0.0f};
+    param.data1 = {0.0f, 0.0f, 0.0f, 0.0f};
 
     switch (node.payload.type) {
     case SdfNodeType::SphereInstances: {
@@ -88,6 +90,7 @@ bool runtimeNodeParamFor(const SdfGraphNode& node, SdfCompiledNodeParam& param, 
             static_cast<float>(range.count),
             0.0f,
         };
+        param.data1 = {static_cast<float>(range.first), static_cast<float>(range.count), 0.0f, 0.0f};
         return true;
     }
     case SdfNodeType::Rotate:
@@ -123,6 +126,12 @@ bool runtimeNodeParamFor(const SdfGraphNode& node, SdfCompiledNodeParam& param, 
         }
         param.data0[packedCount] = parameterOr(node.payload, parameter.name, parameter.defaultValue);
         ++packedCount;
+    }
+
+    if (node.payload.type != SdfNodeType::SphereInstances && isSdfPrimitiveNode(node.payload.type)) {
+        const uint64_t rawPrototypeId = node.payload.instancePrototypeId != 0 ? node.payload.instancePrototypeId : rawNodeId;
+        const SdfCompiledInstanceRange range = instanceRangeFor(scopedSdfNodeStableId(stableIdScope, rawPrototypeId), instanceRanges);
+        param.data1 = {static_cast<float>(range.first), static_cast<float>(range.count), 0.0f, 0.0f};
     }
 
     return packedCount > 0;
@@ -184,7 +193,7 @@ void appendInstanceData(
     nodes.reserve(graph.nodes().size());
     for (const auto& [id, node] : graph.nodes()) {
         (void)id;
-        if (node.payload.type == SdfNodeType::SphereInstances) {
+        if (node.payload.type == SdfNodeType::SphereInstances || (node.payload.type != SdfNodeType::SphereInstances && isSdfPrimitiveNode(node.payload.type))) {
             nodes.push_back(&node);
         }
     }
@@ -195,15 +204,44 @@ void appendInstanceData(
     });
 
     for (const SdfGraphNode* node : nodes) {
-        const uint64_t nodeId = scopedSdfNodeStableId(stableIdScope, node->payload.stableId != 0 ? node->payload.stableId : node->id);
+        const uint64_t rawNodeId = node->payload.stableId != 0 ? node->payload.stableId : node->id;
+        const uint64_t rawInstanceId = node->payload.instancePrototypeId != 0 ? node->payload.instancePrototypeId : rawNodeId;
+        const uint64_t nodeId = scopedSdfNodeStableId(stableIdScope, rawInstanceId);
         if (!packedIds.insert(nodeId).second) {
             continue;
         }
         const uint32_t first = static_cast<uint32_t>(instances.positions.size());
-        for (const glm::vec3& position : node->payload.instancePositions) {
+        if (node->payload.type == SdfNodeType::SphereInstances) {
+            for (const glm::vec3& position : node->payload.instancePositions) {
+                instances.positions.push_back({position});
+            }
+            instances.ranges.push_back({nodeId, first, static_cast<uint32_t>(node->payload.instancePositions.size())});
+            continue;
+        }
+
+        for (const auto& [candidateId, candidate] : graph.nodes()) {
+            const uint64_t candidateRawId = candidate.payload.stableId != 0 ? candidate.payload.stableId : candidateId;
+            const uint64_t candidatePrototype = candidate.payload.instancePrototypeId != 0 ? candidate.payload.instancePrototypeId : candidateRawId;
+            if (!isSdfPrimitiveNode(candidate.payload.type)
+                || candidate.payload.type == SdfNodeType::SphereInstances
+                || candidate.payload.type != node->payload.type
+                || candidatePrototype != rawInstanceId) {
+                continue;
+            }
+            glm::vec3 position = {0.0f, 0.0f, 0.0f};
+            if (const SdfGraphNodeId translateId = GraphSystem::findDirectTranslateParent(graph, candidateId)) {
+                const SdfGraphNode* translate = graph.node(translateId);
+                if (translate != nullptr) {
+                    position = {
+                        parameterOr(translate->payload, "x", 0.0f),
+                        parameterOr(translate->payload, "y", 0.0f),
+                        parameterOr(translate->payload, "z", 0.0f),
+                    };
+                }
+            }
             instances.positions.push_back({position});
         }
-        instances.ranges.push_back({nodeId, first, static_cast<uint32_t>(node->payload.instancePositions.size())});
+        instances.ranges.push_back({nodeId, first, static_cast<uint32_t>(instances.positions.size() - first)});
     }
 }
 
@@ -336,6 +374,9 @@ SdfGraphNodeId GraphSystem::duplicateNode(SdfGraph& graph, SdfGraphNodeId id)
     const SdfGraphNodeId duplicateId = graph.m_nextId++;
     SdfGraphNode graphNode{duplicateId, it->second.payload, it->second.editorX + 32.0f, it->second.editorY + 32.0f};
     graphNode.payload.stableId = duplicateId;
+    if (graphNode.payload.type != SdfNodeType::SphereInstances && isSdfPrimitiveNode(graphNode.payload.type) && graphNode.payload.instancePrototypeId == 0) {
+        graphNode.payload.instancePrototypeId = it->second.payload.stableId != 0 ? it->second.payload.stableId : id;
+    }
     graphNode.inputs = it->second.inputs;
     graphNode.outputs = it->second.outputs;
     graphNode.editorPropertiesCollapsed = it->second.editorPropertiesCollapsed;
@@ -678,6 +719,28 @@ bool GraphSystem::assignMaterialToNode(SdfGraph& graph, SdfGraphNodeId nodeId, M
     node->payload.material = material->material;
     node->payload.name = material->name;
     return true;
+}
+
+std::size_t GraphSystem::primitiveInstanceCount(const SdfGraph& graph, SdfGraphNodeId nodeId)
+{
+    const SdfGraphNode* node = graph.node(nodeId);
+    if (node == nullptr || node->payload.type == SdfNodeType::SphereInstances || !isSdfPrimitiveNode(node->payload.type)) {
+        return 0;
+    }
+
+    const uint64_t rawNodeId = node->payload.stableId != 0 ? node->payload.stableId : node->id;
+    const uint64_t prototypeId = node->payload.instancePrototypeId != 0 ? node->payload.instancePrototypeId : rawNodeId;
+    std::size_t count = 0;
+    for (const auto& [candidateId, candidate] : graph.nodes()) {
+        const uint64_t candidateRawId = candidate.payload.stableId != 0 ? candidate.payload.stableId : candidateId;
+        const uint64_t candidatePrototype = candidate.payload.instancePrototypeId != 0 ? candidate.payload.instancePrototypeId : candidateRawId;
+        if (candidate.payload.type == node->payload.type
+            && candidate.payload.type != SdfNodeType::SphereInstances
+            && candidatePrototype == prototypeId) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 bool GraphSystem::appendInstancePosition(SdfGraph& graph, SdfGraphNodeId nodeId, glm::vec3 position)

@@ -10,7 +10,7 @@
 - MaterialGraph input defaults live on consuming nodes and are overridden by connected sockets; link compatibility uses socket value type
 - MaterialGraph semantic edits mark scene dirty; nodes include core color/float shaping ops, `Checker` color+factor outputs, active `ValueNoise`, and load-only legacy `ValueNoisePattern` migration
 - Shared `GraphCanvas`/`GraphEditorCore` own canvas frame behavior and reusable graph drawing/hit primitives
-- `GlslEmitter` is 8 concern files; shared math owns domain transforms; primitive emitter supports Sphere/Box/Cylinder/Torus/Plane/Capsule/Cone/RoundBox/SphereInstances
+- `GlslEmitter` is 8 concern files; shared math owns domain transforms; primitive emitter supports always-instanced Sphere/Box/Cylinder/Torus/Plane/Capsule/Cone/RoundBox plus legacy SphereInstances
 - `SdfNodeDefinition` metadata owns parameter type: Float, Bool, Enum; UI must not infer bool/enum from numeric ranges
 - Node groups use App-owned `GraphGroupRegistry`; entered group subgraph is active editor/viewport/compiler/UI target
 - Viewport picking uses GPU node-id buffer (`GL_R32I`) and compiler-emitted `scenePickId`; CPU graph raymarch picking is removed
@@ -18,16 +18,17 @@
 - SDF graph links allow acyclic DAG fan-out/reuse; `GraphSystem` rejects cycles during link creation and serialized graph load
 - Union/SmoothUnion/Intersect/SmoothIntersect use one multi-input `inputs` socket; Viewport Add appends to output-root Union/SmoothUnion when possible
 - Runtime GLSL mode reads Float node params from SSBO binding 1; Float edits refresh SSBO only, Bool/Enum/topology recompile
-- `SphereInstances` stores per-node instance positions, compiles one sphere primitive over N positions, and uses node params for radius/range
+- Active primitives are always instance-capable; eligible translate-only duplicates stay visible in graph and compile into one runtime instance range
 - Runtime material/node-param/instance SSBOs bind every frame but re-upload only when renderer data setters mark buffers dirty
-- `SphereInstances` Properties UI supports Add Instance, Add Batch, spacing, per-position editing/delete, and Clear Instances; large position lists are ImGui-clipped and all instance edits are param dirty only
-- Viewport Add `SphereInstances` appends to the selected SphereInstances node at clicked world position and marks params dirty; new topology is created only when no SphereInstances node is selected
+- `SdfCompiledNodeParam::data0` stores primitive/transform params; `data1` stores generic instance first/count ranges for runtime helpers
+- Primitive UI has no instancing toggle; Properties shows detected instance count read-only
+- `SphereInstances` remains load/compile-compatible as legacy data but is hidden from new Add workflows
 - Path-trace shader has GI bounces, Russian Roulette, solid environment color, GGX VNDF glossy sampling, NEE/MIS direct light, shader-owned emissive surface sampling, clamped emissive contribution, and accumulation
-- Build/tests: full Debug app build passes; targeted GraphSystem/UniformUploader tests pass; GUI smoke launches; full test loop currently blocked by Windows Application Control on `sdf3d_compiler_system_tests.exe`
+- Build/tests/smoke: full Debug app build passes; all `build\Debug\*_tests.exe` pass; short hidden app launch stays running
 
 ## Active
 
-Sphere instancing viewport add fast path is implemented: when a SphereInstances node is selected, viewport Add SphereInstances appends a position without graph topology changes or shader recompile.
+Always-instanced primitives are ready for review: active primitives implicitly group duplicate translate-only occurrences into runtime instance SSBO data while unsupported branch shapes compile scalar.
 
 ## Decisions
 
@@ -144,6 +145,12 @@ Sphere instancing viewport add fast path is implemented: when a SphereInstances 
 - 2026-05 - SphereInstances batch additions are Properties-panel data edits only; they append positions and refresh runtime buffers without changing graph topology
 - 2026-05 - SphereInstances position rows are virtualized in Properties because drawing one ImGui row per instance makes add/edit latency scale with total instance count
 - 2026-05 - Viewport Add SphereInstances reuses the selected SphereInstances node as an append target because adding one position is instance data, not graph topology
+- 2026-05 - Generic primitive instancing is compile-time optimization: marked duplicate graph branches remain editable while eligible translate-only occurrences collapse into one runtime instance range
+- 2026-05 - Instanced primitive runtime params use `SdfCompiledNodeParam::data1` for first/count so `data0` can keep full primitive parameter payloads across all primitive shapes
+- 2026-05 - `SphereInstances` stays legacy-load compatible but is hidden from new Add workflows because generic primitive instancing replaces the user-facing node
+- 2026-05 - Active primitives are always instance-capable by definition; `instancePrototypeId == 0` means self prototype and duplicates inherit source prototype identity
+- 2026-05 - Primitive instancing UI is read-only because instancing is no longer an opt-in graph state
+- 2026-05 - Normal primitive serialization omits instancing metadata; legacy primitive instancing metadata is tolerated and ignored on load
 
 ## Constraints
 
@@ -179,4 +186,4 @@ Sphere instancing viewport add fast path is implemented: when a SphereInstances 
 
 ## Next
 
-Review viewport Add SphereInstances fast path in-app; if still slow, profile shader-side per-instance raymarch cost.
+Review always-instanced primitive duplicate behavior in-app; next focus is interaction polish if duplicate/selection UX needs tightening.

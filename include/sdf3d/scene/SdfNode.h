@@ -69,6 +69,7 @@ struct SdfNode {
     std::string name;
     std::unordered_map<std::string, float> parameters;
     std::vector<glm::vec3> instancePositions;
+    uint64_t instancePrototypeId = 0;
     std::vector<std::shared_ptr<SdfNode>> children;
     MaterialId materialId = 0;
     GroupDefId groupDefinitionId = 0;
@@ -94,6 +95,7 @@ inline SdfNodePtr cloneSdfNodeTree(const SdfNodePtr& node)
     clone->stableId = node->stableId;
     clone->parameters = node->parameters;
     clone->instancePositions = node->instancePositions;
+    clone->instancePrototypeId = node->instancePrototypeId;
     clone->materialId = node->materialId;
     clone->groupDefinitionId = node->groupDefinitionId;
     clone->material = node->material;

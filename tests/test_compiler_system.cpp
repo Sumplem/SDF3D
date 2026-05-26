@@ -2,6 +2,7 @@
 
 #include "sdf3d/scene/GraphGroupRegistry.h"
 #include "sdf3d/scene/SdfGraphCompiler.h"
+#include "sdf3d/systems/GraphSystem.h"
 #include "sdf3d/systems/GlslEmitter.h"
 #include "../src/systems/glsl_emitter/GlslEmitterMath.h"
 
@@ -101,6 +102,85 @@ void testCompileSphereInstancesBakedUsesLiteralPositions(std::vector<TestFailure
     expect(contains(result.glsl, "vec3(1.000000, 2.000000, 3.000000)"), testName, "Expected first literal position.", failures);
     expect(contains(result.glsl, "vec3(4.000000, 5.000000, 6.000000)"), testName, "Expected second literal position.", failures);
     expect(result.instancePositions.empty(), testName, "Expected baked compile to skip runtime positions.", failures);
+}
+
+void testCompilePrimitiveDuplicatesCollapse(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "compile primitive duplicates collapse";
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId firstSphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId firstTranslate = graph.createNode(sdf3d::SdfNodeType::Translate, "Translate A");
+    const sdf3d::SdfGraphNodeId secondSphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere Copy");
+    const sdf3d::SdfGraphNodeId secondTranslate = graph.createNode(sdf3d::SdfNodeType::Translate, "Translate B");
+    const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
+
+    if (sdf3d::SdfGraphNode* second = graph.node(secondSphere)) {
+        second->payload.instancePrototypeId = firstSphere;
+    }
+    if (sdf3d::SdfGraphNode* first = graph.node(firstTranslate)) {
+        first->payload.parameters["x"] = 1.0f;
+    }
+    if (sdf3d::SdfGraphNode* second = graph.node(secondTranslate)) {
+        second->payload.parameters["x"] = 2.0f;
+    }
+
+    expect(graph.link(firstSphere, "sdf", firstTranslate, "child"), testName, "Expected first translate child.", failures);
+    expect(graph.link(secondSphere, "sdf", secondTranslate, "child"), testName, "Expected second translate child.", failures);
+    expect(graph.link(firstTranslate, "sdf", unionNode, "inputs"), testName, "Expected first union input.", failures);
+    expect(graph.link(secondTranslate, "sdf", unionNode, "inputs"), testName, "Expected second union input.", failures);
+    expect(graph.link(unionNode, "sdf", graph.outputNode(), "surface"), testName, "Expected output link.", failures);
+
+    const sdf3d::SdfCompileResult result = sdf3d::CompilerSystem{}.compile(graph);
+
+    expect(result.errors.empty(), testName, "Expected no compile errors.", failures);
+    expect(result.instancePositions.size() == 2, testName, "Expected two runtime instance positions.", failures);
+    expect(result.instanceRanges.size() == 1, testName, "Expected one instance range.", failures);
+    expect(result.nodeParams.size() >= 1, testName, "Expected runtime node params.", failures);
+    expect(contains(result.glsl, "sdf3d_instance_sphere(p, uNodeParams["), testName, "Expected generic sphere instance helper call.", failures);
+    expect(countOccurrences(result.glsl, "sdf3d_instance_sphere(p, uNodeParams[") == 1, testName, "Expected duplicate branches collapsed to one helper call.", failures);
+    if (result.instancePositions.size() == 2) {
+        expect(result.instancePositions[0].position.x == 1.0f, testName, "Expected first translate position.", failures);
+        expect(result.instancePositions[1].position.x == 2.0f, testName, "Expected second translate position.", failures);
+    }
+}
+
+void testCompileMismatchedPrimitiveDuplicatesStayScalar(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "compile mismatched primitive duplicates stay scalar";
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId firstSphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId secondSphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere Copy");
+    const sdf3d::SdfGraphNodeId unionNode = graph.createNode(sdf3d::SdfNodeType::Union, "Union");
+
+    if (sdf3d::SdfGraphNode* second = graph.node(secondSphere)) {
+        second->payload.instancePrototypeId = firstSphere;
+        second->payload.parameters["radius"] = 2.0f;
+    }
+    expect(graph.link(firstSphere, "sdf", unionNode, "inputs"), testName, "Expected first union input.", failures);
+    expect(graph.link(secondSphere, "sdf", unionNode, "inputs"), testName, "Expected second union input.", failures);
+    expect(graph.link(unionNode, "sdf", graph.outputNode(), "surface"), testName, "Expected output link.", failures);
+
+    const sdf3d::SdfCompileResult result = sdf3d::CompilerSystem{}.compile(graph);
+
+    expect(result.errors.empty(), testName, "Expected no compile errors.", failures);
+    expect(result.instancePositions.size() == 1, testName, "Expected only matching prototype occurrence collapsed.", failures);
+    expect(contains(result.glsl, "sdf_node_" + std::to_string(secondSphere) + "(p)"), testName, "Expected mismatched duplicate to remain scalar.", failures);
+}
+
+void testCompileRotatedPrimitiveDuplicateStaysScalar(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "compile rotated primitive duplicate stays scalar";
+    sdf3d::SdfGraph graph;
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNodeId rotate = graph.createNode(sdf3d::SdfNodeType::Rotate, "Rotate");
+    expect(graph.link(sphere, "sdf", rotate, "child"), testName, "Expected sphere to rotate link.", failures);
+    expect(graph.link(rotate, "sdf", graph.outputNode(), "surface"), testName, "Expected rotate output link.", failures);
+
+    const sdf3d::SdfCompileResult result = sdf3d::CompilerSystem{}.compile(graph);
+
+    expect(result.errors.empty(), testName, "Expected no compile errors.", failures);
+    expect(result.instancePositions.empty(), testName, "Expected rotated branch not to compile as instances.", failures);
+    expect(contains(result.glsl, "sdf_node_" + std::to_string(sphere) + "("), testName, "Expected rotated primitive helper to remain scalar.", failures);
 }
 
 void testCompileMaterialOverride(std::vector<TestFailure>& failures)
@@ -338,6 +418,9 @@ int main()
     testCompileSphere(failures);
     testCompileSphereInstancesRuntimeUsesInstanceSsbo(failures);
     testCompileSphereInstancesBakedUsesLiteralPositions(failures);
+    testCompilePrimitiveDuplicatesCollapse(failures);
+    testCompileMismatchedPrimitiveDuplicatesStayScalar(failures);
+    testCompileRotatedPrimitiveDuplicateStaysScalar(failures);
     testCompileMaterialOverride(failures);
     testCompileEmpty(failures);
     testGraphLoweringPreservesStableIdsForHelpers(failures);

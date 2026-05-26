@@ -79,6 +79,9 @@ public:
     /// Assigns a registry material to a MaterialOverride node.
     static bool assignMaterialToNode(SdfGraph& graph, SdfGraphNodeId nodeId, MaterialId materialId);
 
+    /// Returns detected graph occurrences for a primitive instance prototype.
+    static std::size_t primitiveInstanceCount(const SdfGraph& graph, SdfGraphNodeId nodeId);
+
     /// Appends one world-space instance position to a SphereInstances node.
     static bool appendInstancePosition(SdfGraph& graph, SdfGraphNodeId nodeId, glm::vec3 position);
 

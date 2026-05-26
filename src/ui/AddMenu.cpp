@@ -280,6 +280,9 @@ EditorDirtyState AddMenu::drawItems(SdfGraph& graph)
     };
 
     for (SdfNodeType type : sdfNodeTypesForCategory(SdfNodeCategory::Primitive)) {
+        if (type == SdfNodeType::SphereInstances) {
+            continue;
+        }
         const SdfNodeDefinition* definition = sdfNodeDefinition(type);
         if (definition != nullptr && ImGui::MenuItem(definition->displayName.c_str())) {
             if (m_spawnWorldPosition

@@ -62,6 +62,7 @@ public:
 
     struct GpuNodeParam {
         glm::vec4 data0 = {0.0f, 0.0f, 0.0f, 0.0f};
+        glm::vec4 data1 = {0.0f, 0.0f, 0.0f, 0.0f};
     };
 
     struct GpuInstancePosition {

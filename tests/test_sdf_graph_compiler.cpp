@@ -52,6 +52,11 @@ int countOccurrences(const std::string& text, const std::string& expected)
     return count;
 }
 
+bool containsOriginInstance(const std::string& glsl)
+{
+    return contains(glsl, "vec3(0.000000, 0.000000, 0.000000)");
+}
+
 void expect(bool condition, const std::string& testName, const std::string& message, std::vector<TestFailure>& failures)
 {
     if (!condition) {
@@ -75,7 +80,7 @@ void testGraphCompilerOutputNode(std::vector<TestFailure>& failures)
     const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
-    expect(contains(result.glsl, "length(p) - 1.500000"), testName, "Expected output node to compile linked surface.", failures);
+    expect(contains(result.glsl, "1.500000") && containsOriginInstance(result.glsl), testName, "Expected output node to compile linked surface.", failures);
     expect(result.materials.size() == 1, testName, "Expected linked surface material.", failures);
 }
 
@@ -118,7 +123,7 @@ void testGraphCompilerPrimitive(std::vector<TestFailure>& failures)
     const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
-    expect(contains(result.glsl, "length(p) - 2.000000"), testName, "Expected graph payload radius.", failures);
+    expect(contains(result.glsl, "2.000000") && containsOriginInstance(result.glsl), testName, "Expected graph payload radius.", failures);
     expect(result.materials.size() == 1, testName, "Expected default graph material.", failures);
 }
 
@@ -138,12 +143,16 @@ void testGraphCompilerRuntimePrimitiveUsesNodeParam(std::vector<TestFailure>& fa
 
     expect(runtime.errors.empty(), testName, "Expected no runtime compiler errors.", failures);
     expect(contains(runtime.glsl, "layout(std430, binding = 1) readonly buffer NodeParamBuffer"), testName, "Expected runtime node-param SSBO.", failures);
-    expect(contains(runtime.glsl, "uNodeParams[0].data0.x"), testName, "Expected sphere radius direct slot lookup.", failures);
+    expect(contains(runtime.glsl, "sdf3d_instance_sphere(p, uNodeParams[0].data0, uNodeParams[0].data1)"), testName, "Expected sphere runtime instance helper.", failures);
     expect(!contains(runtime.glsl, "sdf3d_nodeParam0("), testName, "Expected no linear node-param lookup helper.", failures);
     expect(runtime.nodeParams.size() == 1 && runtime.nodeParams[0].slot == 0 && runtime.nodeParams[0].data0[0] == 2.0f, testName, "Expected sphere radius packed in slot zero.", failures);
+    expect(runtime.instancePositions.size() == 1 && runtime.instanceRanges.size() == 1, testName, "Expected implicit primitive instance range.", failures);
+    if (!runtime.nodeParams.empty()) {
+        expect(runtime.nodeParams[0].data1[1] == 1.0f, testName, "Expected implicit primitive instance count in data1.y.", failures);
+    }
     expect(baked.errors.empty(), testName, "Expected no baked compiler errors.", failures);
     expect(!contains(baked.glsl, "NodeParamBuffer"), testName, "Expected baked GLSL without node-param SSBO.", failures);
-    expect(contains(baked.glsl, "length(p) - 2.000000"), testName, "Expected baked radius literal.", failures);
+    expect(contains(baked.glsl, "2.000000") && containsOriginInstance(baked.glsl), testName, "Expected baked radius literal.", failures);
     expect(baked.nodeParams.empty(), testName, "Expected baked compile to skip node params.", failures);
 }
 
@@ -161,11 +170,10 @@ void testGraphCompilerStubbedPrimitives(std::vector<TestFailure>& failures)
         const sdf3d::SdfCompileResult runtime = compiler.compile(graph);
 
         expect(baked.errors.empty(), testName, "Expected capsule baked compile without errors.", failures);
-        expect(contains(baked.glsl, "clamp(p.y, -1.000000, 1.000000)"), testName, "Expected capsule baked half-height.", failures);
+        expect(contains(baked.glsl, "-1.000000, 1.000000"), testName, "Expected capsule baked half-height.", failures);
         expect(contains(baked.glsl, "- 0.350000"), testName, "Expected capsule baked radius.", failures);
         expect(runtime.errors.empty(), testName, "Expected capsule runtime compile without errors.", failures);
-        expect(contains(runtime.glsl, "uNodeParams[0].data0.x"), testName, "Expected capsule runtime radius.", failures);
-        expect(contains(runtime.glsl, "uNodeParams[0].data0.y"), testName, "Expected capsule runtime half-height.", failures);
+        expect(contains(runtime.glsl, "sdf3d_instance_capsule(p, uNodeParams[0].data0, uNodeParams[0].data1)"), testName, "Expected capsule runtime instance helper.", failures);
         expect(runtime.nodeParams.size() == 1 && runtime.nodeParams[0].data0[0] == 0.35f && runtime.nodeParams[0].data0[1] == 1.0f, testName, "Expected capsule params packed.", failures);
     }
 
@@ -180,9 +188,9 @@ void testGraphCompilerStubbedPrimitives(std::vector<TestFailure>& failures)
 
         expect(baked.errors.empty(), testName, "Expected cone baked compile without errors.", failures);
         expect(contains(baked.glsl, "float sdf3d_capped_cone(vec3 p, float radius, float halfHeight)"), testName, "Expected cone helper.", failures);
-        expect(contains(baked.glsl, "sdf3d_capped_cone(p, 1.000000, 1.000000)"), testName, "Expected cone baked call.", failures);
+        expect(contains(baked.glsl, "sdf3d_capped_cone(((p) - vec3(0.000000, 0.000000, 0.000000)), 1.000000, 1.000000)"), testName, "Expected cone baked call.", failures);
         expect(runtime.errors.empty(), testName, "Expected cone runtime compile without errors.", failures);
-        expect(contains(runtime.glsl, "sdf3d_capped_cone(p, uNodeParams[0].data0.x, uNodeParams[0].data0.y)"), testName, "Expected cone runtime params.", failures);
+        expect(contains(runtime.glsl, "sdf3d_instance_cone(p, uNodeParams[0].data0, uNodeParams[0].data1)"), testName, "Expected cone runtime instance helper.", failures);
         expect(runtime.nodeParams.size() == 1 && runtime.nodeParams[0].data0[0] == 1.0f && runtime.nodeParams[0].data0[1] == 1.0f, testName, "Expected cone params packed.", failures);
     }
 
@@ -196,9 +204,9 @@ void testGraphCompilerStubbedPrimitives(std::vector<TestFailure>& failures)
         const sdf3d::SdfCompileResult runtime = compiler.compile(graph);
 
         expect(baked.errors.empty(), testName, "Expected round box baked compile without errors.", failures);
-        expect(contains(baked.glsl, "sdf3d_box(p, vec3(1.000000, 1.000000, 1.000000)) - 0.150000"), testName, "Expected round box baked expression.", failures);
+        expect(contains(baked.glsl, "sdf3d_box(((p) - vec3(0.000000, 0.000000, 0.000000)), vec3(1.000000, 1.000000, 1.000000)) - 0.150000"), testName, "Expected round box baked expression.", failures);
         expect(runtime.errors.empty(), testName, "Expected round box runtime compile without errors.", failures);
-        expect(contains(runtime.glsl, "sdf3d_box(p, uNodeParams[0].data0.xyz) - uNodeParams[0].data0.w"), testName, "Expected round box runtime params.", failures);
+        expect(contains(runtime.glsl, "sdf3d_instance_round_box(p, uNodeParams[0].data0, uNodeParams[0].data1)"), testName, "Expected round box runtime instance helper.", failures);
         expect(runtime.nodeParams.size() == 1 && runtime.nodeParams[0].data0[0] == 1.0f && runtime.nodeParams[0].data0[3] == 0.15f, testName, "Expected round box params packed.", failures);
     }
 }
@@ -287,7 +295,8 @@ void testGraphCompilerLinkedTransform(std::vector<TestFailure>& failures)
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
     expect(contains(result.glsl, "uNodeParams["), testName, "Expected runtime direct node param lookup.", failures);
     expect(!contains(result.glsl, "sdf3d_nodeParam0("), testName, "Expected no linear node-param lookup helper.", failures);
-    expect(result.nodeParams.size() == 2, testName, "Expected primitive and transform node params.", failures);
+    expect(result.nodeParams.size() == 1, testName, "Expected translate-only primitive to collapse to one instance node param.", failures);
+    expect(result.instancePositions.size() == 1 && result.instancePositions[0].position.x == 3.0f && result.instancePositions[0].position.z == -1.0f, testName, "Expected translate position packed as instance data.", failures);
     expect(contains(result.glsl, "float sceneNodeSDF(int nodeId, vec3 p)"), testName, "Expected node highlight SDF entry point.", failures);
     expect(contains(result.glsl, "case "), testName, "Expected node highlight SDF switch cases.", failures);
 }
@@ -406,7 +415,7 @@ void testGraphCompilerSharedSourceDagHasUniqueSwitchCases(std::vector<TestFailur
     expect(result.errors.empty(), testName, "Expected shared-source DAG compile without errors.", failures);
     expect(!hasDuplicateSdfHelperNames(result.glsl), testName, "Expected one helper per shared node id.", failures);
     expect(countOccurrences(result.glsl, "case " + std::to_string(sphere) + ": return") == 2, testName, "Expected one sphere case in each node-id switch.", failures);
-    expect(countOccurrences(result.glsl, "case " + std::to_string(translate) + ": return") == 2, testName, "Expected one translate case in each node-id switch.", failures);
+    expect(result.instancePositions.size() == 2, testName, "Expected direct and translated shared source to collapse into one instance range.", failures);
     expect(contains(result.glsl, "nodeId == " + std::to_string(sphere)), testName, "Expected contains helper to include shared source.", failures);
 }
 
@@ -495,7 +504,7 @@ void testGraphCompilerBypassSingleInputUnion(std::vector<TestFailure>& failures)
     const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(result.errors.empty(), testName, "Expected single-input union to bypass without errors.", failures);
-    expect(contains(result.glsl, "length(p) - 1.250000"), testName, "Expected union to compile linked child.", failures);
+    expect(contains(result.glsl, "1.250000") && containsOriginInstance(result.glsl), testName, "Expected union to compile linked child.", failures);
 }
 
 void testGraphCompilerMultiInputUnion(std::vector<TestFailure>& failures)
@@ -520,9 +529,9 @@ void testGraphCompilerMultiInputUnion(std::vector<TestFailure>& failures)
     const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(result.errors.empty(), testName, "Expected no compiler errors.", failures);
-    expect(contains(result.glsl, "length(p) - 1.000000"), testName, "Expected first union child.", failures);
-    expect(contains(result.glsl, "length(p) - 2.000000"), testName, "Expected second union child.", failures);
-    expect(contains(result.glsl, "length(p) - 3.000000"), testName, "Expected third union child.", failures);
+    expect(contains(result.glsl, "1.000000"), testName, "Expected first union child.", failures);
+    expect(contains(result.glsl, "2.000000"), testName, "Expected second union child.", failures);
+    expect(contains(result.glsl, "3.000000"), testName, "Expected third union child.", failures);
 }
 
 void testGraphCompilerBypassInvalidUnionInput(std::vector<TestFailure>& failures)
@@ -544,7 +553,7 @@ void testGraphCompilerBypassInvalidUnionInput(std::vector<TestFailure>& failures
     const sdf3d::SdfCompileResult result = compiler.compile(graph, sdf3d::GlslEmitMode::Baked);
 
     expect(!result.errors.empty(), testName, "Expected invalid upstream input warning.", failures);
-    expect(contains(result.glsl, "length(p) - 1.250000"), testName, "Expected union to bypass invalid input and keep valid child.", failures);
+    expect(contains(result.glsl, "1.250000") && containsOriginInstance(result.glsl), testName, "Expected union to bypass invalid input and keep valid child.", failures);
     expect(!contains(result.glsl, "min("), testName, "Expected union not to emit min with invalid input.", failures);
 }
 

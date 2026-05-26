@@ -224,6 +224,70 @@ void testJsonGraphSphereInstancesRoundTrip(std::vector<TestFailure>& failures)
     std::filesystem::remove(path);
 }
 
+void testJsonGraphPrimitiveInstancingRoundTrip(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "json graph primitive instancing metadata omitted";
+    const std::filesystem::path path = testPath("sdf3d_primitive_instancing_round_trip.json");
+    sdf3d::JsonGraphSerializer serializer;
+    sdf3d::SdfGraph graph;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    expect(graph.link(sphere, "sdf", graph.outputNode(), "surface"), testName, "Expected sphere linked.", failures);
+
+    expect(serializer.save(graph, path), testName, "Expected save success: " + serializer.lastError(), failures);
+    nlohmann::json saved;
+    {
+        std::ifstream input(path);
+        input >> saved;
+    }
+    const nlohmann::json* savedNode = nullptr;
+    for (const nlohmann::json& node : saved.at("nodes")) {
+        if (node.at("id").get<sdf3d::SdfGraphNodeId>() == sphere) {
+            savedNode = &node;
+        }
+    }
+    expect(savedNode != nullptr && !savedNode->contains("instancing"), testName, "Expected primitive instancing metadata omitted.", failures);
+
+    sdf3d::SdfGraph loaded;
+    expect(serializer.load(loaded, path), testName, "Expected load success: " + serializer.lastError(), failures);
+    const sdf3d::SdfGraphNode* loadedSphere = loaded.node(sphere);
+    expect(loadedSphere != nullptr && loadedSphere->payload.instancePrototypeId == 0, testName, "Expected implicit self prototype after load.", failures);
+
+    std::filesystem::remove(path);
+}
+
+void testJsonGraphLegacyPrimitiveInstancingMetadataLoads(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "json graph legacy primitive instancing metadata loads";
+    const std::filesystem::path path = testPath("sdf3d_legacy_primitive_instancing.json");
+    sdf3d::JsonGraphSerializer serializer;
+
+    {
+        std::ofstream output(path);
+        output << R"({
+            "schema": "sdf3d.graph",
+            "version": 1,
+            "nextId": 3,
+            "materials": {"nextId": 1, "items": []},
+            "outputNode": 1,
+            "nodes": [
+                {"id":1,"type":"Output","stableId":1,"name":"Output","editor":{"x":560.0,"y":40.0,"propertiesCollapsed":false},"parameters":{}},
+                {"id":2,"type":"Sphere","stableId":2,"name":"Sphere","editor":{"x":0.0,"y":0.0,"propertiesCollapsed":false},"parameters":{"radius":1.0},"instancing":{"enabled":false,"prototypeId":2}}
+            ],
+            "links": [
+                {"from":{"node":2,"socket":"sdf"},"to":{"node":1,"socket":"surface"}}
+            ]
+        })";
+    }
+
+    sdf3d::SdfGraph loaded;
+    expect(serializer.load(loaded, path), testName, "Expected legacy load success: " + serializer.lastError(), failures);
+    const sdf3d::SdfGraphNode* sphere = loaded.node(2);
+    expect(sphere != nullptr && sphere->payload.instancePrototypeId == 0, testName, "Expected legacy metadata ignored for active primitive.", failures);
+
+    std::filesystem::remove(path);
+}
+
 void testJsonGraphValueNoiseMaterialRoundTrip(std::vector<TestFailure>& failures)
 {
     const std::string testName = "json value noise material round trip";
@@ -830,6 +894,8 @@ int main()
 
     testJsonGraphRoundTrip(failures);
     testJsonGraphSphereInstancesRoundTrip(failures);
+    testJsonGraphPrimitiveInstancingRoundTrip(failures);
+    testJsonGraphLegacyPrimitiveInstancingMetadataLoads(failures);
     testJsonGraphValueNoiseMaterialRoundTrip(failures);
     testJsonGraphMaterialGraphNodeFieldsRoundTrip(failures);
     testJsonGraphLoadsMaterialGraphWithoutExtraFloatDefaults(failures);

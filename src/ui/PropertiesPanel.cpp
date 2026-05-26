@@ -232,6 +232,16 @@ bool drawInstancePositions(SdfNode& node)
     return changed;
 }
 
+void drawPrimitiveInstancing(const SdfGraph& graph, const SdfGraphNode& graphNode)
+{
+    const SdfNode& node = graphNode.payload;
+    if (!isSdfPrimitiveNode(node.type) || node.type == SdfNodeType::SphereInstances) {
+        return;
+    }
+
+    ImGui::Text("Instances: %d", static_cast<int>(GraphSystem::primitiveInstanceCount(graph, graphNode.id)));
+}
+
 } // namespace
 
 EditorDirtyState PropertiesPanel::draw(SdfGraph& graph, GraphGroupRegistry& groups)
@@ -352,6 +362,7 @@ EditorDirtyState PropertiesPanel::draw(SdfGraph& graph, GraphGroupRegistry& grou
     if (drawInstancePositions(*selected)) {
         dirty.params = true;
     }
+    drawPrimitiveInstancing(graph, *selectedGraphNode);
 
     ImGui::End();
     return dirty;

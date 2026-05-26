@@ -165,6 +165,7 @@ std::vector<UniformUploader::GpuNodeParam> UniformUploader::packNodeParams(const
     for (const SdfCompiledNodeParam& nodeParam : nodeParams) {
         packed[nodeParam.slot] = {
             {nodeParam.data0[0], nodeParam.data0[1], nodeParam.data0[2], nodeParam.data0[3]},
+            {nodeParam.data1[0], nodeParam.data1[1], nodeParam.data1[2], nodeParam.data1[3]},
         };
     }
     return packed;

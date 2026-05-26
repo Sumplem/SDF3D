@@ -33,6 +33,12 @@ const float PI = 3.14159265358979323846;
 const int RUSSIAN_ROULETTE_START_BOUNCE = 2;
 const float RUSSIAN_ROULETTE_MIN_KEEP = 0.05;
 const float RUSSIAN_ROULETTE_MAX_KEEP = 0.95;
+const vec3 DIRECT_LIGHT_DIRECTION = vec3(-0.421637, 0.737865, 0.527046);
+const vec3 DIRECT_LIGHT_RADIANCE = vec3(1.15, 1.10, 1.0);
+const float DIRECT_LIGHT_PDF = 1.0;
+const float MIN_PDF = 0.0001;
+const float MAX_EMISSIVE_RADIANCE = 16.0;
+const int EMISSIVE_SURFACE_HIT_SAMPLES = 1;
 
 struct SdfMaterialSample {
     vec3 albedo;
@@ -112,6 +118,7 @@ SdfMaterialSample mixMaterial(SdfMaterialSample first, SdfMaterialSample second,
 struct SdfNodeParam
 {
     vec4 data0;
+    vec4 data1;
 };
 
 layout(std430, binding = 1) readonly buffer NodeParamBuffer
@@ -121,125 +128,175 @@ layout(std430, binding = 1) readonly buffer NodeParamBuffer
 
 uniform int uNodeParamCount;
 
-float sdf3d_box(vec3 p, vec3 b)
+layout(std430, binding = 2) readonly buffer InstancePositionBuffer
 {
-    vec3 q = abs(p) - b;
-    return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+    vec4 uInstancePositions[];
+};
+
+uniform int uInstancePositionCount;
+
+float sdf3d_sphere_instances(vec3 p, float radius, int first, int count)
+{
+    float distance = 1e6;
+    int last = min(first + count, uInstancePositionCount);
+    for (int i = first; i < last; ++i) {
+        distance = min(distance, length(p - uInstancePositions[i].xyz) - radius);
+    }
+    return distance;
 }
 
-float sdf3d_cylinder(vec3 p, float radius, float halfHeight)
+float sdf3d_instance_sphere(vec3 p, vec4 params, vec4 range)
 {
-    vec2 d = abs(vec2(length(p.xz), p.y)) - vec2(radius, halfHeight);
-    return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
+    float distance = 1e6;
+    int first = int(range.x);
+    int last = min(first + int(range.y), uInstancePositionCount);
+    for (int i = first; i < last; ++i) {
+        distance = min(distance, length(p - uInstancePositions[i].xyz) - params.x);
+    }
+    return distance;
 }
 
-float sdf3d_smin(float a, float b, float k)
+float sdf3d_instance_box(vec3 p, vec4 params, vec4 range)
 {
-    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
-    return mix(b, a, h) - k * h * (1.0 - h);
+    float distance = 1e6;
+    int first = int(range.x);
+    int last = min(first + int(range.y), uInstancePositionCount);
+    for (int i = first; i < last; ++i) {
+        vec3 q = abs(p - uInstancePositions[i].xyz) - params.xyz;
+        distance = min(distance, length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0));
+    }
+    return distance;
+}
+
+float sdf3d_instance_cylinder(vec3 p, vec4 params, vec4 range)
+{
+    float distance = 1e6;
+    int first = int(range.x);
+    int last = min(first + int(range.y), uInstancePositionCount);
+    for (int i = first; i < last; ++i) {
+        vec3 localP = p - uInstancePositions[i].xyz;
+        vec2 d = abs(vec2(length(localP.xz), localP.y)) - vec2(params.x, params.y);
+        distance = min(distance, min(max(d.x, d.y), 0.0) + length(max(d, 0.0)));
+    }
+    return distance;
+}
+
+float sdf3d_instance_torus(vec3 p, vec4 params, vec4 range)
+{
+    float distance = 1e6;
+    int first = int(range.x);
+    int last = min(first + int(range.y), uInstancePositionCount);
+    for (int i = first; i < last; ++i) {
+        vec3 localP = p - uInstancePositions[i].xyz;
+        distance = min(distance, length(vec2(length(localP.xz) - params.x, localP.y)) - params.y);
+    }
+    return distance;
+}
+
+float sdf3d_instance_plane(vec3 p, vec4 params, vec4 range)
+{
+    float distance = 1e6;
+    int first = int(range.x);
+    int last = min(first + int(range.y), uInstancePositionCount);
+    vec3 normal = normalize(params.xyz);
+    for (int i = first; i < last; ++i) {
+        distance = min(distance, dot(p - uInstancePositions[i].xyz, normal) + params.w);
+    }
+    return distance;
+}
+
+float sdf3d_instance_capsule(vec3 p, vec4 params, vec4 range)
+{
+    float distance = 1e6;
+    int first = int(range.x);
+    int last = min(first + int(range.y), uInstancePositionCount);
+    for (int i = first; i < last; ++i) {
+        vec3 localP = p - uInstancePositions[i].xyz;
+        distance = min(distance, length(vec3(localP.x, localP.y - clamp(localP.y, -params.y, params.y), localP.z)) - params.x);
+    }
+    return distance;
+}
+
+float sdf3d_instance_cone(vec3 p, vec4 params, vec4 range)
+{
+    float distance = 1e6;
+    int first = int(range.x);
+    int last = min(first + int(range.y), uInstancePositionCount);
+    for (int i = first; i < last; ++i) {
+        vec3 localP = p - uInstancePositions[i].xyz;
+        vec2 q = vec2(length(localP.xz), localP.y);
+        vec2 k1 = vec2(0.0, params.y);
+        vec2 k2 = vec2(-params.x, 2.0 * params.y);
+        vec2 ca = vec2(q.x - min(q.x, q.y < 0.0 ? params.x : 0.0), abs(q.y) - params.y);
+        vec2 cb = q - k1 + k2 * clamp(dot(k1 - q, k2) / dot(k2, k2), 0.0, 1.0);
+        float s = (cb.x < 0.0 && ca.y < 0.0) ? -1.0 : 1.0;
+        distance = min(distance, s * sqrt(min(dot(ca, ca), dot(cb, cb))));
+    }
+    return distance;
+}
+
+float sdf3d_instance_round_box(vec3 p, vec4 params, vec4 range)
+{
+    float distance = 1e6;
+    int first = int(range.x);
+    int last = min(first + int(range.y), uInstancePositionCount);
+    for (int i = first; i < last; ++i) {
+        vec3 q = abs(p - uInstancePositions[i].xyz) - params.xyz;
+        distance = min(distance, length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - params.w);
+    }
+    return distance;
+}
+
+SdfMaterialSample sdf3d_material_1(vec3 p)
+{
+    return SdfMaterialSample(mix(vec3(0.852941, 0.196511, 0.196511), vec3(0.058824, 0.055652, 0.055652), clamp(sdf3d_valueNoise3d(p * max(4.220000, 0.0001)), 0.0, 1.0)), clamp(0.500000, 0.02, 1.0), clamp(0.000000, 0.0, 1.0), max(0.000000, 0.0));
 }
 
 float sdf_node_2(vec3 p)
 {
-    return (length(p) - uNodeParams[0].data0.x);
-}
-
-float sdf_node_9(vec3 p)
-{
-    return sdf_node_2(p);
-}
-
-float sdf_node_3(vec3 p)
-{
-    return sdf_node_9((p - uNodeParams[1].data0.xyz));
+    return sdf3d_instance_sphere(p, uNodeParams[0].data0, uNodeParams[0].data1);
 }
 
 float sdf_node_4(vec3 p)
 {
-    return sdf3d_box(p, uNodeParams[2].data0.xyz);
-}
-
-float sdf_node_12(vec3 p)
-{
-    return sdf_node_4(p);
-}
-
-float sdf_node_6(vec3 p)
-{
-    return sdf_node_12((p - uNodeParams[4].data0.xyz));
+    return sdf3d_instance_sphere(p, uNodeParams[1].data0, uNodeParams[1].data1);
 }
 
 float sdf_node_7(vec3 p)
 {
-    return (length(vec2(length(p.xz) - uNodeParams[5].data0.x, p.y)) - uNodeParams[5].data0.y);
+    return sdf3d_instance_sphere(p, uNodeParams[2].data0, uNodeParams[2].data1);
 }
 
-float sdf_node_14(vec3 p)
+float sdf_node_9(vec3 p)
 {
-    return sdf_node_7(p);
+    return (length(p) - uNodeParams[3].data0.x);
 }
 
-float sdf_node_8(vec3 p)
+float sdf_node_12(vec3 p)
 {
-    return sdf_node_14((p - uNodeParams[6].data0.xyz));
+    return sdf_node_9(p);
+}
+
+float sdf_node_10(vec3 p)
+{
+    return sdf_node_12((p - uNodeParams[4].data0.xyz));
 }
 
 float sdf_node_5(vec3 p)
 {
-    return sdf3d_smin(sdf3d_smin(sdf_node_3(p), sdf_node_6(p), max(uNodeParams[3].data0.x, 0.000100)), sdf_node_8(p), max(uNodeParams[3].data0.x, 0.000100));
-}
-
-float sdf_node_1000002(vec3 p)
-{
-    return sdf3d_cylinder(p, uNodeParams[9].data0.x, uNodeParams[9].data0.y);
-}
-
-float sdf_node_1000001(vec3 p)
-{
-    return sdf_node_1000002((p - uNodeParams[10].data0.xyz));
-}
-
-float sdf_node_1000004(vec3 p)
-{
-    return (length(vec2(length(p.xz) - uNodeParams[11].data0.x, p.y)) - uNodeParams[11].data0.y);
-}
-
-float sdf_node_1000003(vec3 p)
-{
-    return sdf_node_1000004((p - uNodeParams[12].data0.xyz));
-}
-
-float sdf_node_1000000(vec3 p)
-{
-    return min(sdf_node_1000001(p), sdf_node_1000003(p));
-}
-
-float sdf_node_25(vec3 p)
-{
-    return sdf_node_1000000(p);
-}
-
-float sdf_node_27(vec3 p)
-{
-    return sdf_node_25((p - uNodeParams[8].data0.xyz));
-}
-
-float sdf_node_26(vec3 p)
-{
-    return (-sdf3d_smin(-(sdf_node_5(p)), sdf_node_27(p), max(uNodeParams[7].data0.x, 0.000100)));
+    return min(min(min(sdf_node_2(p), sdf_node_4(p)), sdf_node_7(p)), sdf_node_10(p));
 }
 
 vec2 sceneSDFWithId(vec3 p)
 {
-    vec2 sdf3d_hit0 = vec2(sdf_node_3(p), 3.0);
-    vec2 sdf3d_hit1 = vec2(sdf_node_6(p), 6.0);
-    vec2 sdf3d_hit2 = vec2(sdf3d_smin(sdf3d_hit0.x, sdf3d_hit1.x, max(uNodeParams[3].data0.x, 0.000100)), (clamp(0.5 + 0.5 * (sdf3d_hit1.x - sdf3d_hit0.x) / max(uNodeParams[3].data0.x, 0.000100), 0.0, 1.0) > 0.5 ? sdf3d_hit0.y : sdf3d_hit1.y));
-    vec2 sdf3d_hit3 = vec2(sdf_node_8(p), 8.0);
-    vec2 sdf3d_hit4 = vec2(sdf3d_smin(sdf3d_hit2.x, sdf3d_hit3.x, max(uNodeParams[3].data0.x, 0.000100)), (clamp(0.5 + 0.5 * (sdf3d_hit3.x - sdf3d_hit2.x) / max(uNodeParams[3].data0.x, 0.000100), 0.0, 1.0) > 0.5 ? sdf3d_hit2.y : sdf3d_hit3.y));
-    vec2 sdf3d_hit5 = sdf3d_hit4;
-    vec2 sdf3d_hit6 = vec2(sdf_node_27(p), 27.0);
-    vec2 sdf3d_hit7 = vec2(-sdf3d_smin(-(sdf3d_hit5.x), sdf3d_hit6.x, max(uNodeParams[7].data0.x, 0.000100)), sdf3d_hit5.y);
-    return sdf3d_hit7;
+    vec2 sdf3d_hit0 = vec2(sdf_node_2(p), 2.0);
+    vec2 sdf3d_hit1 = vec2(sdf_node_4(p), 4.0);
+    vec2 sdf3d_hit2 = vec2(min(sdf3d_hit0.x, sdf3d_hit1.x), (sdf3d_hit0.x < sdf3d_hit1.x ? sdf3d_hit0.y : sdf3d_hit1.y));
+    vec2 sdf3d_hit3 = vec2(sdf_node_7(p), 7.0);
+    vec2 sdf3d_hit4 = vec2(min(sdf3d_hit2.x, sdf3d_hit3.x), (sdf3d_hit2.x < sdf3d_hit3.x ? sdf3d_hit2.y : sdf3d_hit3.y));
+    vec2 sdf3d_hit5 = vec2(sdf_node_10(p), 10.0);
+    vec2 sdf3d_hit6 = vec2(min(sdf3d_hit4.x, sdf3d_hit5.x), (sdf3d_hit4.x < sdf3d_hit5.x ? sdf3d_hit4.y : sdf3d_hit5.y));
+    return sdf3d_hit6;
 }
 
 float sceneSDF(vec3 p)
@@ -251,23 +308,12 @@ float sceneNodeSDF(int nodeId, vec3 p)
 {
     switch (nodeId) {
     case 2: return sdf_node_2(p);
-    case 9: return sdf_node_9(p);
-    case 3: return sdf_node_3(p);
     case 4: return sdf_node_4(p);
-    case 12: return sdf_node_12(p);
-    case 6: return sdf_node_6(p);
     case 7: return sdf_node_7(p);
-    case 14: return sdf_node_14(p);
-    case 8: return sdf_node_8(p);
+    case 9: return sdf_node_9(p);
+    case 12: return sdf_node_12(p);
+    case 10: return sdf_node_10(p);
     case 5: return sdf_node_5(p);
-    case 1000002: return sdf_node_1000002(p);
-    case 1000001: return sdf_node_1000001(p);
-    case 1000004: return sdf_node_1000004(p);
-    case 1000003: return sdf_node_1000003(p);
-    case 1000000: return sdf_node_1000000(p);
-    case 25: return sdf_node_25(p);
-    case 27: return sdf_node_27(p);
-    case 26: return sdf_node_26(p);
     default: return 1e6;
     }
 }
@@ -280,55 +326,34 @@ int scenePickId(vec3 p)
 bool sceneNodeContains(int nodeId, int visibleNodeId)
 {
     switch (visibleNodeId) {
-    case 26: return nodeId == 26 || nodeId == 5 || nodeId == 3 || nodeId == 9 || nodeId == 2 || nodeId == 6 || nodeId == 12 || nodeId == 4 || nodeId == 8 || nodeId == 14 || nodeId == 7 || nodeId == 27 || nodeId == 25 || nodeId == 1000000 || nodeId == 1000001 || nodeId == 1000002 || nodeId == 1000003 || nodeId == 1000004;
-    case 5: return nodeId == 5 || nodeId == 3 || nodeId == 9 || nodeId == 2 || nodeId == 6 || nodeId == 12 || nodeId == 4 || nodeId == 8 || nodeId == 14 || nodeId == 7;
-    case 3: return nodeId == 3 || nodeId == 9 || nodeId == 2;
-    case 9: return nodeId == 9 || nodeId == 2;
+    case 5: return nodeId == 5 || nodeId == 2 || nodeId == 4 || nodeId == 7 || nodeId == 10 || nodeId == 12 || nodeId == 9;
     case 2: return nodeId == 2;
-    case 6: return nodeId == 6 || nodeId == 12 || nodeId == 4;
-    case 12: return nodeId == 12 || nodeId == 4;
     case 4: return nodeId == 4;
-    case 8: return nodeId == 8 || nodeId == 14 || nodeId == 7;
-    case 14: return nodeId == 14 || nodeId == 7;
     case 7: return nodeId == 7;
-    case 27: return nodeId == 27 || nodeId == 25 || nodeId == 1000000 || nodeId == 1000001 || nodeId == 1000002 || nodeId == 1000003 || nodeId == 1000004;
-    case 25: return nodeId == 25 || nodeId == 1000000 || nodeId == 1000001 || nodeId == 1000002 || nodeId == 1000003 || nodeId == 1000004;
-    case 1000000: return nodeId == 1000000 || nodeId == 1000001 || nodeId == 1000002 || nodeId == 1000003 || nodeId == 1000004;
-    case 1000001: return nodeId == 1000001 || nodeId == 1000002;
-    case 1000002: return nodeId == 1000002;
-    case 1000003: return nodeId == 1000003 || nodeId == 1000004;
-    case 1000004: return nodeId == 1000004;
+    case 10: return nodeId == 10 || nodeId == 12 || nodeId == 9;
+    case 12: return nodeId == 12 || nodeId == 9;
+    case 9: return nodeId == 9;
     default: return nodeId == visibleNodeId;
     }
 }
 
 SdfMaterialSample sceneMaterial(vec3 p)
 {
-    float sdf3d_distance0 = sdf_node_3(p);
-    SdfMaterialSample sdf3d_material1 = sampleMaterial(1, (p - uNodeParams[1].data0.xyz));
-    float sdf3d_distance2 = sdf_node_6(p);
-    SdfMaterialSample sdf3d_material3 = sampleMaterial(2, (p - uNodeParams[4].data0.xyz));
-    float sdf3d_blend4 = clamp(0.5 + 0.5 * (sdf3d_distance2 - sdf3d_distance0) / max(uNodeParams[3].data0.x, 0.000100), 0.0, 1.0);
-    SdfMaterialSample sdf3d_material5 = mixMaterial(sdf3d_material3, sdf3d_material1, sdf3d_blend4);
-    float sdf3d_distance6 = sdf3d_smin(sdf3d_distance0, sdf3d_distance2, max(uNodeParams[3].data0.x, 0.000100));
-    float sdf3d_distance7 = sdf_node_8(p);
-    SdfMaterialSample sdf3d_material8 = sampleMaterial(3, (p - uNodeParams[6].data0.xyz));
-    float sdf3d_blend9 = clamp(0.5 + 0.5 * (sdf3d_distance7 - sdf3d_distance6) / max(uNodeParams[3].data0.x, 0.000100), 0.0, 1.0);
-    SdfMaterialSample sdf3d_material10 = mixMaterial(sdf3d_material8, sdf3d_material5, sdf3d_blend9);
-    float sdf3d_distance11 = sdf3d_smin(sdf3d_distance6, sdf3d_distance7, max(uNodeParams[3].data0.x, 0.000100));
-    float sdf3d_distance12 = sdf_node_1000001((p - uNodeParams[8].data0.xyz));
-    SdfMaterialSample sdf3d_material13 = sampleMaterial(0, ((p - uNodeParams[8].data0.xyz) - uNodeParams[10].data0.xyz));
-    float sdf3d_distance14 = sdf_node_1000003((p - uNodeParams[8].data0.xyz));
-    SdfMaterialSample sdf3d_material15 = sampleMaterial(0, ((p - uNodeParams[8].data0.xyz) - uNodeParams[12].data0.xyz));
-    SdfMaterialSample sdf3d_material16 = selectMaterial(sdf3d_distance12 < sdf3d_distance14, sdf3d_material13, sdf3d_material15);
-    float sdf3d_distance17 = min(sdf3d_distance12, sdf3d_distance14);
-    float sdf3d_distance18 = sdf3d_distance11;
-    float sdf3d_distance19 = sdf_node_27(p);
-    SdfMaterialSample sdf3d_material20 = sdf3d_material10;
-    SdfMaterialSample sdf3d_material21 = sdf3d_material16;
-    float sdf3d_blend22 = clamp(0.5 + 0.5 * (sdf3d_distance19 + sdf3d_distance18) / max(uNodeParams[7].data0.x, 0.000100), 0.0, 1.0);
-    SdfMaterialSample sdf3d_material23 = mixMaterial(sdf3d_material21, sdf3d_material20, sdf3d_blend22);
-    return sdf3d_material23;
+    float sdf3d_distance0 = sdf_node_2(p);
+    SdfMaterialSample sdf3d_material1 = sampleMaterial(0, p);
+    float sdf3d_distance2 = sdf_node_4(p);
+    SdfMaterialSample sdf3d_material3 = sampleMaterial(0, p);
+    SdfMaterialSample sdf3d_material4 = selectMaterial(sdf3d_distance0 < sdf3d_distance2, sdf3d_material1, sdf3d_material3);
+    float sdf3d_distance5 = min(sdf3d_distance0, sdf3d_distance2);
+    float sdf3d_distance6 = sdf_node_7(p);
+    SdfMaterialSample sdf3d_material7 = sampleMaterial(0, p);
+    SdfMaterialSample sdf3d_material8 = selectMaterial(sdf3d_distance5 < sdf3d_distance6, sdf3d_material4, sdf3d_material7);
+    float sdf3d_distance9 = min(sdf3d_distance5, sdf3d_distance6);
+    float sdf3d_distance10 = sdf_node_10(p);
+    SdfMaterialSample sdf3d_material11 = sdf3d_material_1((p - uNodeParams[4].data0.xyz));
+    SdfMaterialSample sdf3d_material12 = selectMaterial(sdf3d_distance9 < sdf3d_distance10, sdf3d_material8, sdf3d_material11);
+    float sdf3d_distance13 = min(sdf3d_distance9, sdf3d_distance10);
+    return sdf3d_material12;
 }
 // SDF3D_SCENE_END
 
@@ -495,6 +520,52 @@ vec3 sampleGlossyReflection(vec3 incomingDirection, vec3 normal, float roughness
     return normalize(sampled);
 }
 
+float cosineHemispherePdf(vec3 normal, vec3 direction)
+{
+    return max(dot(normal, direction), 0.0) / PI;
+}
+
+float powerHeuristic(float firstPdf, float secondPdf)
+{
+    float first = firstPdf * firstPdf;
+    float second = secondPdf * secondPdf;
+    return first / max(first + second, MIN_PDF);
+}
+
+vec3 diffuseBrdf(SdfMaterialSample material)
+{
+    return material.albedo / PI;
+}
+
+vec3 emissiveRadiance(SdfMaterialSample material)
+{
+    vec3 radiance = material.albedo * max(material.emission, 0.0);
+    return min(radiance, vec3(MAX_EMISSIVE_RADIANCE));
+}
+
+vec3 glossyLobeEstimate(vec3 normal, vec3 viewDirection, vec3 lightDirection, SdfMaterialSample material)
+{
+    vec3 halfVector = normalize(viewDirection + lightDirection);
+    float nDotH = max(dot(normal, halfVector), 0.0);
+    float shininess = mix(96.0, 6.0, material.roughness);
+    vec3 fresnel = mix(vec3(0.04), material.albedo, material.metallic);
+    return fresnel * pow(nDotH, shininess) * (1.0 - material.roughness);
+}
+
+float bsdfPdfEstimate(vec3 normal, vec3 direction, SdfMaterialSample material)
+{
+    float diffusePdf = cosineHemispherePdf(normal, direction);
+    float glossyPdf = mix(diffusePdf, 1.0, material.metallic) * (1.0 - material.roughness);
+    return mix(diffusePdf, max(glossyPdf, MIN_PDF), material.metallic);
+}
+
+vec3 brdfEstimate(vec3 normal, vec3 viewDirection, vec3 lightDirection, SdfMaterialSample material)
+{
+    vec3 brdf = diffuseBrdf(material) * (1.0 - material.metallic);
+    brdf += glossyLobeEstimate(normal, viewDirection, lightDirection, material);
+    return brdf;
+}
+
 bool lightVisible(vec3 origin, vec3 direction, float maxDistance)
 {
     float traveled = SURFACE_EPSILON * 4.0;
@@ -511,18 +582,61 @@ bool lightVisible(vec3 origin, vec3 direction, float maxDistance)
     return true;
 }
 
-vec3 directLight(vec3 hitPosition, vec3 normal, vec3 viewDirection, SdfMaterialSample material)
+vec3 directionalLightEstimate(vec3 hitPosition, vec3 normal, vec3 viewDirection, SdfMaterialSample material)
 {
-    vec3 lightDirection = normalize(vec3(-0.4, 0.7, 0.5));
+    vec3 lightDirection = DIRECT_LIGHT_DIRECTION;
     float nDotL = max(dot(normal, lightDirection), 0.0);
     if (nDotL <= 0.0 || !lightVisible(hitPosition + normal * SURFACE_EPSILON * 4.0, lightDirection, MAX_DISTANCE)) {
         return vec3(0.0);
     }
 
-    float rim = pow(1.0 - max(dot(normal, viewDirection), 0.0), 2.0);
-    vec3 diffuse = material.albedo * nDotL * vec3(1.15, 1.10, 1.0);
-    vec3 specular = mix(vec3(0.04), material.albedo, material.metallic) * rim * (1.0 - material.roughness);
-    return diffuse + specular;
+    vec3 brdf = brdfEstimate(normal, viewDirection, lightDirection, material);
+    float bsdfPdf = bsdfPdfEstimate(normal, lightDirection, material);
+    float misWeight = powerHeuristic(DIRECT_LIGHT_PDF, bsdfPdf);
+    return DIRECT_LIGHT_RADIANCE * brdf * nDotL * misWeight / DIRECT_LIGHT_PDF;
+}
+
+vec3 stochasticEmissiveSurfaceEstimate(vec3 hitPosition, vec3 normal, vec3 viewDirection, SdfMaterialSample material, inout uint rng)
+{
+    vec3 estimate = vec3(0.0);
+    for (int i = 0; i < EMISSIVE_SURFACE_HIT_SAMPLES; ++i) {
+        vec3 lightDirection = cosineHemisphere(normal, rng);
+        float lightPdf = cosineHemispherePdf(normal, lightDirection);
+        if (lightPdf <= MIN_PDF) {
+            continue;
+        }
+
+        vec3 lightHitPosition = vec3(0.0);
+        float lightDistance = raymarch(hitPosition + normal * SURFACE_EPSILON * 4.0, lightDirection, lightHitPosition);
+        if (lightDistance < 0.0) {
+            continue;
+        }
+
+        SdfMaterialSample lightMaterial = sceneMaterial(lightHitPosition);
+        vec3 lightRadiance = emissiveRadiance(lightMaterial);
+        if (max(max(lightRadiance.r, lightRadiance.g), lightRadiance.b) <= 0.0) {
+            continue;
+        }
+
+        vec3 lightNormal = estimateNormal(lightHitPosition);
+        if (dot(lightNormal, -lightDirection) <= 0.0) {
+            continue;
+        }
+
+        float nDotL = max(dot(normal, lightDirection), 0.0);
+        vec3 brdf = brdfEstimate(normal, viewDirection, lightDirection, material);
+        float bsdfPdf = bsdfPdfEstimate(normal, lightDirection, material);
+        float misWeight = powerHeuristic(lightPdf, bsdfPdf);
+        estimate += lightRadiance * brdf * nDotL * misWeight / lightPdf;
+    }
+    return estimate / float(EMISSIVE_SURFACE_HIT_SAMPLES);
+}
+
+vec3 nextEventEstimate(vec3 hitPosition, vec3 normal, vec3 viewDirection, SdfMaterialSample material, inout uint rng)
+{
+    vec3 estimate = directionalLightEstimate(hitPosition, normal, viewDirection, material);
+    estimate += stochasticEmissiveSurfaceEstimate(hitPosition, normal, viewDirection, material, rng);
+    return estimate;
 }
 
 vec3 tracePath(vec3 rayOrigin, vec3 rayDirection, inout uint rng)
@@ -550,8 +664,8 @@ vec3 tracePath(vec3 rayOrigin, vec3 rayDirection, inout uint rng)
 
         SdfMaterialSample material = sceneMaterial(hitPosition);
         vec3 viewDirection = normalize(-rayDirection);
-        radiance += throughput * material.albedo * material.emission;
-        radiance += throughput * directLight(hitPosition, normal, viewDirection, material);
+        radiance += throughput * emissiveRadiance(material);
+        radiance += throughput * nextEventEstimate(hitPosition, normal, viewDirection, material, rng);
 
         bool sampleMetal = random01(rng) < material.metallic;
         if (sampleMetal) {

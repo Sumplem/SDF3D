@@ -93,6 +93,7 @@ SdfGraphLowerResult lowerSdfGraphToTreeInternal(
         node->stableId = scopedSdfNodeStableId(stableIdScope, rawStableId);
         node->parameters = graphNode->payload.parameters;
         node->instancePositions = graphNode->payload.instancePositions;
+        node->instancePrototypeId = graphNode->payload.instancePrototypeId;
         node->materialId = graphNode->payload.materialId;
         node->groupDefinitionId = graphNode->payload.groupDefinitionId;
         node->material = graphNode->payload.material;

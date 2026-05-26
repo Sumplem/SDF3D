@@ -116,6 +116,23 @@ void testDuplicateSelectionSkipsOutput(std::vector<TestFailure>& failures)
     expect(sceneDirtyEvents == 1, testName, "Expected dirty event for successful duplicate.", failures);
 }
 
+void testPrimitiveInstancingDuplicatePreservesPrototype(std::vector<TestFailure>& failures)
+{
+    const std::string testName = "primitive instancing duplicate preserves prototype";
+    sdf3d::SdfGraph graph;
+    sdf3d::EventBus eventBus;
+
+    const sdf3d::SdfGraphNodeId sphere = graph.createNode(sdf3d::SdfNodeType::Sphere, "Sphere");
+    const sdf3d::SdfGraphNode* source = graph.node(sphere);
+    expect(source != nullptr && source->payload.instancePrototypeId == 0, testName, "Expected source to use implicit self prototype.", failures);
+
+    const std::vector<sdf3d::SdfGraphNodeId> duplicates = sdf3d::GraphSystem::duplicateSelection(graph, {sphere}, eventBus);
+    expect(duplicates.size() == 1, testName, "Expected one duplicate.", failures);
+    const sdf3d::SdfGraphNode* duplicate = duplicates.empty() ? nullptr : graph.node(duplicates.front());
+    expect(duplicate != nullptr && duplicate->payload.instancePrototypeId == sphere, testName, "Expected duplicate to preserve prototype id.", failures);
+    expect(sdf3d::GraphSystem::primitiveInstanceCount(graph, sphere) == 2, testName, "Expected two detected instances.", failures);
+}
+
 void testEffectiveValidityDropsInvalidUpstream(std::vector<TestFailure>& failures)
 {
     const std::string testName = "effective validity drops invalid upstream";
@@ -704,6 +721,7 @@ int main()
 
     testDuplicateSelectionCopiesInternalLinksOnly(failures);
     testDuplicateSelectionSkipsOutput(failures);
+    testPrimitiveInstancingDuplicatePreservesPrototype(failures);
     testEffectiveValidityDropsInvalidUpstream(failures);
     testMultiInputSocketKeepsMultipleLinks(failures);
     testLoweredRequiredInputRules(failures);

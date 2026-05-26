@@ -26,6 +26,7 @@ struct SdfCompiledNodeParam {
     uint64_t nodeId = 0;
     uint32_t slot = 0;
     std::array<float, 4> data0 = {0.0f, 0.0f, 0.0f, 0.0f};
+    std::array<float, 4> data1 = {0.0f, 0.0f, 0.0f, 0.0f};
 };
 
 /// Runtime instanced primitive position uploaded beside generated GLSL.

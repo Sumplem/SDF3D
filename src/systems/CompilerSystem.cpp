@@ -3,6 +3,7 @@
 #include "sdf3d/scene/SdfGraphCompiler.h"
 #include "sdf3d/scene/GraphGroupRegistry.h"
 #include "sdf3d/scene/SdfNodeDefinition.h"
+#include "sdf3d/scene/SdfNodeTraits.h"
 #include "sdf3d/scene/SdfRotationParams.h"
 #include "sdf3d/systems/GlslEmitter.h"
 #include "sdf3d/systems/MaterialGraphCompiler.h"
@@ -75,6 +76,25 @@ float parameterOr(const SdfNode& node, const std::string& key, float fallback)
     return it == node.parameters.end() ? fallback : it->second;
 }
 
+bool parametersMatch(const SdfNode& left, const SdfNode& right)
+{
+    return left.parameters == right.parameters;
+}
+
+uint64_t instancePrototypeIdFor(const SdfNode& node)
+{
+    return node.instancePrototypeId != 0 ? node.instancePrototypeId : node.stableId;
+}
+
+glm::vec3 translateOffsetFor(const SdfNode& node)
+{
+    return {
+        parameterOr(node, "x", 0.0f),
+        parameterOr(node, "y", 0.0f),
+        parameterOr(node, "z", 0.0f),
+    };
+}
+
 using InstanceRangeByNodeId = std::unordered_map<uint64_t, SdfCompiledInstanceRange>;
 
 SdfCompiledInstanceRange instanceRangeFor(uint64_t nodeId, const InstanceRangeByNodeId& ranges)
@@ -94,6 +114,7 @@ bool runtimeNodeParamForTreeNode(const SdfNodePtr& node, SdfCompiledNodeParam& p
 
     param.nodeId = node->stableId;
     param.data0 = {0.0f, 0.0f, 0.0f, 0.0f};
+    param.data1 = {0.0f, 0.0f, 0.0f, 0.0f};
 
     switch (node->type) {
     case SdfNodeType::SphereInstances: {
@@ -104,6 +125,7 @@ bool runtimeNodeParamForTreeNode(const SdfNodePtr& node, SdfCompiledNodeParam& p
             static_cast<float>(range.count),
             0.0f,
         };
+        param.data1 = {static_cast<float>(range.first), static_cast<float>(range.count), 0.0f, 0.0f};
         return true;
     }
     case SdfNodeType::Rotate: {
@@ -140,6 +162,11 @@ bool runtimeNodeParamForTreeNode(const SdfNodePtr& node, SdfCompiledNodeParam& p
         ++packedCount;
     }
 
+    if (node->type != SdfNodeType::SphereInstances && isSdfPrimitiveNode(node->type)) {
+        const SdfCompiledInstanceRange range = instanceRangeFor(param.nodeId, instanceRanges);
+        param.data1 = {static_cast<float>(range.first), static_cast<float>(range.count), 0.0f, 0.0f};
+    }
+
     return packedCount > 0;
 }
 
@@ -169,13 +196,139 @@ void assignNodeParamSlots(std::vector<SdfCompiledNodeParam>& params)
     }
 }
 
+struct PrimitiveInstanceGroup {
+    SdfNodePtr prototype;
+    std::vector<glm::vec3> positions;
+    std::unordered_set<const SdfNode*> members;
+};
+
+bool isBooleanMergeNode(SdfNodeType type)
+{
+    return type == SdfNodeType::Union
+        || type == SdfNodeType::SmoothUnion
+        || type == SdfNodeType::Intersect
+        || type == SdfNodeType::SmoothIntersect;
+}
+
+bool isGenericInstancedPrimitive(const SdfNodePtr& node)
+{
+    return node
+        && node->type != SdfNodeType::SphereInstances
+        && isSdfPrimitiveNode(node->type)
+        && instancePrototypeIdFor(*node) != 0;
+}
+
+SdfNodePtr eligibleInstancedPrimitive(const SdfNodePtr& node, glm::vec3& position)
+{
+    if (isGenericInstancedPrimitive(node)) {
+        position = {0.0f, 0.0f, 0.0f};
+        return node;
+    }
+    if (node && node->type == SdfNodeType::Translate && node->children.size() == 1 && isGenericInstancedPrimitive(node->children[0])) {
+        position = translateOffsetFor(*node);
+        return node->children[0];
+    }
+    return nullptr;
+}
+
+void collectPrimitiveInstanceGroups(const SdfNodePtr& node, std::unordered_map<uint64_t, PrimitiveInstanceGroup>& groups)
+{
+    if (!node) {
+        return;
+    }
+
+    glm::vec3 position = {0.0f, 0.0f, 0.0f};
+    if (SdfNodePtr primitive = eligibleInstancedPrimitive(node, position)) {
+        const uint64_t prototypeId = instancePrototypeIdFor(*primitive);
+        PrimitiveInstanceGroup& group = groups[prototypeId];
+        if (!group.prototype) {
+            group.prototype = primitive;
+        }
+        if (group.prototype->type == primitive->type && parametersMatch(*group.prototype, *primitive)) {
+            group.positions.push_back(position);
+            group.members.insert(primitive.get());
+        }
+        return;
+    }
+
+    if (!isBooleanMergeNode(node->type)) {
+        return;
+    }
+
+    for (const SdfNodePtr& child : node->children) {
+        collectPrimitiveInstanceGroups(child, groups);
+    }
+}
+
+SdfNodePtr rewritePrimitiveInstances(
+    const SdfNodePtr& node,
+    const std::unordered_map<uint64_t, PrimitiveInstanceGroup>& groups,
+    std::unordered_set<uint64_t>& emittedGroups)
+{
+    if (!node) {
+        return nullptr;
+    }
+
+    glm::vec3 position = {0.0f, 0.0f, 0.0f};
+    if (SdfNodePtr primitive = eligibleInstancedPrimitive(node, position)) {
+        (void)position;
+        const uint64_t prototypeId = instancePrototypeIdFor(*primitive);
+        const auto groupIt = groups.find(prototypeId);
+        if (groupIt == groups.end() || groupIt->second.positions.empty() || groupIt->second.members.find(primitive.get()) == groupIt->second.members.end()) {
+            return node;
+        }
+        if (!emittedGroups.insert(prototypeId).second) {
+            return nullptr;
+        }
+
+        SdfNodePtr instanced = cloneSdfNodeTree(groupIt->second.prototype);
+        instanced->stableId = prototypeId;
+        instanced->instancePrototypeId = prototypeId;
+        instanced->instancePositions = groupIt->second.positions;
+        instanced->children.clear();
+        return instanced;
+    }
+
+    if (!isBooleanMergeNode(node->type)) {
+        return node;
+    }
+
+    SdfNodePtr rewritten = cloneSdfNodeTree(node);
+    rewritten->children.clear();
+    for (const SdfNodePtr& child : node->children) {
+        if (SdfNodePtr rewrittenChild = rewritePrimitiveInstances(child, groups, emittedGroups)) {
+            rewritten->children.push_back(std::move(rewrittenChild));
+        }
+    }
+
+    if (isBooleanMergeNode(rewritten->type) && rewritten->children.empty()) {
+        return nullptr;
+    }
+    return rewritten;
+}
+
+SdfNodePtr collapsePrimitiveInstances(const SdfNodePtr& root)
+{
+    std::unordered_map<uint64_t, PrimitiveInstanceGroup> groups;
+    collectPrimitiveInstanceGroups(root, groups);
+    if (groups.empty()) {
+        return root;
+    }
+
+    std::unordered_set<uint64_t> emittedGroups;
+    return rewritePrimitiveInstances(root, groups, emittedGroups);
+}
+
 void collectTreeInstanceData(const SdfNodePtr& node, SdfCompiledInstanceData& instances, std::unordered_set<uint64_t>& packedIds)
 {
     if (!node) {
         return;
     }
 
-    if (node->type == SdfNodeType::SphereInstances && node->stableId != 0 && packedIds.insert(node->stableId).second) {
+    const bool genericInstancedPrimitive = node->type != SdfNodeType::SphereInstances
+        && isSdfPrimitiveNode(node->type)
+        && !node->instancePositions.empty();
+    if ((node->type == SdfNodeType::SphereInstances || genericInstancedPrimitive) && node->stableId != 0 && packedIds.insert(node->stableId).second) {
         const uint32_t first = static_cast<uint32_t>(instances.positions.size());
         for (const glm::vec3& position : node->instancePositions) {
             instances.positions.push_back({position});
@@ -252,13 +405,14 @@ std::vector<MaterialDefinition> deduplicateMaterialDefinitions(std::vector<Mater
 SdfCompileResult CompilerSystem::compile(const SdfGraph& graph, GlslEmitMode mode) const
 {
     const SdfGraphLowerResult lowered = lowerSdfGraphToTree(graph);
+    const SdfNodePtr root = collapsePrimitiveInstances(lowered.root);
     std::vector<SdfCompiledNodeParam> nodeParams;
     SdfCompiledInstanceData instances;
     if (mode == GlslEmitMode::Runtime) {
-        instances = GraphSystem::collectInstanceData(graph);
-        nodeParams = GraphSystem::collectNodeParams(graph);
+        instances = collectTreeInstanceData(root);
+        nodeParams = collectTreeNodeParams(root, instances);
     }
-    SdfCompileResult result = compileTree(lowered.root, mode, std::move(nodeParams), materialDefinitionsForGraph(graph));
+    SdfCompileResult result = compileTree(root, mode, std::move(nodeParams), materialDefinitionsForGraph(graph));
     result.instancePositions = std::move(instances.positions);
     result.instanceRanges = std::move(instances.ranges);
     result.errors.insert(result.errors.begin(), lowered.errors.begin(), lowered.errors.end());
@@ -268,15 +422,16 @@ SdfCompileResult CompilerSystem::compile(const SdfGraph& graph, GlslEmitMode mod
 SdfCompileResult CompilerSystem::compile(const SdfGraph& graph, const GraphGroupRegistry& groups, GlslEmitMode mode) const
 {
     const SdfGraphLowerResult lowered = lowerSdfGraphToTree(graph, groups);
+    const SdfNodePtr root = collapsePrimitiveInstances(lowered.root);
     std::vector<SdfCompiledNodeParam> nodeParams;
     SdfCompiledInstanceData instances;
     if (mode == GlslEmitMode::Runtime) {
-        instances = GraphSystem::collectInstanceData(graph, groups);
-        nodeParams = GraphSystem::collectNodeParams(graph, groups);
+        instances = collectTreeInstanceData(root);
+        nodeParams = collectTreeNodeParams(root, instances);
     }
     std::vector<MaterialDefinition> materials = materialDefinitionsForGraph(graph);
     appendGroupMaterialDefinitions(groups, materials);
-    SdfCompileResult result = compileTree(lowered.root, mode, std::move(nodeParams), deduplicateMaterialDefinitions(std::move(materials)));
+    SdfCompileResult result = compileTree(root, mode, std::move(nodeParams), deduplicateMaterialDefinitions(std::move(materials)));
     result.instancePositions = std::move(instances.positions);
     result.instanceRanges = std::move(instances.ranges);
     result.errors.insert(result.errors.begin(), lowered.errors.begin(), lowered.errors.end());
@@ -285,13 +440,14 @@ SdfCompileResult CompilerSystem::compile(const SdfGraph& graph, const GraphGroup
 
 SdfCompileResult CompilerSystem::compile(const SdfNodePtr& root, GlslEmitMode mode) const
 {
+    const SdfNodePtr collapsedRoot = collapsePrimitiveInstances(root);
     SdfCompiledInstanceData instances;
     std::vector<SdfCompiledNodeParam> nodeParams;
     if (mode == GlslEmitMode::Runtime) {
-        instances = collectTreeInstanceData(root);
-        nodeParams = collectTreeNodeParams(root, instances);
+        instances = collectTreeInstanceData(collapsedRoot);
+        nodeParams = collectTreeNodeParams(collapsedRoot, instances);
     }
-    SdfCompileResult result = compileTree(root, mode, std::move(nodeParams));
+    SdfCompileResult result = compileTree(collapsedRoot, mode, std::move(nodeParams));
     result.instancePositions = std::move(instances.positions);
     result.instanceRanges = std::move(instances.ranges);
     return result;
@@ -354,6 +510,7 @@ SdfCompileResult CompilerSystem::compileTree(
         glsl << "struct SdfNodeParam\n";
         glsl << "{\n";
         glsl << "    vec4 data0;\n";
+        glsl << "    vec4 data1;\n";
         glsl << "};\n\n";
         glsl << "layout(std430, binding = 1) readonly buffer NodeParamBuffer\n";
         glsl << "{\n";
@@ -371,6 +528,100 @@ SdfCompileResult CompilerSystem::compileTree(
         glsl << "    int last = min(first + count, uInstancePositionCount);\n";
         glsl << "    for (int i = first; i < last; ++i) {\n";
         glsl << "        distance = min(distance, length(p - uInstancePositions[i].xyz) - radius);\n";
+        glsl << "    }\n";
+        glsl << "    return distance;\n";
+        glsl << "}\n\n";
+        glsl << "float sdf3d_instance_sphere(vec3 p, vec4 params, vec4 range)\n";
+        glsl << "{\n";
+        glsl << "    float distance = 1e6;\n";
+        glsl << "    int first = int(range.x);\n";
+        glsl << "    int last = min(first + int(range.y), uInstancePositionCount);\n";
+        glsl << "    for (int i = first; i < last; ++i) {\n";
+        glsl << "        distance = min(distance, length(p - uInstancePositions[i].xyz) - params.x);\n";
+        glsl << "    }\n";
+        glsl << "    return distance;\n";
+        glsl << "}\n\n";
+        glsl << "float sdf3d_instance_box(vec3 p, vec4 params, vec4 range)\n";
+        glsl << "{\n";
+        glsl << "    float distance = 1e6;\n";
+        glsl << "    int first = int(range.x);\n";
+        glsl << "    int last = min(first + int(range.y), uInstancePositionCount);\n";
+        glsl << "    for (int i = first; i < last; ++i) {\n";
+        glsl << "        vec3 q = abs(p - uInstancePositions[i].xyz) - params.xyz;\n";
+        glsl << "        distance = min(distance, length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0));\n";
+        glsl << "    }\n";
+        glsl << "    return distance;\n";
+        glsl << "}\n\n";
+        glsl << "float sdf3d_instance_cylinder(vec3 p, vec4 params, vec4 range)\n";
+        glsl << "{\n";
+        glsl << "    float distance = 1e6;\n";
+        glsl << "    int first = int(range.x);\n";
+        glsl << "    int last = min(first + int(range.y), uInstancePositionCount);\n";
+        glsl << "    for (int i = first; i < last; ++i) {\n";
+        glsl << "        vec3 localP = p - uInstancePositions[i].xyz;\n";
+        glsl << "        vec2 d = abs(vec2(length(localP.xz), localP.y)) - vec2(params.x, params.y);\n";
+        glsl << "        distance = min(distance, min(max(d.x, d.y), 0.0) + length(max(d, 0.0)));\n";
+        glsl << "    }\n";
+        glsl << "    return distance;\n";
+        glsl << "}\n\n";
+        glsl << "float sdf3d_instance_torus(vec3 p, vec4 params, vec4 range)\n";
+        glsl << "{\n";
+        glsl << "    float distance = 1e6;\n";
+        glsl << "    int first = int(range.x);\n";
+        glsl << "    int last = min(first + int(range.y), uInstancePositionCount);\n";
+        glsl << "    for (int i = first; i < last; ++i) {\n";
+        glsl << "        vec3 localP = p - uInstancePositions[i].xyz;\n";
+        glsl << "        distance = min(distance, length(vec2(length(localP.xz) - params.x, localP.y)) - params.y);\n";
+        glsl << "    }\n";
+        glsl << "    return distance;\n";
+        glsl << "}\n\n";
+        glsl << "float sdf3d_instance_plane(vec3 p, vec4 params, vec4 range)\n";
+        glsl << "{\n";
+        glsl << "    float distance = 1e6;\n";
+        glsl << "    int first = int(range.x);\n";
+        glsl << "    int last = min(first + int(range.y), uInstancePositionCount);\n";
+        glsl << "    vec3 normal = normalize(params.xyz);\n";
+        glsl << "    for (int i = first; i < last; ++i) {\n";
+        glsl << "        distance = min(distance, dot(p - uInstancePositions[i].xyz, normal) + params.w);\n";
+        glsl << "    }\n";
+        glsl << "    return distance;\n";
+        glsl << "}\n\n";
+        glsl << "float sdf3d_instance_capsule(vec3 p, vec4 params, vec4 range)\n";
+        glsl << "{\n";
+        glsl << "    float distance = 1e6;\n";
+        glsl << "    int first = int(range.x);\n";
+        glsl << "    int last = min(first + int(range.y), uInstancePositionCount);\n";
+        glsl << "    for (int i = first; i < last; ++i) {\n";
+        glsl << "        vec3 localP = p - uInstancePositions[i].xyz;\n";
+        glsl << "        distance = min(distance, length(vec3(localP.x, localP.y - clamp(localP.y, -params.y, params.y), localP.z)) - params.x);\n";
+        glsl << "    }\n";
+        glsl << "    return distance;\n";
+        glsl << "}\n\n";
+        glsl << "float sdf3d_instance_cone(vec3 p, vec4 params, vec4 range)\n";
+        glsl << "{\n";
+        glsl << "    float distance = 1e6;\n";
+        glsl << "    int first = int(range.x);\n";
+        glsl << "    int last = min(first + int(range.y), uInstancePositionCount);\n";
+        glsl << "    for (int i = first; i < last; ++i) {\n";
+        glsl << "        vec3 localP = p - uInstancePositions[i].xyz;\n";
+        glsl << "        vec2 q = vec2(length(localP.xz), localP.y);\n";
+        glsl << "        vec2 k1 = vec2(0.0, params.y);\n";
+        glsl << "        vec2 k2 = vec2(-params.x, 2.0 * params.y);\n";
+        glsl << "        vec2 ca = vec2(q.x - min(q.x, q.y < 0.0 ? params.x : 0.0), abs(q.y) - params.y);\n";
+        glsl << "        vec2 cb = q - k1 + k2 * clamp(dot(k1 - q, k2) / dot(k2, k2), 0.0, 1.0);\n";
+        glsl << "        float s = (cb.x < 0.0 && ca.y < 0.0) ? -1.0 : 1.0;\n";
+        glsl << "        distance = min(distance, s * sqrt(min(dot(ca, ca), dot(cb, cb))));\n";
+        glsl << "    }\n";
+        glsl << "    return distance;\n";
+        glsl << "}\n\n";
+        glsl << "float sdf3d_instance_round_box(vec3 p, vec4 params, vec4 range)\n";
+        glsl << "{\n";
+        glsl << "    float distance = 1e6;\n";
+        glsl << "    int first = int(range.x);\n";
+        glsl << "    int last = min(first + int(range.y), uInstancePositionCount);\n";
+        glsl << "    for (int i = first; i < last; ++i) {\n";
+        glsl << "        vec3 q = abs(p - uInstancePositions[i].xyz) - params.xyz;\n";
+        glsl << "        distance = min(distance, length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - params.w);\n";
         glsl << "    }\n";
         glsl << "    return distance;\n";
         glsl << "}\n\n";

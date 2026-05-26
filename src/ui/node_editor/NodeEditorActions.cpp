@@ -227,8 +227,10 @@ bool drawNodeActions(SdfGraph& graph, const GraphNodeLayout& layout, SdfGraphNod
     }
 
     if (ImGui::BeginPopup(popupId.c_str())) {
-        if (isSdfPrimitiveNode(layout.node->payload.type) && ImGui::MenuItem("Wrap in Material Override")) {
-            sceneDirty = wrapInMaterialOverride(graph, layout);
+        if (isSdfPrimitiveNode(layout.node->payload.type)) {
+            if (ImGui::MenuItem("Wrap in Material Override")) {
+                sceneDirty = wrapInMaterialOverride(graph, layout);
+            }
         }
         sceneDirty = drawChangeBooleanTypeMenu(graph, layout) || sceneDirty;
         ImGui::EndPopup();
